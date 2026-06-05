@@ -1,0 +1,282 @@
+import { randomUUID } from "node:crypto";
+import type { AppState, Notification, PortInfo } from "@parasor/shared";
+import type { AgentStateStore } from "../agent-detector/agent-state-store.js";
+import type { AgentDetector } from "../agent-detector/detector.js";
+import { ManualAgentTracker } from "../agent-detector/manual-agent-tracker.js";
+import { shouldObserveAgentOutput } from "../agent-detector/output-eligibility.js";
+import { createProjectQueries } from "../application/workspace/project-queries.js";
+import type { AgentStatusRecorder } from "../debug/agent-status-recorder.js";
+import type { UploadStaging } from "../fs/upload-staging.js";
+import type { IpcServer } from "../ipc/socket-server.js";
+import type { PortForwarder } from "../port-forwarder/forwarder.js";
+import type { PortScanner } from "../port-scanner/scanner.js";
+import type { PtyHost } from "../pty/host.js";
+import { Osc7Lifecycle } from "../pty/osc7-lifecycle.js";
+import type { AppStateStore } from "../state/app-state.js";
+import type { ProjectManager } from "../state/project-manager.js";
+import type { WorktreeCache } from "../state/worktree-cache.js";
+import type { EventBus } from "../ws/events.js";
+import type { ProjectRuntime } from "./project-runtime.js";
+import { enrichPorts } from "./runtime-loops.js";
+
+export interface WireRuntimeDeps {
+  appStateStore: AppStateStore;
+  eventBus: EventBus;
+  portScanner: PortScanner;
+  /**
+   * The shared per-port TCP forwarder (same instance handed to
+   * `startRuntimeLoops`). Used to enrich the hydration snapshot's ports with
+   * `reachable`/`reachablePort` so a reloaded/reconnected client can resolve
+   * already-open browser panes without waiting for the next port-set change.
+   */
+  portForwarder: PortForwarder;
+  ptyManager: PtyHost;
+  agentDetector: AgentDetector;
+  agentStateStore: AgentStateStore;
+  debugRecorder?: AgentStatusRecorder;
+  ipcServer: IpcServer;
+  projectManager: ProjectManager;
+  projectRuntime: ProjectRuntime;
+  worktreeCache: WorktreeCache;
+  uploadStaging: UploadStaging;
+}
+
+export function createWaitingNotification(
+  sessionId: string,
+  projectId: string,
+  now = Date.now(),
+): Notification {
+  return {
+    id: randomUUID(),
+    projectId,
+    sessionId,
+    type: "agent-waiting",
+    title: "Agent waiting",
+    message: "Agent is waiting for input",
+    timestamp: now,
+    read: false,
+  };
+}
+
+export function buildHydrationStateSnapshot({
+  appStateStore,
+  ptyManager,
+}: {
+  appStateStore: AppStateStore;
+  ptyManager: PtyHost;
+}): AppState {
+  const state = appStateStore.get();
+  return {
+    ...state,
+    sessions: ptyManager.list(),
+  };
+}
+
+export function wireRuntime({
+  appStateStore,
+  eventBus,
+  portScanner,
+  portForwarder,
+  ptyManager,
+  agentDetector,
+  agentStateStore,
+  debugRecorder,
+  ipcServer,
+  projectManager,
+  projectRuntime,
+  worktreeCache,
+  uploadStaging,
+}: WireRuntimeDeps): void {
+  const projectQueries = createProjectQueries({ projectManager });
+  const getLiveSessionIds = () =>
+    ptyManager
+      .list()
+      .flatMap((session) => (session.state === "ended" ? [] : [session.id]));
+  eventBus.setHydrationSources({
+    getState: () => buildHydrationStateSnapshot({ appStateStore, ptyManager }),
+    getAgentStates: () =>
+      agentStateStore.getStates({ liveSessionIds: getLiveSessionIds() }),
+    getNotifications: () => eventBus.getNotifications(),
+    getPorts: () => {
+      const out: Record<string, PortInfo[]> = {};
+      for (const [projectId, ports] of Object.entries(
+        portScanner.getAllPorts(),
+      )) {
+        out[projectId] = enrichPorts(ports, projectId, portForwarder);
+      }
+      return out;
+    },
+    getGitStates: () => projectRuntime.getGitStates(),
+    getWorktrees: () => worktreeCache.get(),
+  });
+
+  const osc7Lifecycle = new Osc7Lifecycle();
+  const manualAgentTracker = new ManualAgentTracker({
+    onDebug: (sessionId, message) => {
+      debugRecorder?.record("manual-tracker", { message }, sessionId);
+    },
+  });
+  const originalBroadcast = eventBus.broadcast.bind(eventBus);
+  eventBus.broadcast = (message) => {
+    // Cache mutations must happen BEFORE broadcast so that a client
+    // hydrating in the same tick (post-broadcast addClient) reads the
+    // updated cache. Snapshot is sync inside `addClient`, so a
+    // broadcast-then-snapshot ordering is consistent only when cache is
+    // already updated by the broadcast wrapper here.
+    if (message.type === "worktree-created") {
+      worktreeCache.appendWorktree(message.projectId, message.worktree);
+    } else if (message.type === "worktree-removed") {
+      worktreeCache.removeWorktree(message.projectId, message.worktreePath);
+    } else if (message.type === "project-deleted") {
+      worktreeCache.removeProject(message.projectId);
+    } else if (message.type === "project-created") {
+      // Refresh asynchronously: a freshly imported project may already
+      // have linked worktrees on disk that the cache has never seen.
+      // Each discovered worktree is re-broadcast so live clients update
+      // their store; new clients will hydrate the cache directly.
+      const projectId = message.project.id;
+      void projectQueries
+        .getProjectWorktrees(projectId)
+        .then((worktrees) => {
+          // Race guard: a project-deleted may have arrived during the
+          // git enumeration. Skip the cache update + re-broadcast so
+          // orphan worktrees do not resurface server- or client-side.
+          if (!projectManager.get(projectId)) return;
+          worktreeCache.setProject(projectId, worktrees);
+          for (const worktree of worktrees) {
+            eventBus.broadcast({
+              type: "worktree-created",
+              projectId,
+              worktree,
+            });
+          }
+        })
+        .catch(() => {
+          /* getProjectWorktrees swallows git errors -> empty list */
+        });
+    }
+    originalBroadcast(message);
+    if (message.type === "session-closed") {
+      osc7Lifecycle.removeSession(message.sessionId);
+      agentDetector.removeSession(message.sessionId);
+      agentStateStore.remove(message.sessionId);
+      manualAgentTracker.removeSession(message.sessionId);
+    }
+    projectRuntime.handleBroadcast(message);
+  };
+
+  ptyManager.onSessionInput((sessionId, data) => {
+    manualAgentTracker.observeInput(sessionId, data);
+  });
+
+  ptyManager.onSessionData((sessionId, data, generation) => {
+    const detectorSession = ptyManager.get(sessionId);
+    /*
+     * PTY generation gate: drop stale-gen DATA at the listener boundary.
+     * After auto-resume, an old PTY can still emit a residual OSC7 cwd
+     * report or agent-output marker. The per-client / scrollback fanout
+     * already gates on generation, but every onSessionData listener used
+     * to be invoked with stale bytes -- corrupting agent detection state
+     * and broadcasting `session-cwd-changed` for the new shell with the
+     * old PTY's cwd. Skip every derived state mutation when the chunk's
+     * emit-time generation no longer matches the live session.
+     */
+    if (detectorSession && generation < detectorSession.generation) {
+      return;
+    }
+    const foregroundProcess = ptyManager.getForegroundProcess(sessionId);
+    const observeOutput =
+      shouldObserveAgentOutput(detectorSession, foregroundProcess) ||
+      manualAgentTracker.shouldObserve(sessionId);
+    agentDetector.feed(sessionId, data, {
+      observeOutput,
+    });
+    manualAgentTracker.observeOutput(sessionId, data);
+
+    const newCwd = osc7Lifecycle.feed(sessionId, data);
+    if (!newCwd) return;
+
+    const session = ptyManager.get(sessionId);
+    if (!session || session.cwd === newCwd) return;
+
+    /*
+     * In remote daemon mode the session domain is owned by the daemon
+     * (daemon state ownership). The server's `state.sessions` is empty/stale
+     * -- sessions live in `RemotePtyHost.mirror` -- so the in-process
+     * persistence path doesn't apply. The daemon does not currently run
+     * osc7 detection on its side; the cwd-change broadcast is still
+     * useful for live UI even without persistence, so emit it
+     * unconditionally and skip the mutate when the session domain is
+     * read-only.
+     */
+    if (!appStateStore.isSessionsReadOnly()) {
+      appStateStore.mutateSessions((state) => {
+        const target = state.sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        if (target) target.cwd = newCwd;
+      });
+    }
+    eventBus.broadcast({
+      type: "session-cwd-changed",
+      sessionId,
+      cwd: newCwd,
+    });
+  });
+
+  ptyManager.onSessionExit = (sessionId, generation, endReason) => {
+    eventBus.broadcast({
+      type: "session-ended",
+      sessionId,
+      generation,
+      endReason,
+    });
+    osc7Lifecycle.removeSession(sessionId);
+    agentDetector.removeSession(sessionId);
+    agentStateStore.remove(sessionId);
+    manualAgentTracker.removeSession(sessionId);
+    const session = ptyManager.get(sessionId);
+    if (session) {
+      projectRuntime.handleSessionEnded(session.projectId);
+    }
+    // L1 GC for upload staging isolation -- drop the session's upload staging dir
+    // immediately on PTY exit. Best-effort: a failure here is logged
+    // and the L2/L3 sweep will reap it later.
+    uploadStaging.releaseSession(sessionId).catch((err) => {
+      console.error(
+        `[upload-staging] releaseSession(${sessionId}) failed:`,
+        err,
+      );
+    });
+  };
+
+  agentDetector.onStateChange((state) => {
+    agentStateStore.set(state);
+    debugRecorder?.recordState(state);
+    eventBus.broadcast({
+      type: "agent-state",
+      state,
+    });
+
+    if (state.lifecycle !== "waiting" || state.confidence !== "high") return;
+
+    const session = ptyManager.get(state.sessionId);
+    const notification = createWaitingNotification(
+      state.sessionId,
+      session?.projectId ?? "",
+    );
+    eventBus.addNotification(notification);
+    eventBus.broadcast({ type: "notification", notification });
+  });
+
+  ipcServer.onCommand("open", (args) => {
+    const url = args.url as string;
+    if (!url) return { ok: false, error: "url required" };
+    eventBus.broadcast({
+      type: "browser-url-changed",
+      paneId: "__route_open__",
+      url,
+    });
+    return { ok: true };
+  });
+}

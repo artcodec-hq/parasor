@@ -1,0 +1,49 @@
+{
+  "name": "parasor",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": {
+    "name": "akibe",
+    "url": "https://github.com/akibe"
+  },
+  "homepage": "https://github.com/artcodec-hq/parasor",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artcodec-hq/parasor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/artcodec-hq/parasor/issues"
+  },
+  "type": "module",
+  "bin": {
+    "parasor": "./bin/parasor.ts"
+  },
+  "scripts": {
+    "dev": "./scripts/dev.sh",
+    "build": "pnpm -r build",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check --error-on-warnings --diagnostic-level=warn . && node scripts/check-layer-boundaries.mjs",
+    "lint:boundaries": "node scripts/check-layer-boundaries.mjs",
+    "lint:fix": "biome check --write .",
+    "bench:headless-replay": "pnpm --filter @parasor/server exec tsx ../../scripts/headless-replay-benchmark.ts",
+    "package": "node scripts/package.mjs --build",
+    "install:local": "node scripts/install-local.mjs",
+    "uninstall:local": "node scripts/install-local.mjs --uninstall",
+    "clean": "rm -rf dist packages/*/dist packages/*/tsconfig.tsbuildinfo",
+    "clean:dev": "pkill -f 'tsx.*src/index.ts' 2>/dev/null; DIR=\"${PARASOR_CONFIG_DIR:-/tmp/parasor-dev}\"; rm -rf \"$DIR/parasor.lock\" \"$DIR/parasor.sock\" \"$DIR/parasor.lock.lock\" \"$DIR/appstate.mode\" \"$DIR/appstate.mode.lock\"; echo \"Cleaned $DIR\""
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild",
+      "node-pty"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.11"
+  }
+}

@@ -1,0 +1,597 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Symbols Nerd Font";
+  /*
+   * Mono variant: glyphs are pre-aligned to a uniform monospace advance
+   * width matching the cell of the primary mono font, so xterm columns
+   * and inline mono spans stay aligned when an icon falls back to this
+   * face. The proportional "SymbolsNerdFont-Regular" we used previously
+   * rendered icons wider than 1ch, breaking xterm cell alignment and
+   * making icons look oversized. Tradeoff: ~1.18 MB vs 0.85 MB woff2 --
+   * still fetched lazily via unicode-range below, so apps with no Nerd
+   * Font glyphs on screen never trigger the download.
+   */
+  src: url("./assets/fonts/SymbolsNerdFontMono-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  /*
+   * font-display: swap together with the narrow unicode-range below means
+   * the font is only fetched when a Nerd-Font glyph actually enters the
+   * layout (Powerline prompt, k9s TUI, etc.) -- an app with no Nerd Font
+   * characters on screen never triggers the download at all. Terminal.tsx
+   * listens for `document.fonts.loadingdone` to force xterm's WebGL atlas
+   * to pick up the new glyphs once the lazy load finishes.
+   */
+  font-display: swap;
+  /*
+   * Cover every block Nerd Fonts patches glyphs into:
+   *   U+23FB-23FE, U+2665, U+26A1, U+2B58   IEC power / misc symbols
+   *   U+E000-F8FF                           Private Use Area A (Powerline,
+   *                                          Font Awesome, Devicons, Codicons,
+   *                                          Octicons, Weather, Seti UI, ...)
+   *   U+F0000-F1AF0                         Private Use Area B (Material
+   *                                          Design Icons)
+   *
+   * Restricting by range still matters: without unicode-range the browser
+   * would also consult this font for regular ASCII (it contains blank glyphs
+   * for most codepoints), which would misalign text since Symbols Nerd Font
+   * has different metrics than the user's chosen mono font.
+   */
+  unicode-range:
+    U+23FB-23FE, U+2665, U+26A1, U+2B58, U+E000-F8FF, U+F0000-F1AF0;
+}
+
+/*
+ * Layer 1 -- first-paint fallback workbench tokens. Keep these aligned with
+ * resolved parasor Dark so a cold load has the same colors before React
+ * applies the cached or selected color theme.
+ */
+:root {
+  --theme-editor-bg: #2e3033;
+  --theme-editor-fg: #d3dbeb;
+  --theme-sidebar-bg: #3b3d42;
+  --theme-sidebar-fg: #d3dbeb;
+  --theme-terminal-bg: #2e3033;
+  --theme-description-fg: #7e838c;
+  --theme-border: #4e5157;
+  --theme-link-fg: #00aaaa;
+  --theme-list-active-bg: #4e5157;
+  --theme-list-inactive-bg: #4e515780;
+  --theme-list-active-fg: #d3dbeb;
+  --theme-list-hover-bg: #ffffff0a;
+  --theme-button-secondary-bg: #ffffff0a;
+  --theme-button-secondary-hover-bg: #3d4244;
+  --theme-tab-active-bg: #2e3033;
+  --theme-tab-inactive-bg: #3e3f45;
+  --theme-tab-strip-bg: #34363a;
+  --theme-git-added: #3fc76a;
+  --theme-git-modified: #ffb000;
+  --theme-git-deleted: #ff5a4f;
+  --theme-warning: #d7ba7d;
+  --theme-diff-added-bg: #243733;
+  --theme-diff-deleted-bg: #3f282d;
+  --theme-graph-branch-1: #ffb000;
+  --theme-graph-branch-2: #ff3d8b;
+  --theme-graph-branch-3: #00b86b;
+  --theme-graph-branch-4: #00aeef;
+  --theme-graph-branch-5: #8b5cf6;
+  --theme-graph-ref-base: #00aaaa;
+  color-scheme: dark;
+}
+
+/* Layer 2 -- parasor semantic tokens (referenced by UI code) */
+@theme {
+  --color-bg-primary: var(--theme-editor-bg);
+  --color-bg-secondary: var(--theme-sidebar-bg);
+  --color-bg-terminal: var(--theme-terminal-bg);
+  --color-text-primary: var(--theme-editor-fg);
+  --color-text-secondary: var(--theme-description-fg);
+  --color-border: var(--theme-border);
+  --color-accent: var(--theme-link-fg);
+  --color-row-active-bg: var(--theme-list-active-bg);
+  --color-row-selected-bg: var(--theme-list-inactive-bg);
+  --color-row-active-fg: var(--theme-list-active-fg);
+  --color-row-hover-bg: var(--theme-list-hover-bg);
+  --color-button-secondary-bg: var(--theme-button-secondary-bg);
+  --color-button-secondary-hover-bg: var(--theme-button-secondary-hover-bg);
+  --color-pane-header-bg: var(--theme-tab-active-bg);
+  --color-pane-header-bg-inactive: var(--theme-tab-inactive-bg);
+  --color-tab-strip-bg: var(--theme-tab-strip-bg);
+  --color-success: var(--theme-git-added);
+  --color-warning: var(--theme-warning);
+  --color-danger: var(--theme-git-deleted);
+  --color-diff-added-bg: var(--theme-diff-added-bg);
+  --color-diff-deleted-bg: var(--theme-diff-deleted-bg);
+
+  /*
+   * Layout sizes -- semantic heights/widths registered as Tailwind v4 spacing
+   * tokens, usable as `h-bar`, `w-icon-base`, `max-w-surface-md` etc.
+   * Customize values here to retune density without touching call sites.
+   *
+   * bar     = chrome bar height (header / footer / tab / sidebar row)
+   * icon    = icon glyph size -- single-axis token, PaGlyph defaults to this
+   * tap     = pressable hit area; touch = Apple HIG min, lg = matches h-bar
+   * surface = floating panel max-width (toast -> dialog -> settings overlay)
+   */
+  --spacing-bar: 2rem;
+  /* 32 */
+  --spacing-icon-base: 1rem;
+  /* 16 -- every glyph default; override is the rare exception (chip / tap-frame use literals, not icon-* tokens) */
+  --spacing-tap-sm: 1.75rem;
+  /* 28 -- dense toolbar / footer icon buttons */
+  --spacing-tap-md: 2rem;
+  /* 32 -- standard icon button (header trailing, dialog close, drawer / back) */
+  --spacing-tap-lg: 2.25rem;
+  /* 36 -- key bar button (= h-bar) */
+  --spacing-tap-touch: 2.75rem;
+  /* 44 -- Apple HIG touch min */
+  --spacing-surface-sm: 22.5rem;
+  /* 360 -- toast / status / compact dialog */
+  --spacing-surface-md: 36rem;
+  /* 576 -- standard form dialog */
+  --spacing-surface-lg: 51.25rem;
+  /* 820 -- settings overlay */
+
+  /*
+   * Border radius -- three functional tokens classify every rounded surface
+   * by purpose, not by size:
+   *   control = pressable (button, tab, input, row, sparkline bar)
+   *   window  = floating surface (modal, dialog, toast, popover, menu)
+   *   tag     = non-pressable label (badge pill, ref tag, status dot)
+   * File-type tiles and the brand logo render as sharp squares with no
+   * rounded class. BottomSheet's top-only radii stay inline.
+   */
+  --radius-control: 0.25rem;
+  /* 4    */
+  --radius-window: 0.5rem;
+  /* 8    */
+  --radius-tag: 9999px;
+  /* full */
+
+  /*
+   * Override Tailwind's default mono stack so `font-mono` utility resolves
+   * to the user's selected content preset. Inputs / textareas reset to UA font
+   * defaults inside `<input>` / `<textarea>`, so explicit utility coverage
+   * is still required for monospace surfaces.
+   */
+  --font-mono: var(--parasor-content-font);
+}
+
+@media (max-width: 47.999rem), (pointer: coarse) {
+  :root {
+    --spacing-bar: 2.5rem;
+  }
+}
+
+.cm-safe-area-bottom-standalone {
+  padding-bottom: 0;
+}
+
+@media (display-mode: standalone) {
+  .cm-safe-area-bottom-standalone {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+:root {
+  /*
+   * Font stacks are swappable at runtime via Settings -> Font. SettingsProvider
+   * writes these variables based on the preset + custom overrides. See
+   * src/lib/fonts.ts for the default stack and resolver.
+   *
+   * "Symbols Nerd Font" is bundled (see @font-face above) with a unicode-range
+   * restricted to Nerd Font glyph blocks, so icon codepoints fall through to
+   * the bundled font on any device without the user having to install one.
+   */
+  --parasor-ui-font:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --parasor-content-font:
+    "SF Mono", ui-monospace, Menlo, Consolas, "Symbols Nerd Font",
+    "Noto Sans Mono CJK JP", monospace;
+  --parasor-font: var(--parasor-content-font);
+  --parasor-ui-font-size: 16px;
+  --parasor-content-font-size: 16px;
+  --parasor-font-size: var(--parasor-content-font-size);
+
+  /*
+   * Minimum tap target per Apple HIG / Material. Used by pane rows on mobile
+   * (FileTree, Sidebar) to keep touch ergonomics independent of the
+   * content font size -- rem-scaled padding alone cannot guarantee 44×44 when
+   * the user picks the smallest content size.
+   */
+  --tap-min: 44px;
+}
+
+/* Prevent pull-to-refresh and overscroll on mobile */
+html {
+  overscroll-behavior: none;
+  font-size: var(--parasor-ui-font-size);
+  /*
+   * `manipulation` tells the browser to skip double-tap-to-zoom detection
+   * while still allowing single-finger pan + tap. iOS Safari pinch-zoom is
+   * handled by the gesturestart listeners in main.tsx (touch-action alone
+   * isn't honored for pinch on iOS at the page level).
+   */
+  touch-action: manipulation;
+}
+
+/*
+ * iOS Safari auto-zooms on focus when an input's computed font-size is below
+ * 16px. Tailwind utility classes (text-xs/text-sm) out-specify the bare
+ * `input` selector, so `!important` is required to force the floor. Scope to
+ * `pointer: coarse` so desktop chrome stays at design sizes while every touch
+ * device (portrait + landscape iPhones, iPad without trackpad) is covered.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+      [type="color"]
+    ),
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+}
+
+/*
+ * iOS Safari ignores `overflow: hidden` on body for form-focus scrolling
+ * (WebKit bug #153852). xterm.js's hidden helper-textarea is positioned
+ * at `left: -9999em`, and on focus iOS scrolls the viewport to bring it
+ * into view, painting the entire screen with body background.
+ *
+ * `position: fixed` on body and #root prevents this scroll-jump.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--parasor-ui-font);
+  /* Digits never wobble on high-frequency updates (counts, ports, 99+). */
+  font-variant-numeric: tabular-nums;
+  /*
+   * Crisp text on dark backgrounds. WebKit's default is subpixel-antialiased
+   * which thickens glyphs on dark surfaces. `antialiased` (grayscale on
+   * macOS Firefox) keeps strokes sharp at small UI sizes (11--15 px).
+   */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+/*
+ * Resize rails use semantic <hr> separators. Reset <hr>'s intrinsic top
+ * border and zero height so the intended 1px bg-border rail stretches.
+ */
+.cm-sidebar-resizer,
+.cm-split-resizer {
+  height: auto;
+  margin: 0;
+  border: 0;
+}
+
+.cm-split-resizer {
+  align-self: stretch;
+}
+
+@keyframes agent-status-working {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes agent-status-attention {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.agent-status-working {
+  animation: agent-status-working 0.9s linear infinite;
+  transform-origin: center;
+}
+
+.agent-status-attention {
+  animation: agent-status-attention 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * State remains identifiable without motion: working = modified-colored
+   * partial-circle outline, attention = solid danger dot. Disabling the
+   * keyframes drops the spin/pulse for vestibular-sensitive users.
+   */
+  .agent-status-working,
+  .agent-status-attention {
+    animation: none;
+  }
+}
+
+/*
+ * Crisp icon rendering. Stroke-based UI glyphs are authored in 12-unit
+ * viewBox grids and rendered at 14--18 px (factor 1.16--1.5x). Without
+ * `non-scaling-stroke` the stroke width scales with the viewport (e.g.
+ * 1.25 × 1.166 = 1.46 device-px on DPR=1), producing sub-pixel edges.
+ * `geometricPrecision` overrides the UA-default `auto` rasterizer that
+ * favors speed for tiny vector graphics -- which is exactly the size class
+ * where AA error is visible.
+ */
+svg {
+  shape-rendering: geometricPrecision;
+}
+
+svg * {
+  vector-effect: non-scaling-stroke;
+}
+
+/* Primitive utility classes shared across primitives/panes. */
+.cm-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.cm-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.cm-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.cm-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/*
+ * Single-line horizontal scroll without a visible scrollbar. Used for tight
+ * rows (e.g. file paths in the commit list) where we want overflow to be
+ * swipeable on touch devices but the gutter would steal vertical space.
+ */
+.cm-scroll-x {
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.cm-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.cm-mono {
+  font-family: var(--parasor-content-font);
+  /*
+   * Monospace fonts must not kern -- kerning shifts glyphs by sub-pixel
+   * amounts, which both breaks the implicit cell grid (counts/paths
+   * mis-align across rows) and softens stroke edges. Some mono faces
+   * still ship a `kern` table that the browser applies by default;
+   * forcing it off keeps glyph origins on integer px.
+   */
+  font-kerning: none;
+}
+
+/*
+ * Hairline divider -- 1px inset box-shadow instead of border so it never
+ * nudges layout when a cell toggles between selected/unselected.
+ */
+.cm-hairline-t {
+  box-shadow: inset 0 1px 0 var(--color-border);
+}
+
+.cm-hairline-r {
+  box-shadow: inset -1px 0 0 var(--color-border);
+}
+
+.cm-hairline-b {
+  box-shadow: inset 0 -1px 0 var(--color-border);
+}
+
+.cm-hairline-l {
+  box-shadow: inset 1px 0 0 var(--color-border);
+}
+
+.cm-kbd {
+  font-family: var(--parasor-content-font);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+}
+
+/*
+ * Desktop split resizer hover/drag affordance.
+ * Default: 1px gray bg-border (set via Tailwind on the element).
+ * Hover/active: solid accent + 1px box-shadow each side = 3px-wide accent line
+ * without changing layout (the hit area pseudo handles pointer capture).
+ */
+.cm-split-resizer:hover,
+.cm-split-resizer:active,
+.cm-split-resizer:focus-visible,
+.cm-sidebar-resizer:hover,
+.cm-sidebar-resizer:active,
+.cm-sidebar-resizer:focus-visible {
+  background: var(--color-accent);
+  box-shadow:
+    -1px 0 0 var(--color-accent),
+    1px 0 0 var(--color-accent);
+}
+/*
+ * MarkdownPreview uses minimal typography for rendered .md. Tailwind v4 +
+ * @tailwindcss/typography is not installed; use design tokens directly so
+ * the preview tracks the active editor theme.
+ */
+.markdown-preview {
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-weight: 600;
+  margin: 1.4em 0 0.6em;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.markdown-preview h1 {
+  font-size: 1.6em;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.3em;
+}
+
+.markdown-preview h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.25em;
+}
+
+.markdown-preview h3 {
+  font-size: 1.15em;
+}
+
+.markdown-preview h4 {
+  font-size: 1em;
+}
+
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-size: 0.95em;
+  color: var(--color-text-secondary);
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview blockquote,
+.markdown-preview pre,
+.markdown-preview table {
+  margin: 0.75em 0;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 1.6em;
+}
+
+.markdown-preview li + li {
+  margin-top: 0.2em;
+}
+
+.markdown-preview ul ul,
+.markdown-preview ul ol,
+.markdown-preview ol ul,
+.markdown-preview ol ol {
+  margin: 0.2em 0;
+}
+
+.markdown-preview a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-preview strong {
+  font-weight: 600;
+}
+
+.markdown-preview em {
+  font-style: italic;
+}
+
+.markdown-preview blockquote {
+  border-left: 3px solid var(--color-border);
+  padding: 0.1em 0.9em;
+  color: var(--color-text-secondary);
+}
+
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1.4em 0;
+}
+
+.markdown-preview code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--theme-list-hover-bg);
+  color: var(--color-text-primary);
+}
+
+.markdown-preview pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  padding: 0.8em 1em;
+  border-radius: 6px;
+  background: var(--theme-list-hover-bg);
+  border: 1px solid var(--color-border);
+  overflow: auto;
+  line-height: 1.5;
+}
+
+.markdown-preview pre code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  display: block;
+  overflow: auto;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+
+.markdown-preview th {
+  background: var(--theme-list-hover-bg);
+  font-weight: 600;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-preview input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--color-accent);
+}

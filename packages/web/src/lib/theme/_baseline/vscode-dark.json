@@ -1,0 +1,60 @@
+{
+  "name": "VSCode Default Dark (baseline)",
+  "type": "dark",
+  "colors": {
+    "focusBorder": "#007FD4",
+    "errorForeground": "#F48771",
+
+    "editor.background": "#1E1E1E",
+    "editor.foreground": "#BBBBBB",
+    "editor.selectionBackground": "#264F78",
+
+    "editorWidget.background": "#252526",
+
+    "panel.border": "#80808059",
+
+    "sideBar.background": "#252526",
+
+    "tab.inactiveBackground": "#2D2D2D",
+    "editorGroupHeader.tabsBackground": "#252526",
+
+    "list.activeSelectionBackground": "#04395E",
+    "list.activeSelectionForeground": "#FFFFFF",
+    "list.inactiveSelectionBackground": "#37373D",
+    "list.hoverBackground": "#2A2D2E",
+
+    "textLink.foreground": "#3794FF",
+    "button.background": "#0E639C",
+    "button.secondaryHoverBackground": "#3D4244",
+
+    "terminal.foreground": "#CCCCCC",
+
+    "terminal.ansiBlack": "#000000",
+    "terminal.ansiRed": "#CD3131",
+    "terminal.ansiGreen": "#0DBC79",
+    "terminal.ansiYellow": "#E5E510",
+    "terminal.ansiBlue": "#2472C8",
+    "terminal.ansiMagenta": "#BC3FBC",
+    "terminal.ansiCyan": "#11A8CD",
+    "terminal.ansiWhite": "#E5E5E5",
+    "terminal.ansiBrightBlack": "#666666",
+    "terminal.ansiBrightRed": "#F14C4C",
+    "terminal.ansiBrightGreen": "#23D18B",
+    "terminal.ansiBrightYellow": "#F5F543",
+    "terminal.ansiBrightBlue": "#3B8EEA",
+    "terminal.ansiBrightMagenta": "#D670D6",
+    "terminal.ansiBrightCyan": "#29B8DB",
+    "terminal.ansiBrightWhite": "#E5E5E5",
+
+    "gitDecoration.addedResourceForeground": "#81B88B",
+    "gitDecoration.modifiedResourceForeground": "#E2C08D",
+    "gitDecoration.deletedResourceForeground": "#C74E39",
+
+    "scmGraph.foreground1": "#FFB000",
+    "scmGraph.foreground2": "#DC267F",
+    "scmGraph.foreground3": "#994F00",
+    "scmGraph.foreground4": "#40B0A6",
+    "scmGraph.foreground5": "#B66DFF",
+    "scmGraph.historyItemRefColor": "#59A4F9"
+  }
+}

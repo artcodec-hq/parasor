@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>parasor</title>
+  <script>
+    // Pre-paint theme hydration. Reads the last-applied workbench tokens
+    // (cached by SettingsProvider) and applies them to <html> + <meta
+    // theme-color> before React mounts so non-default themes don't flash
+    // the default-theme fallback. Falls back to app.css :root values when
+    // localStorage is empty (first visit) or unavailable.
+    (() => {
+      try {
+        const raw = localStorage.getItem("parasor:active-theme-tokens");
+        const mode = localStorage.getItem("parasor:active-theme-mode");
+        const tokens = raw ? JSON.parse(raw) : null;
+        const root = document.documentElement;
+        if (tokens && typeof tokens === "object") {
+          for (const key in tokens) {
+            if (Object.hasOwn(tokens, key)) {
+              const value = tokens[key];
+              if (typeof value === "string") root.style.setProperty(key, value);
+            }
+          }
+          if (tokens["--theme-editor-bg"]) {
+            root.style.background = tokens["--theme-editor-bg"];
+            const meta = document.createElement("meta");
+            meta.name = "theme-color";
+            meta.content = tokens["--theme-editor-bg"];
+            document.head.appendChild(meta);
+          }
+        }
+        if (mode === "light" || mode === "dark") {
+          root.style.colorScheme = mode;
+          if (mode === "light") root.dataset.theme = "light";
+        }
+      } catch {
+        // First visit / quota / disabled localStorage - accept the flash.
+      }
+    })();
+  </script>
+  <style>html,body{background:var(--theme-editor-bg,#2E3033);color:var(--theme-editor-fg,#d3dbeb)}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
