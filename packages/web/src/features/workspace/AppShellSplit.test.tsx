@@ -1,8 +1,25 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShellSplit } from "./AppShellSplit.js";
 
-afterEach(() => cleanup());
+const STORAGE_KEY = "parasor:shell-ratio:workspace";
+
+function resetStoredSplitRatio() {
+  try {
+    globalThis.localStorage?.removeItem(STORAGE_KEY);
+  } catch {
+    /* localStorage may be unavailable in the test runtime. */
+  }
+}
+
+beforeEach(() => {
+  resetStoredSplitRatio();
+});
+
+afterEach(() => {
+  cleanup();
+  resetStoredSplitRatio();
+});
 
 function renderSplit() {
   render(<AppShellSplit navigation={<div>Nav</div>} main={<div>Main</div>} />);
