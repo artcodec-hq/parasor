@@ -13,7 +13,17 @@ import { createGitRoutes, parseGitLog } from "./git.js";
 const GIT_ROUTE_INTEGRATION_TIMEOUT_MS = 15_000;
 
 function git(cwd: string, args: string[]) {
-  execFileSync("git", args, { cwd, stdio: "pipe" });
+  execFileSync("git", args, {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_AUTHOR_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+    },
+    stdio: "pipe",
+  });
 }
 
 function initRepo(path: string) {

@@ -101,7 +101,7 @@ describe("UploadStaging", () => {
   });
 
   it("sweepStale removes entries past the ttl, leaves fresh ones", async () => {
-    const now = 1_000_000_000_000; // 2001 -- fixed clock for deterministic ages.
+    const now = Date.now() + 60_000;
     const staging = new UploadStaging({
       rootDir: root,
       ttlMs: 1000,
@@ -117,6 +117,8 @@ describe("UploadStaging", () => {
     const freshDir = await staging.acquire(
       "new00000-0000-0000-0000-000000000000",
     );
+    const fresh = new Date(now);
+    utimesSync(freshDir, fresh, fresh);
     const result = await staging.sweepStale();
     expect(result.swept).toContain(oldDir);
     expect(result.swept).not.toContain(freshDir);
@@ -125,10 +127,15 @@ describe("UploadStaging", () => {
   });
 
   it("sweepStale handles a foreign directory via stat fallback", async () => {
-    const staging = new UploadStaging({ rootDir: root, ttlMs: 1000 });
+    const now = Date.now() + 60_000;
+    const staging = new UploadStaging({
+      rootDir: root,
+      ttlMs: 1000,
+      clock: () => now,
+    });
     const foreign = join(staging.uploadsDir, "foreign-no-uuid-name");
     mkdirSync(foreign);
-    const past = new Date(Date.now() - 60_000);
+    const past = new Date(now - 10_000);
     utimesSync(foreign, past, past);
     const result = await staging.sweepStale();
     expect(result.swept).toContain(foreign);

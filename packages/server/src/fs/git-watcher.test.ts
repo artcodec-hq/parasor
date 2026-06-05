@@ -9,11 +9,19 @@ import {
   parseGitStatusV2,
 } from "./git-watcher.js";
 
+const GIT_IDENTITY_ENV = {
+  GIT_AUTHOR_EMAIL: "test@example.com",
+  GIT_AUTHOR_NAME: "Test",
+  GIT_COMMITTER_EMAIL: "test@example.com",
+  GIT_COMMITTER_NAME: "Test",
+};
+
 describe("GitWatcher", () => {
   let root: string;
   let watcher: GitWatcher;
 
   beforeEach(() => {
+    Object.assign(process.env, GIT_IDENTITY_ENV);
     root = join(tmpdir(), `parasor-git-test-${Date.now()}`);
     mkdirSync(root, { recursive: true });
     watcher = new GitWatcher();

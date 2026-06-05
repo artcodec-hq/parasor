@@ -36,13 +36,6 @@
   "engines": {
     "node": ">=22"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "esbuild",
-      "node-pty"
-    ]
-  },
   "devDependencies": {
     "@biomejs/biome": "2.4.11"
   }
