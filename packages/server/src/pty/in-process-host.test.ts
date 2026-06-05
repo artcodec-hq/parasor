@@ -655,6 +655,14 @@ describe("InProcessPtyHost", () => {
     const rawTail = `${"old-output-with-padding-0000000000000000000000\r\n".repeat(12_000)}latest prompt\n`;
     scrollbackLog.append(session.id, rawTail);
     vi.spyOn(scrollbackLog, "readSince").mockReturnValue({ kind: "full" });
+    const readTail = scrollbackLog.readTail.bind(scrollbackLog);
+    let replayTail: string | undefined;
+    const readTailSpy = vi
+      .spyOn(scrollbackLog, "readTail")
+      .mockImplementation((sessionId) => {
+        replayTail = readTail(sessionId);
+        return replayTail;
+      });
 
     const result = await manager.attachClient(
       session.id,
@@ -669,12 +677,14 @@ describe("InProcessPtyHost", () => {
       { onChunk: () => {}, onExit: () => {} },
     );
 
+    expect(readTailSpy).toHaveBeenCalledTimes(1);
+    expect(replayTail).toContain(rawTail);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.replay).toBe("full");
       expect(result.replayDiagnostics?.source).toBe("headless-rebuild");
       expect(result.replayDiagnostics?.rawBytes).toBe(
-        Buffer.byteLength(rawTail, "utf8"),
+        Buffer.byteLength(replayTail ?? "", "utf8"),
       );
       expect(result.replayDiagnostics?.maxBytes).toBe(256 * 1024);
       expect(
