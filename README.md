@@ -1,24 +1,27 @@
 # parasor
 
-> AI-first coding workspace for continuing your desktop development flow from
-> anywhere.
+> Open-source, mobile-first workspace for operating your local development
+> environment from a phone.
 
-parasor runs on your development machine and brings the same AI-driven coding
-workflow to your desk, phone, or another trusted device. Use a browser to work
-with your agents, terminals, Git state, files, and localhost dev servers
-without changing the project environment on the host machine.
+parasor runs on your development machine and turns it into a browser workspace
+for your phone or another trusted device. The core is persistent PTY-backed
+terminal control, so the host machine keeps the real project environment while
+you create projects, install dependencies, run CLI tools, drive AI coding
+agents, edit files, review diffs, inspect Git state, and open localhost dev
+servers from mobile.
 
 ## Highlights
 
-- **Multi-agent parallel panes** - split the workspace into terminal, file
-  tree, editor, diff, and browser views while several agents run at once.
-- **Desk-to-mobile workflow** - startup QR seeds the session cookie, mobile
-  controls cover common terminal keys, and clipboard/file upload works in the
-  on-page terminal.
+- **Agent-independent architecture** - parasor is built around persistent PTY
+  terminal control, not a specific agent runtime. Use Codex, Claude Code,
+  ordinary shell tools, package managers, or existing project workflows as-is.
+- **All-in-one mobile UI** - terminal, Git state, file tree, editor, diff,
+  browser views, localhost dev servers, and agent status are integrated in one
+  browser workspace.
+- **Practical mobile development** - QR login, mobile terminal key controls,
+  clipboard/file upload, and persistent PTYs keep work usable from a phone.
 - **Persistent PTYs** - the user-scope service installs a PTY host daemon so
   scrollback and sessions survive server restarts.
-- **Project-scoped file ops** - browse files, edit in CodeMirror, open diffs,
-  drag files into terminals, and paste images into an upload directory.
 - **Agent-aware shims** - Claude Code and Codex wrappers add runtime integration
   hooks without editing user agent configuration files.
 - **Network port center** - detected localhost dev servers can be opened from
@@ -63,6 +66,22 @@ Token auth and WebSocket Origin checks are the primary defense. Use
 parasor --help             # user-facing subcommands
 parasor qr                 # re-render QR + access URLs over the IPC socket
 parasor qr --iface=en0     # prefer a specific network interface
+```
+
+## Update / Uninstall
+
+Update a global install:
+
+```bash
+npm install -g parasor@latest
+parasor service restart    # if service mode is installed
+```
+
+Uninstall the service before removing the package:
+
+```bash
+parasor service uninstall
+npm uninstall -g parasor
 ```
 
 ## Background Service
