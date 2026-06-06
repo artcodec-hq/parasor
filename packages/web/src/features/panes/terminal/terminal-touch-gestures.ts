@@ -22,44 +22,6 @@ const TAP_MAX_DURATION_MS = 400;
 const TAP_POSITION_SLOP_PX = 24;
 const URL_TAP_HIGHLIGHT_MS = 650;
 const TAP_MOVE_SLOP_PX = 10;
-const TUI_SWIPE_SCROLL_MAX_STEPS = 8;
-
-export type TuiSwipeScrollDirection = "up" | "down";
-
-export interface TuiSwipeScrollStep {
-  direction: TuiSwipeScrollDirection;
-  steps: number;
-  remainingDeltaY: number;
-}
-
-export function resolveTuiSwipeScrollStep(input: {
-  accumulatedDeltaY: number;
-  cellHeight: number;
-}): TuiSwipeScrollStep | null {
-  const threshold = Math.max(8, input.cellHeight);
-  const abs = Math.abs(input.accumulatedDeltaY);
-  const steps = Math.min(
-    TUI_SWIPE_SCROLL_MAX_STEPS,
-    Math.trunc(abs / threshold),
-  );
-  if (steps <= 0) return null;
-  const consumed = steps * threshold * Math.sign(input.accumulatedDeltaY);
-  return {
-    direction: input.accumulatedDeltaY < 0 ? "down" : "up",
-    steps,
-    remainingDeltaY: input.accumulatedDeltaY - consumed,
-  };
-}
-
-export function tuiSwipeArrowKeyInput(input: {
-  direction: TuiSwipeScrollDirection;
-  steps: number;
-  applicationCursorKeysMode: boolean;
-}): string {
-  const key = input.direction === "down" ? "B" : "A";
-  const prefix = input.applicationCursorKeysMode ? "\x1bO" : "\x1b[";
-  return `${prefix}${key}`.repeat(input.steps);
-}
 
 export interface TerminalTapGestureOptions {
   term: XTerm;
@@ -67,12 +29,6 @@ export interface TerminalTapGestureOptions {
   container: HTMLElement;
   /** The `.xterm-screen` element the coordinate-less gesture guard attaches to. */
   screenElement: Element | null;
-  isTuiSwipeScrollEnabled?: () => boolean;
-  onTuiSwipeScroll?: (input: {
-    direction: TuiSwipeScrollDirection;
-    steps: number;
-    data: string;
-  }) => void;
 }
 
 /**
@@ -89,8 +45,6 @@ export function attachTerminalTapGestures({
   term,
   container,
   screenElement,
-  isTuiSwipeScrollEnabled,
-  onTuiSwipeScroll,
 }: TerminalTapGestureOptions): () => void {
   let tapState: {
     startX: number;
@@ -98,9 +52,6 @@ export function attachTerminalTapGestures({
     startedAt: number;
     moved: boolean;
     multi: boolean;
-    swipeActive: boolean;
-    swipeLastY: number;
-    swipeDeltaY: number;
   } | null = null;
   const onTapTouchStart = (event: Event) => {
     const te = event as TouchEvent;
@@ -116,54 +67,16 @@ export function attachTerminalTapGestures({
       startedAt: performance.now(),
       moved: false,
       multi: false,
-      swipeActive: false,
-      swipeLastY: t.clientY,
-      swipeDeltaY: 0,
     };
   };
   const onTapTouchMove = (event: Event) => {
-    if (!tapState) return;
+    if (!tapState || tapState.moved) return;
     const te = event as TouchEvent;
     const t = te.touches[0];
     if (!t) return;
     const dx = t.clientX - tapState.startX;
     const dy = t.clientY - tapState.startY;
     if (Math.hypot(dx, dy) > TAP_MOVE_SLOP_PX) tapState.moved = true;
-    if (
-      !tapState.moved ||
-      !onTuiSwipeScroll ||
-      !isTuiSwipeScrollEnabled?.() ||
-      !screenElement ||
-      term.hasSelection()
-    ) {
-      return;
-    }
-    if (!tapState.swipeActive) {
-      tapState.swipeActive = true;
-      tapState.swipeLastY = t.clientY;
-      tapState.swipeDeltaY = 0;
-      return;
-    }
-    const rect = screenElement.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0 || term.cols <= 0 || term.rows <= 0)
-      return;
-    tapState.swipeDeltaY += t.clientY - tapState.swipeLastY;
-    tapState.swipeLastY = t.clientY;
-    const step = resolveTuiSwipeScrollStep({
-      accumulatedDeltaY: tapState.swipeDeltaY,
-      cellHeight: rect.height / term.rows,
-    });
-    if (!step) return;
-    tapState.swipeDeltaY = step.remainingDeltaY;
-    onTuiSwipeScroll({
-      direction: step.direction,
-      steps: step.steps,
-      data: tuiSwipeArrowKeyInput({
-        direction: step.direction,
-        steps: step.steps,
-        applicationCursorKeysMode: term.modes.applicationCursorKeysMode,
-      }),
-    });
   };
   const onTapTouchEnd = (event: Event) => {
     const state = tapState;
