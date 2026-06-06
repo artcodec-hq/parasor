@@ -5,6 +5,8 @@ import {
   buildCodexEventBridge,
   buildCodexNotifyBridge,
   buildCodexWrapper,
+  buildOpenCodePlugin,
+  buildOpenCodeWrapper,
   buildParasorBashRc,
   buildParasorZshEnv,
   buildParasorZshRc,
@@ -162,6 +164,59 @@ describe("buildCodexWrapper", () => {
   });
 });
 
+describe("buildOpenCodePlugin", () => {
+  const script = buildOpenCodePlugin();
+
+  it("posts opencode events to /hook/notify without logging payloads", () => {
+    expect(script).toContain('const AGENT = "opencode"');
+    expect(script).toContain("/hook/notify");
+    expect(script).toContain("/hook/debug");
+    expect(script).toContain("opencode-plugin-event");
+    expect(script).not.toContain("JSON.stringify(event)");
+  });
+
+  it("discriminates session.status by status.type", () => {
+    expect(script).toContain('if (type === "session.status")');
+    expect(script).toContain("event.properties?.status");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting literal JS template syntax in generated plugin.
+    expect(script).toContain("`${type}:${value}`");
+  });
+
+  it("subscribes to tool execution hooks", () => {
+    expect(script).toContain('"tool.execute.before"');
+    expect(script).toContain('"tool.execute.after"');
+  });
+});
+
+describe("buildOpenCodeWrapper", () => {
+  const script = buildOpenCodeWrapper(
+    "/tmp/parasor/bin",
+    "/tmp/parasor/opencode",
+  );
+
+  it("sets OPENCODE_CONFIG_DIR to the parasor-managed config dir", () => {
+    expect(script).toContain(
+      "PARASOR_OPENCODE_CONFIG_DIR='/tmp/parasor/opencode'",
+    );
+    expect(script).toContain(
+      'export OPENCODE_CONFIG_DIR="$PARASOR_OPENCODE_CONFIG_DIR"',
+    );
+  });
+
+  it("does not overwrite a user-provided OPENCODE_CONFIG_DIR", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting literal shell parameter expansion in generated wrapper.
+    expect(script).toContain('if [ -n "${OPENCODE_CONFIG_DIR:-}" ]');
+    expect(script).toContain("opencode-wrapper-config-dir-skip");
+  });
+
+  it("emits wrapper lifecycle breadcrumbs", () => {
+    expect(script).toContain("opencode-wrapper-entry");
+    expect(script).toContain("opencode-wrapper-config-dir");
+    expect(script).toContain("--connect-timeout 1");
+    expect(script).toContain("--max-time 2");
+  });
+});
+
 describe("shell overlay builders", () => {
   it("reasserts the shim path after sourcing the user's zsh env and rc", () => {
     const envScript = buildParasorZshEnv("/tmp/parasor/bin");
@@ -176,6 +231,8 @@ describe("shell overlay builders", () => {
     expect(rcScript).toContain("command '/tmp/parasor/bin/claude' \"$@\"");
     expect(rcScript).toContain("codex() {");
     expect(rcScript).toContain("command '/tmp/parasor/bin/codex' \"$@\"");
+    expect(rcScript).toContain("opencode() {");
+    expect(rcScript).toContain("command '/tmp/parasor/bin/opencode' \"$@\"");
   });
 
   it("uses a bash rc overlay that sources the user's rc before overriding claude", () => {
@@ -187,6 +244,8 @@ describe("shell overlay builders", () => {
     expect(script).toContain("command '/tmp/parasor/bin/claude' \"$@\"");
     expect(script).toContain("codex() {");
     expect(script).toContain("command '/tmp/parasor/bin/codex' \"$@\"");
+    expect(script).toContain("opencode() {");
+    expect(script).toContain("command '/tmp/parasor/bin/opencode' \"$@\"");
     expect(script).toContain("hash -r");
   });
 });
