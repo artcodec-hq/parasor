@@ -1,9 +1,8 @@
 name: release
 
 on:
-  # Tag-push trigger is intentionally disabled while we iterate locally.
-  # Re-enable by uncommenting the `push` block once NPM_TOKEN is set and a
-  # workflow_dispatch dry-run has succeeded.
+  # Before pushing a release tag, run workflow_dispatch with dry_run=true on the
+  # exact commit you plan to tag. Tags snapshot this workflow file too.
   push:
     tags: ["v*"]
   workflow_dispatch:
@@ -73,9 +72,30 @@ jobs:
           path: dist/*.tgz
           if-no-files-found: error
 
+  verify-publish:
+    name: verify npm publish dry-run
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: tarball
+          path: dist
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: |
+          TARBALL="./dist/${{ needs.package.outputs.tarball }}"
+          test -f "$TARBALL"
+          npm publish "$TARBALL" --access public --dry-run --provenance
+
   publish-npm:
     name: publish npm
-    needs: package
+    needs: [package, verify-publish]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
