@@ -221,10 +221,20 @@ function snapshotTerminal(
     buffer.length - (options.scrollbackLines + options.rows),
   );
   let end = buffer.length;
-  while (end > start) {
-    if (end - 1 <= cursorAbsY) break;
-    if (lineHasSerializedContent(buffer.getLine(end - 1))) break;
-    end -= 1;
+  // Trailing blank lines may only be trimmed when the whole buffer fits inside
+  // the viewport (baseY == 0, content is top-anchored). Once scrollback exists
+  // the viewport is pinned to the buffer's bottom row, so a trailing blank line
+  // is the bottom of the live screen. Trimming it re-anchors the replayed
+  // viewport upward and shifts a full-screen TUI's absolutely-positioned UI
+  // (e.g. the codex composer) up by the trimmed-row count -- the reconnect
+  // desync. Keep the full viewport in that case so the bottom anchor survives.
+  const bottomAnchored = buffer.length > options.rows;
+  if (!bottomAnchored) {
+    while (end > start) {
+      if (end - 1 <= cursorAbsY) break;
+      if (lineHasSerializedContent(buffer.getLine(end - 1))) break;
+      end -= 1;
+    }
   }
 
   const reversedLines: Array<{

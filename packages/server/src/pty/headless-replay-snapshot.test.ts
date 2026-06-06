@@ -237,6 +237,47 @@ describe("buildHeadlessReplaySnapshot", () => {
     expect(replayed.buffer.active.cursorX).toBe(original.buffer.active.cursorX);
   });
 
+  it("keeps the bottom viewport anchor when scrollback exists", async () => {
+    // A full-screen TUI (codex) renders a bottom-anchored composer with a blank
+    // line below the cursor, after history has scrolled the viewport down.
+    // Trimming that trailing blank row would re-anchor the replayed viewport one
+    // row up and desync the absolutely-positioned composer on reconnect.
+    let raw = "\x1b[2J\x1b[H";
+    for (let i = 0; i < 10; i++) raw += `hist ${i}\r\n`;
+    raw += [
+      "\x1b[48;2;71;72;75m",
+      "\x1b[4;1H\x1b[K",
+      "\x1b[5;1H> input\x1b[K",
+      "\x1b[0m",
+      "\x1b[6;1H\x1b[2K",
+      "\x1b[5;8H",
+    ].join("");
+
+    const original = await replayIntoTerminal(raw, { cols: 20, rows: 6 });
+    const snapshot = await buildHeadlessReplaySnapshot(raw, {
+      cols: 20,
+      rows: 6,
+      scrollbackLines: 20,
+      maxBytes: 4096,
+    });
+    const replayed = await replayIntoTerminal(snapshot.text, {
+      cols: 20,
+      rows: 6,
+    });
+
+    const originalBuffer = original.buffer.active;
+    const replayedBuffer = replayed.buffer.active;
+    // composer must land on the same screen row (4) within the viewport.
+    expect(replayedBuffer.baseY).toBe(originalBuffer.baseY);
+    expect(replayedBuffer.cursorY).toBe(originalBuffer.cursorY);
+    expect(
+      replayedBuffer
+        .getLine(replayedBuffer.baseY + 4)
+        ?.translateToString(true)
+        .trimEnd(),
+    ).toBe("> input");
+  });
+
   it("maintains incremental terminal state for cheap snapshots", async () => {
     const state = new HeadlessTerminalState({
       cols: 20,
