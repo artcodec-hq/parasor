@@ -24,9 +24,10 @@ function notifyState(lifecycle: string) {
 }
 
 describe("isKnownAgent", () => {
-  it("recognizes claude, codex, and manual", () => {
+  it("recognizes claude, codex, opencode, and manual", () => {
     expect(isKnownAgent("claude")).toBe(true);
     expect(isKnownAgent("codex")).toBe(true);
+    expect(isKnownAgent("opencode")).toBe(true);
     expect(isKnownAgent("manual")).toBe(true);
   });
   it("rejects unknown agents", () => {
@@ -230,6 +231,66 @@ describe("mapEventType -- codex", () => {
 
   it("returns unknown for unrecognized events", () => {
     expect(mapEventType("codex", "panic")).toEqual({ kind: "unknown" });
+  });
+});
+
+describe("mapEventType -- opencode", () => {
+  it("maps active session status and streaming updates to running", () => {
+    expect(mapEventType("opencode", "session.status:active")).toEqual(
+      hookState("running"),
+    );
+    expect(mapEventType("opencode", "tool.execute.before")).toEqual(
+      hookState("running"),
+    );
+    expect(mapEventType("opencode", "message.part.updated")).toEqual(
+      hookState("running"),
+    );
+  });
+
+  it("maps idle and error session events to completed", () => {
+    expect(mapEventType("opencode", "session.idle")).toEqual(
+      hookState("completed"),
+    );
+    expect(mapEventType("opencode", "session.status:idle")).toEqual(
+      hookState("completed"),
+    );
+    expect(mapEventType("opencode", "session.status:error")).toEqual(
+      hookState("completed"),
+    );
+  });
+
+  it("maps permission and question events to human handoff states", () => {
+    expect(mapEventType("opencode", "permission.asked")).toEqual(
+      hookState("waiting"),
+    );
+    expect(mapEventType("opencode", "permission.replied")).toEqual(
+      hookState("running"),
+    );
+    expect(mapEventType("opencode", "question.asked")).toEqual(
+      hookState("waiting"),
+    );
+    expect(mapEventType("opencode", "question.replied")).toEqual(
+      hookState("running"),
+    );
+  });
+
+  it("treats lifecycle-neutral session events as noop", () => {
+    expect(mapEventType("opencode", "session.created")).toEqual({
+      kind: "noop",
+    });
+    expect(mapEventType("opencode", "session.updated")).toEqual({
+      kind: "noop",
+    });
+  });
+
+  it("requires the session.status discriminator", () => {
+    expect(mapEventType("opencode", "session.status")).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("returns unknown for unrecognized events", () => {
+    expect(mapEventType("opencode", "panic")).toEqual({ kind: "unknown" });
   });
 });
 

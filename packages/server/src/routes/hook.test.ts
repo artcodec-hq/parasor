@@ -232,6 +232,27 @@ describe("hook route -- session lookup + dispatch", () => {
     });
   });
 
+  it("forwards a valid opencode session.idle to setExternalState as completed", async () => {
+    const res = await postNotify(app, {
+      sessionId: "valid-session",
+      agent: "opencode",
+      event: "session.idle",
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      ok: boolean;
+      applied: boolean;
+      lifecycle: string;
+    };
+    expect(data.applied).toBe(true);
+    expect(data.lifecycle).toBe("completed");
+    expect(mocks.setExternalState).toHaveBeenCalledWith("valid-session", {
+      lifecycle: "completed",
+      source: "hook",
+      confidence: "high",
+    });
+  });
+
   it("records hook debug breadcrumbs for a valid session", async () => {
     const res = await app.request("/hook/debug", {
       method: "POST",
