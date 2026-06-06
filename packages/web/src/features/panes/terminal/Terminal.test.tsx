@@ -656,6 +656,20 @@ describe("Terminal", () => {
     expect(mockSendInit).toHaveBeenCalledWith(80, 24);
   });
 
+  it("claims the shared PTY size on touch mount", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (q: string) => ({ matches: q === "(pointer: coarse)" }),
+    });
+
+    render(<Terminal sessionId="s1" />, { wrapper });
+
+    expect(mockSendInit).toHaveBeenCalledWith(80, 24);
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+    );
+  });
+
   it("refreshes visible rows after synchronized output cursor movement settles", async () => {
     render(<Terminal sessionId="s1" />, { wrapper });
 
@@ -1559,6 +1573,58 @@ describe("Terminal", () => {
     });
 
     expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+    );
+  });
+
+  it("pins to bottom during an unchanged desktop claim only when already at bottom", () => {
+    vi.useFakeTimers();
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const term = MockXTerm.mock.results[0]?.value as {
+      buffer: { active: { viewportY: number; baseY: number } };
+    };
+    const termContainer = must(document.querySelector(".xterm")).parentElement;
+
+    term.buffer.active.baseY = 60;
+    term.buffer.active.viewportY = 60;
+    mockTermResize.mockClear();
+    mockTermScrollToBottom.mockClear();
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    act(() => {
+      termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
+    });
+
+    expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockTermScrollToBottom).toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+    );
+    vi.useRealTimers();
+  });
+
+  it("keeps reading position during an unchanged desktop claim when scrolled up", () => {
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const term = MockXTerm.mock.results[0]?.value as {
+      buffer: { active: { viewportY: number; baseY: number } };
+    };
+    const termContainer = must(document.querySelector(".xterm")).parentElement;
+
+    term.buffer.active.baseY = 60;
+    term.buffer.active.viewportY = 22;
+    mockTermResize.mockClear();
+    mockTermScrollToBottom.mockClear();
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    act(() => {
+      termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
+    });
+
+    expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockTermScrollToBottom).not.toHaveBeenCalled();
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
     );

@@ -152,6 +152,19 @@ export function useTerminalViewportLifecycle({
             rows: term.rows,
           });
           sendInit(term.cols, term.rows);
+          if (isTouchRef.current) {
+            // On mobile, terminal mount means this pane is the foreground
+            // surface. Existing running PTYs ignore passive attach dimensions,
+            // so explicitly claim this viewport size.
+            const ptyResizeSent = sendResize();
+            traceTerminalEvent("terminal-visible-refresh", {
+              sessionId,
+              reason: "mount",
+              cols: term.cols,
+              rows: term.rows,
+              ptyResizeSent,
+            });
+          }
           firstDataTimerRef.current = window.setTimeout(() => {
             firstDataTimerRef.current = null;
             if (!hasReceivedDataRef.current) {
@@ -180,33 +193,31 @@ export function useTerminalViewportLifecycle({
 
       let resizeTimer: number | null = null;
       let keyboardResizeDeferred = false;
-      // After the keyboard opens, a full-screen TUI (codex/claude) repaints on
-      // SIGWINCH -- it clears and redraws from the top, which strands the
-      // viewport away from its input line at the bottom. A single
+      // After a foreground/keyboard resize claim, a full-screen TUI
+      // (codex/claude) repaints on SIGWINCH -- it clears and redraws from the
+      // top, which can strand the viewport away from its input line. A single
       // scrollToBottom before that repaint is overwritten. Instead, pin the
-      // viewport to the tail for a short window so it follows the repaint
-      // stream and lands on the input line. Normal output after the window
-      // scrolls freely again.
-      let keyboardBottomPinFrame: number | null = null;
-      let keyboardBottomPinUntil = 0;
-      const stopKeyboardBottomPin = () => {
-        if (keyboardBottomPinFrame === null) return;
-        cancelAnimationFrame(keyboardBottomPinFrame);
-        keyboardBottomPinFrame = null;
+      // viewport to the tail for a short window so it follows the repaint.
+      let tailPinFrame: number | null = null;
+      let tailPinUntil = 0;
+      const stopTailPin = () => {
+        if (tailPinFrame === null) return;
+        cancelAnimationFrame(tailPinFrame);
+        tailPinFrame = null;
       };
-      const startKeyboardBottomPin = () => {
+      const startTailPin = () => {
         term.scrollToBottom();
-        keyboardBottomPinUntil = performance.now() + KEYBOARD_BOTTOM_PIN_MS;
-        if (keyboardBottomPinFrame !== null) return;
+        tailPinUntil = performance.now() + KEYBOARD_BOTTOM_PIN_MS;
+        if (tailPinFrame !== null) return;
         const tick = () => {
           term.scrollToBottom();
-          if (performance.now() < keyboardBottomPinUntil) {
-            keyboardBottomPinFrame = requestAnimationFrame(tick);
+          if (performance.now() < tailPinUntil) {
+            tailPinFrame = requestAnimationFrame(tick);
           } else {
-            keyboardBottomPinFrame = null;
+            tailPinFrame = null;
           }
         };
-        keyboardBottomPinFrame = requestAnimationFrame(tick);
+        tailPinFrame = requestAnimationFrame(tick);
       };
       const clearResizeTimer = () => {
         if (resizeTimer === null) return;
@@ -254,6 +265,8 @@ export function useTerminalViewportLifecycle({
         if (proposed.cols === term.cols && proposed.rows === term.rows) {
           // Local size already matches, but on engagement still (re)claim the
           // shared PTY -- it may be sized for another connected device.
+          const anchor = captureScrollAnchor(term);
+          if (forceClaim && anchor.wasAtBottom) startTailPin();
           const ptyResizeSent = forceClaim ? sendResize() : false;
           refreshVisibleRows(term);
           const reason = forceClaim ? "claim-unchanged" : "unchanged";
@@ -297,11 +310,16 @@ export function useTerminalViewportLifecycle({
         // through to anchor restore, preserving the reading position.
         const keyboardOpening =
           isTouchRef.current && proposed.rows < rowsBeforeResize;
+        const foregroundBottomClaim = forceClaim && anchor.wasAtBottom;
         let reason: string;
         let targetViewportY: number | undefined;
         if (keyboardOpening) {
-          startKeyboardBottomPin();
+          startTailPin();
           reason = "keyboard-open-bottom";
+          targetViewportY = undefined;
+        } else if (foregroundBottomClaim) {
+          startTailPin();
+          reason = "foreground-bottom";
           targetViewportY = undefined;
         } else {
           const restore = restoreScrollAnchor(term, anchor);
@@ -407,7 +425,7 @@ export function useTerminalViewportLifecycle({
         clearFirstDataTimer();
         clearInitFallbackTimer();
         clearResizeTimer();
-        stopKeyboardBottomPin();
+        stopTailPin();
         if (flushDeferredResizeRef.current === flushDeferredKeyboardResize) {
           flushDeferredResizeRef.current = null;
         }
