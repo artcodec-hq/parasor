@@ -657,6 +657,7 @@ describe("Terminal", () => {
   });
 
   it("claims the shared PTY size on touch mount", () => {
+    enableTerminalTrace();
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: (q: string) => ({ matches: q === "(pointer: coarse)" }),
@@ -667,6 +668,24 @@ describe("Terminal", () => {
     expect(mockSendInit).toHaveBeenCalledWith(80, 24);
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+    );
+    expect(window.parasorTerminalTrace?.dump()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-viewport-claim",
+          reason: "mount",
+          cols: 80,
+          rows: 24,
+        }),
+      ]),
+    );
+    expect(window.parasorTerminalTrace?.dump()).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-visible-refresh",
+          reason: "mount",
+        }),
+      ]),
     );
   });
 

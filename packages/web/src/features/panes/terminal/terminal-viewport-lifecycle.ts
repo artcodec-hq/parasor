@@ -157,7 +157,7 @@ export function useTerminalViewportLifecycle({
             // surface. Existing running PTYs ignore passive attach dimensions,
             // so explicitly claim this viewport size.
             const ptyResizeSent = sendResize();
-            traceTerminalEvent("terminal-visible-refresh", {
+            traceTerminalEvent("terminal-viewport-claim", {
               sessionId,
               reason: "mount",
               cols: term.cols,
