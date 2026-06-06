@@ -118,6 +118,15 @@ export function buildOpenCodePlugin(): string {
 // user OpenCode config or logging event payloads.
 
 const AGENT = "opencode";
+const FORWARDED_EVENTS = new Set([
+  "session.idle",
+  "session.error",
+  "permission.asked",
+  "permission.replied",
+  "question.asked",
+  "question.replied",
+  "question.rejected",
+]);
 
 async function post(path, body) {
   const port = process.env.PARASOR_PORT;
@@ -160,7 +169,7 @@ function eventName(event) {
     const value = statusType(event.properties?.status);
     return value ? \`\${type}:\${value}\` : "";
   }
-  return type;
+  return FORWARDED_EVENTS.has(type) ? type : "";
 }
 
 export const ParasorStatusPlugin = async () => {

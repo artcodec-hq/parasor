@@ -235,14 +235,14 @@ describe("mapEventType -- codex", () => {
 });
 
 describe("mapEventType -- opencode", () => {
-  it("maps active session status and streaming updates to running", () => {
+  it("maps active/busy session status and tool execution to running", () => {
     expect(mapEventType("opencode", "session.status:active")).toEqual(
       hookState("running"),
     );
-    expect(mapEventType("opencode", "tool.execute.before")).toEqual(
+    expect(mapEventType("opencode", "session.status:busy")).toEqual(
       hookState("running"),
     );
-    expect(mapEventType("opencode", "message.part.updated")).toEqual(
+    expect(mapEventType("opencode", "tool.execute.before")).toEqual(
       hookState("running"),
     );
   });
@@ -279,6 +279,24 @@ describe("mapEventType -- opencode", () => {
       kind: "noop",
     });
     expect(mapEventType("opencode", "session.updated")).toEqual({
+      kind: "noop",
+    });
+    expect(mapEventType("opencode", "session.diff")).toEqual({
+      kind: "noop",
+    });
+  });
+
+  it("treats message updates as noop so post-idle rendering does not reopen working", () => {
+    expect(mapEventType("opencode", "session.status:idle")).toEqual(
+      hookState("completed"),
+    );
+    expect(mapEventType("opencode", "message.updated")).toEqual({
+      kind: "noop",
+    });
+    expect(mapEventType("opencode", "message.part.updated")).toEqual({
+      kind: "noop",
+    });
+    expect(mapEventType("opencode", "message.part.delta")).toEqual({
       kind: "noop",
     });
   });

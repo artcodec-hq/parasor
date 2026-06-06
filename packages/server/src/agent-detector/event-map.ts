@@ -121,7 +121,9 @@ const CODEX_EVENTS: Record<string, EventMapResult> = {
 const OPENCODE_EVENTS: Record<string, EventMapResult> = {
   "session.created": NOOP,
   "session.updated": NOOP,
+  "session.diff": NOOP,
   "session.status:active": hookState("running"),
+  "session.status:busy": hookState("running"),
   "session.status:idle": hookState("completed"),
   "session.status:error": hookState("completed"),
   "session.status:retry": hookState("running"),
@@ -134,8 +136,9 @@ const OPENCODE_EVENTS: Record<string, EventMapResult> = {
   "question.rejected": hookState("running"),
   "tool.execute.before": hookState("running"),
   "tool.execute.after": hookState("running"),
-  "message.updated": hookState("running"),
-  "message.part.updated": hookState("running"),
+  "message.updated": NOOP,
+  "message.part.updated": NOOP,
+  "message.part.delta": NOOP,
 };
 
 // Manual agent: used by `parasor notify` CLI and shell wrappers that want

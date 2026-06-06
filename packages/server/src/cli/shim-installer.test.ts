@@ -169,6 +169,7 @@ describe("buildOpenCodePlugin", () => {
 
   it("posts opencode events to /hook/notify without logging payloads", () => {
     expect(script).toContain('const AGENT = "opencode"');
+    expect(script).toContain("FORWARDED_EVENTS");
     expect(script).toContain("/hook/notify");
     expect(script).toContain("/hook/debug");
     expect(script).toContain("opencode-plugin-event");
@@ -180,6 +181,11 @@ describe("buildOpenCodePlugin", () => {
     expect(script).toContain("event.properties?.status");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting literal JS template syntax in generated plugin.
     expect(script).toContain("`${type}:${value}`");
+  });
+
+  it("does not forward noisy message delta events", () => {
+    expect(script).toContain('FORWARDED_EVENTS.has(type) ? type : ""');
+    expect(script).not.toContain('"message.part.delta",');
   });
 
   it("subscribes to tool execution hooks", () => {
