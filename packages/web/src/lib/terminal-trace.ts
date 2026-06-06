@@ -106,6 +106,8 @@ export type TerminalTraceEvent = {
   unicodeVersion?: string;
   isTouch?: boolean;
   isIos?: boolean;
+  direction?: string;
+  steps?: number;
 };
 
 export type TerminalTracePublicApi = {

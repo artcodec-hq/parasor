@@ -69,6 +69,7 @@ import {
   restoreScrollAnchor,
   type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
+import { isOpenCodeTerminalSession } from "./terminal-session-agent.js";
 import {
   attachTerminalTapGestures,
   attachTerminalTouchSelection,
@@ -678,6 +679,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       useState<SelectionOverlayState | null>(null);
     const selectionOverlayRef = useRef<SelectionOverlayState | null>(null);
     selectionOverlayRef.current = selectionOverlay;
+    const openCodeSwipeScrollEnabledRef = useRef(false);
+    openCodeSwipeScrollEnabledRef.current =
+      isTouch &&
+      isOpenCodeTerminalSession({
+        sessionCommand,
+        sessionTitle,
+      });
     const [inputToolbarAnchor, setInputToolbarAnchor] = useState<{
       clientX: number;
       clientY: number;
@@ -1313,6 +1321,16 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         term,
         container,
         screenElement,
+        isTuiSwipeScrollEnabled: () => openCodeSwipeScrollEnabledRef.current,
+        onTuiSwipeScroll: ({ data, direction, steps }) => {
+          traceTerminalEvent("terminal-opencode-touch-scroll", {
+            sessionId,
+            direction,
+            dataLength: data.length,
+            steps,
+          });
+          send({ type: "input", data });
+        },
       });
 
       const cleanupTouchSelection = attachTerminalTouchSelection({
