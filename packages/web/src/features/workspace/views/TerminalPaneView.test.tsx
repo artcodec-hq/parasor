@@ -1,6 +1,10 @@
 import type { Session, TerminalPaneState } from "@parasor/shared";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  disableTerminalTrace,
+  enableTerminalTrace,
+} from "../../../lib/terminal-trace.js";
 import { TerminalPaneView } from "./TerminalPaneView.js";
 
 vi.mock("../../panes/terminal/TerminalPane.js", () => ({
@@ -12,11 +16,13 @@ vi.mock("../../panes/terminal/TerminalPane.js", () => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  disableTerminalTrace();
   window.parasorTerminalTrace = undefined;
 });
 
 describe("TerminalPaneView", () => {
   it("captures terminal diagnostics from the terminal pane header", async () => {
+    enableTerminalTrace();
     const captureTerminalInput = vi.fn().mockResolvedValue({ ok: true });
     window.parasorTerminalTrace = {
       captureTerminalInput,
@@ -40,7 +46,26 @@ describe("TerminalPaneView", () => {
     });
   });
 
+  it("does not show the diagnostic capture button while terminal trace is disabled", () => {
+    render(<TerminalPaneView {...makeProps()} />);
+
+    expect(screen.queryByLabelText("Capture terminal diagnostics")).toBeNull();
+  });
+
+  it("updates the diagnostic capture button when terminal trace is toggled", () => {
+    render(<TerminalPaneView {...makeProps()} />);
+
+    expect(screen.queryByLabelText("Capture terminal diagnostics")).toBeNull();
+
+    act(() => enableTerminalTrace());
+    expect(screen.getByLabelText("Capture terminal diagnostics")).toBeTruthy();
+
+    act(() => disableTerminalTrace());
+    expect(screen.queryByLabelText("Capture terminal diagnostics")).toBeNull();
+  });
+
   it("does not show the diagnostic capture button for ended terminal sessions", () => {
+    enableTerminalTrace();
     render(
       <TerminalPaneView
         {...makeProps({ session: makeSession({ state: "ended" }) })}

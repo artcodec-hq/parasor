@@ -7,6 +7,7 @@ import {
   scheduleClientStartupDiagnosticCapture,
   scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
+  subscribeTerminalTraceEnabled,
   traceTerminalEvent,
 } from "./terminal-trace.js";
 
@@ -33,6 +34,7 @@ function installStorage(name: "localStorage" | "sessionStorage"): Storage {
 describe("terminal-trace", () => {
   beforeEach(() => {
     installStorage("localStorage");
+    window.history.replaceState(null, "", "/");
     vi.restoreAllMocks();
     window.parasorTerminalTrace?.clear();
     disableTerminalTrace();
@@ -69,6 +71,19 @@ describe("terminal-trace", () => {
     expect(JSON.stringify(window.parasorTerminalTrace?.dump())).not.toContain(
       "secret",
     );
+  });
+
+  it("notifies subscribers when terminal trace is enabled or disabled", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeTerminalTraceEnabled(listener);
+
+    enableTerminalTrace();
+    enableTerminalTrace();
+    disableTerminalTrace();
+    unsubscribe();
+    enableTerminalTrace();
+
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 
   it("returns a no-op main-thread sampler when disabled", () => {
