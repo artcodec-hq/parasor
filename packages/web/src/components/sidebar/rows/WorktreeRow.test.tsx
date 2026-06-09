@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   SidebarProject,
   SidebarSelection,
@@ -7,36 +7,8 @@ import type {
 } from "../model/types.js";
 import { WorktreeRow } from "./WorktreeRow.js";
 
-function installStorage(): Storage {
-  const values = new Map<string, string>();
-  const storage = {
-    get length() {
-      return values.size;
-    },
-    clear: () => values.clear(),
-    getItem: (key: string) => values.get(key) ?? null,
-    key: (index: number) => [...values.keys()][index] ?? null,
-    removeItem: (key: string) => values.delete(key),
-    setItem: (key: string, value: string) => values.set(key, String(value)),
-  } as Storage;
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: storage,
-  });
-  Object.defineProperty(window, "localStorage", {
-    configurable: true,
-    value: storage,
-  });
-  return storage;
-}
-
-beforeEach(() => {
-  installStorage();
-});
-
 afterEach(() => {
   cleanup();
-  localStorage.clear();
 });
 
 const project: SidebarProject = {
@@ -191,19 +163,16 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
   });
 });
 
-describe("WorktreeRow disclosure persistence (disclosure persistence)", () => {
-  it("restores a collapsed worktree row from localStorage", () => {
+describe("WorktreeRow disclosure state", () => {
+  it("renders a collapsed worktree row from controlled state", () => {
     const worktree = makeWorktreeWithChild();
-    localStorage.setItem(
-      "parasor:sidebar:worktree-open:p1",
-      JSON.stringify({ [worktree.path]: false }),
-    );
 
     render(
       <WorktreeRow
         project={project}
         worktree={worktree}
         selection={selection}
+        worktreeOpen={{ [worktree.path]: false }}
       />,
     );
 
@@ -211,33 +180,32 @@ describe("WorktreeRow disclosure persistence (disclosure persistence)", () => {
     expect(screen.queryByText("codex")).toBeNull();
   });
 
-  it("persists user disclosure toggles per project and worktree path", () => {
+  it("reports user disclosure toggles per project and worktree path", () => {
     const worktree = makeWorktreeWithChild();
-    const { unmount } = render(
+    const onWorktreeOpenChange = vi.fn();
+    const { rerender } = render(
       <WorktreeRow
         project={project}
         worktree={worktree}
         selection={selection}
+        onWorktreeOpenChange={onWorktreeOpenChange}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse main" }));
+    expect(onWorktreeOpenChange).toHaveBeenCalledWith(
+      project.id,
+      worktree.path,
+      false,
+    );
 
-    expect(
-      JSON.parse(
-        localStorage.getItem("parasor:sidebar:worktree-open:p1") ?? "{}",
-      ),
-    ).toEqual({
-      [worktree.path]: false,
-    });
-    expect(screen.queryByText("codex")).toBeNull();
-
-    unmount();
-    render(
+    rerender(
       <WorktreeRow
         project={project}
         worktree={worktree}
         selection={selection}
+        worktreeOpen={{ [worktree.path]: false }}
+        onWorktreeOpenChange={onWorktreeOpenChange}
       />,
     );
 
@@ -247,33 +215,30 @@ describe("WorktreeRow disclosure persistence (disclosure persistence)", () => {
 
   it("forceOpen shows filtered results without overwriting stored disclosure state", () => {
     const worktree = makeWorktreeWithChild();
-    localStorage.setItem(
-      "parasor:sidebar:worktree-open:p1",
-      JSON.stringify({ [worktree.path]: false }),
-    );
+    const onWorktreeOpenChange = vi.fn();
 
     const { rerender } = render(
       <WorktreeRow
         project={project}
         worktree={worktree}
         selection={selection}
+        worktreeOpen={{ [worktree.path]: false }}
+        onWorktreeOpenChange={onWorktreeOpenChange}
         forceOpen
       />,
     );
 
     expect(screen.getByRole("button", { name: "Collapse main" })).toBeTruthy();
     expect(screen.getByText("codex")).toBeTruthy();
-    expect(
-      JSON.parse(
-        localStorage.getItem("parasor:sidebar:worktree-open:p1") ?? "{}",
-      ),
-    ).toEqual({ [worktree.path]: false });
+    expect(onWorktreeOpenChange).not.toHaveBeenCalled();
 
     rerender(
       <WorktreeRow
         project={project}
         worktree={worktree}
         selection={selection}
+        worktreeOpen={{ [worktree.path]: false }}
+        onWorktreeOpenChange={onWorktreeOpenChange}
       />,
     );
 

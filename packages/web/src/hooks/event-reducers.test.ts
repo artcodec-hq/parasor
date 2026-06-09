@@ -200,6 +200,42 @@ describe("applyEvent: pane-commands-changed", () => {
   });
 });
 
+describe("applyEvent: sidebar-state-changed", () => {
+  it("replaces sidebar state for the matching project state", () => {
+    const store = storeWith({
+      projectStates: {
+        p1: {
+          projectId: "p1",
+          layout: null,
+          worktrees: [],
+          openFiles: [],
+          lastFocusedPaneId: null,
+          focusedPaneId: null,
+          sidebar: {
+            paneOrder: { "/old": ["terminal:old"] },
+            worktreeOpen: {},
+          },
+          lastAccessedAt: 1,
+        },
+      },
+    });
+
+    const next = applyEvent(store, {
+      type: "sidebar-state-changed",
+      projectId: "p1",
+      sidebar: {
+        paneOrder: { "/repo": ["terminal:s1"] },
+        worktreeOpen: { "/repo": false },
+      },
+    });
+
+    expect(next.projectStates.p1?.sidebar).toEqual({
+      paneOrder: { "/repo": ["terminal:s1"] },
+      worktreeOpen: { "/repo": false },
+    });
+  });
+});
+
 describe("applyEvent: worktree-created", () => {
   const worktree = { path: "/tmp/wt-a", head: "abc", branch: "feat/a" };
   const project = {

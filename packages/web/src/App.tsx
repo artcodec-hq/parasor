@@ -1,10 +1,18 @@
 import type {
   IdeCommandConfig,
   PortDetectionMode,
+  ProjectSidebarState,
+  ProjectSidebarStatePatch,
   Session,
   SessionCommand,
 } from "@parasor/shared";
-import { filesPaneId, gitPaneId, terminalPaneId } from "@parasor/shared";
+import {
+  applyProjectSidebarStatePatch,
+  filesPaneId,
+  gitPaneId,
+  normalizeProjectSidebarState,
+  terminalPaneId,
+} from "@parasor/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommitDialog } from "./components/overlays/CommitDialog.js";
 import { MissingSessionRouteState } from "./components/overlays/MissingSessionRouteState.js";
@@ -41,6 +49,7 @@ import {
   restartSession as restartSessionRequest,
   setSessionPin as setSessionPinRequest,
 } from "./features/workspace/session-api.js";
+import { saveProjectSidebarState } from "./features/workspace/sidebar-state-api.js";
 import { useAgentSounds } from "./features/workspace/useAgentSounds.js";
 import { useAttentionDismissals } from "./features/workspace/useAttentionDismissals.js";
 import { useClientBrowserPanes } from "./features/workspace/useClientBrowserPanes.js";
@@ -53,6 +62,7 @@ import { useErrorToast } from "./features/workspace/useErrorToast.js";
 import { useGitGraphSelectionForFocus } from "./features/workspace/useGitGraphSelectionForFocus.js";
 import { useGitWorkflow } from "./features/workspace/useGitWorkflow.js";
 import { useLegacyPaneCommandsMigration } from "./features/workspace/useLegacyPaneCommandsMigration.js";
+import { useLegacySidebarStateMigration } from "./features/workspace/useLegacySidebarStateMigration.js";
 import { useLocalIdeCapability } from "./features/workspace/useLocalIdeCapability.js";
 import { useProjectReorder } from "./features/workspace/useProjectReorder.js";
 import { useReviewPendingSessions } from "./features/workspace/useReviewPendingSessions.js";
@@ -83,7 +93,6 @@ import {
   paneCommandsWithBuiltins,
 } from "./lib/pane-command-store.js";
 import { requestPaneFocus } from "./lib/pane-focus-registry.js";
-import { prunePaneOrderForReorder } from "./lib/pane-order-prune.js";
 import {
   buildReachablePortLookup,
   findReachablePortForOpenUrl,
@@ -112,7 +121,6 @@ export function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [monitorActive, setMonitorActive] = useState(false);
-  const [paneOrderTick, setPaneOrderTick] = useState(0);
   const [errorToast, setErrorToast] = useErrorToast();
   const [optimisticSessions, setOptimisticSessions] = useState<Session[]>([]);
 
@@ -805,33 +813,61 @@ export function App() {
     reorder: handleReorderProjects,
   } = useProjectReorder({ onError: setErrorToast });
 
+  const patchProjectSidebarState = useCallback(
+    (
+      projectId: string,
+      patch: ProjectSidebarStatePatch,
+      errorMessage: string,
+    ) => {
+      const previous = normalizeProjectSidebarState(
+        store.projectStates[projectId]?.sidebar,
+      );
+      const next = applyProjectSidebarStatePatch(previous, patch);
+      store.seedSidebarState(projectId, next);
+      const request = saveProjectSidebarState(projectId, patch);
+      void request.catch(() => {
+        store.seedSidebarState(projectId, previous);
+        setErrorToast(errorMessage);
+      });
+      return request;
+    },
+    [store, setErrorToast],
+  );
+
   const handleReorderPanes = useCallback(
     (projectId: string, worktreePath: string, childIds: string[]) => {
-      const key = `paneOrder:${projectId}`;
-      // `prunePaneOrderForReorder` drops stale entries for worktrees no
-      // longer present on the server (deleted/renamed) while always
-      // keeping the path being written -- a reorder for a freshly-created
-      // worktree can race the next projects broadcast.
+      const current = normalizeProjectSidebarState(
+        store.projectStates[projectId]?.sidebar,
+      );
       const validPaths =
         sidebarProjectsRef.current
           .find((p) => p.id === projectId)
           ?.worktrees.map((w) => w.path) ?? [];
-      const next = prunePaneOrderForReorder(
-        window.localStorage.getItem(key),
-        validPaths,
-        worktreePath,
-        childIds,
-      );
-      try {
-        window.localStorage.setItem(key, JSON.stringify(next));
-      } catch {
-        // Quota exceeded or storage disabled: paneOrder is a soft
-        // preference and the in-session reorder already took effect, so
-        // drop silently rather than surfacing an error the user cannot act on.
+      const allowed = new Set(validPaths);
+      allowed.add(worktreePath);
+      const paneOrder: NonNullable<ProjectSidebarStatePatch["paneOrder"]> = {};
+      for (const path of Object.keys(current.paneOrder)) {
+        if (!allowed.has(path)) paneOrder[path] = null;
       }
-      setPaneOrderTick((t) => t + 1);
+      paneOrder[worktreePath] = childIds;
+      patchProjectSidebarState(
+        projectId,
+        { paneOrder },
+        "Failed to save pane order",
+      );
     },
-    [],
+    [patchProjectSidebarState, store.projectStates],
+  );
+
+  const handleWorktreeOpenChange = useCallback(
+    (projectId: string, worktreePath: string, open: boolean) => {
+      patchProjectSidebarState(
+        projectId,
+        { worktreeOpen: { [worktreePath]: open } },
+        "Failed to save sidebar open state",
+      );
+    },
+    [patchProjectSidebarState],
   );
 
   const loadWorktreeLocalFiles = useCallback((projectId: string) => {
@@ -894,8 +930,6 @@ export function App() {
   });
 
   const sidebarProjects = useMemo(() => {
-    // paneOrderTick invalidates ordering kept in the pane-order override store.
-    void paneOrderTick;
     return applyPaneOrderOverrides(
       buildSidebarProjects({
         projects: store.projects,
@@ -911,9 +945,11 @@ export function App() {
           store.projects,
         ),
       }),
+      store.projectStates,
     );
   }, [
     store.projects,
+    store.projectStates,
     activeProjectId,
     paneModel.worktrees,
     sessions,
@@ -922,7 +958,6 @@ export function App() {
     worktreesWithCounters,
     store.gitStates,
     attentionDismissed,
-    paneOrderTick,
   ]);
 
   // handleReorderPanes needs the project's current worktree paths to
@@ -931,6 +966,18 @@ export function App() {
   // sidebar re-renders.
   const sidebarProjectsRef = useRef(sidebarProjects);
   sidebarProjectsRef.current = sidebarProjects;
+
+  useLegacySidebarStateMigration({
+    hydrated: store.hydrated,
+    projects: sidebarProjects,
+    projectStates: store.projectStates,
+    onMigrate: (projectId, patch) =>
+      patchProjectSidebarState(
+        projectId,
+        patch,
+        "Failed to migrate sidebar state",
+      ),
+  });
 
   const handleSelectMonitor = useCallback(() => {
     setMonitorActive(true);
@@ -1014,6 +1061,16 @@ export function App() {
     [toggleSessionPin],
   );
 
+  const worktreeOpenByProject = useMemo(() => {
+    const out: Record<string, ProjectSidebarState["worktreeOpen"]> = {};
+    for (const project of store.projects) {
+      out[project.id] = normalizeProjectSidebarState(
+        store.projectStates[project.id]?.sidebar,
+      ).worktreeOpen;
+    }
+    return out;
+  }, [store.projects, store.projectStates]);
+
   const sidebarProps = useMemo(
     () => ({
       projects: sidebarProjects,
@@ -1041,6 +1098,8 @@ export function App() {
       onSelectChild: handleSelectChild,
       onOpenContainer: handleOpenContainer,
       onToggleChildPin: handleToggleSidebarChildPin,
+      worktreeOpenByProject,
+      onWorktreeOpenChange: handleWorktreeOpenChange,
       onNewProject: handleNewProject,
       onOpenSettings: handleOpenSettings,
       searchOpen: sidebarSearchOpen,
@@ -1067,6 +1126,8 @@ export function App() {
       handleSelectChild,
       handleOpenContainer,
       handleToggleSidebarChildPin,
+      worktreeOpenByProject,
+      handleWorktreeOpenChange,
       handleNewProject,
       handleOpenSettings,
       sidebarSearchOpen,

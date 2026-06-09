@@ -122,6 +122,58 @@ describe("AppStateStore", () => {
     ]);
   });
 
+  it("backfills and normalizes project sidebar state on load", () => {
+    const existing: AppState = {
+      version: 1,
+      projects: [],
+      projectStates: {
+        p1: {
+          projectId: "p1",
+          layout: null,
+          worktrees: [],
+          openFiles: [],
+          lastFocusedPaneId: null,
+          focusedPaneId: null,
+          sidebar: {
+            paneOrder: { "/repo": ["terminal:s1", 123] } as never,
+            worktreeOpen: { "/repo": false, bad: "nope" } as never,
+          },
+          lastAccessedAt: 1,
+        },
+        p2: {
+          projectId: "p2",
+          layout: null,
+          worktrees: [],
+          openFiles: [],
+          lastFocusedPaneId: null,
+          focusedPaneId: null,
+          lastAccessedAt: 2,
+        },
+      },
+      sessions: [],
+      sessionRecords: [],
+      paneCommands: [],
+      ideCommands: [],
+      serviceConfig: {
+        preventIdleSleep: false,
+        portDetection: "all-interfaces",
+        dropSizeMaxBytes: DEFAULT_DROP_SIZE_MAX_BYTES,
+        dropSizeHardMaxBytes: DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
+      },
+    };
+    writeFileSync(join(dir, "state.json"), JSON.stringify(existing), "utf-8");
+
+    const store = new AppStateStore({ dir });
+    expect(store.get().projectStates.p1?.sidebar).toEqual({
+      paneOrder: { "/repo": ["terminal:s1"] },
+      worktreeOpen: { "/repo": false },
+    });
+    expect(store.get().projectStates.p2?.sidebar).toEqual({
+      paneOrder: {},
+      worktreeOpen: {},
+    });
+  });
+
   it("renames corrupted file and starts fresh", () => {
     writeFileSync(join(dir, "state.json"), "not valid json {{{}}", "utf-8");
 

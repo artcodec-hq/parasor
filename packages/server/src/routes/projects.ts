@@ -1,5 +1,9 @@
 import { getConnInfo } from "@hono/node-server/conninfo";
-import type { PaneNode, Worktree } from "@parasor/shared";
+import {
+  normalizeProjectSidebarStatePatch,
+  type PaneNode,
+  type Worktree,
+} from "@parasor/shared";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import {
@@ -9,6 +13,7 @@ import {
 } from "../application/workspace/errors.js";
 import { createProjectCommands } from "../application/workspace/project-commands.js";
 import { createProjectQueries } from "../application/workspace/project-queries.js";
+import { createSidebarStateCommands } from "../application/workspace/sidebar-state-commands.js";
 import { createWorktreeCommands } from "../application/workspace/worktree-commands.js";
 import {
   ideEditorLabel,
@@ -56,6 +61,11 @@ export function createProjectRoutes(
     eventBus,
     getProjectWorktrees: (projectId) => worktreeCache.get()[projectId] ?? [],
   });
+  const sidebarStateCommands = createSidebarStateCommands({
+    appStateStore: store,
+    eventBus,
+    projectManager: pm,
+  });
   const launchIde = opts.openInIde ?? openInIde;
   const canOpenLocalIdeFromAddress =
     opts.isLocalMachineAddress ?? isLocalMachineAddress;
@@ -95,6 +105,28 @@ export function createProjectRoutes(
       return c.json({ error: "ids must match the current project set" }, 400);
     }
     return c.json({ ok: true });
+  });
+
+  routes.patch("/:id/sidebar-state", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<unknown>().catch(() => null);
+    const patch = normalizeProjectSidebarStatePatch(body);
+    if (!patch) {
+      return c.json(
+        { error: "paneOrder or worktreeOpen patch is required" },
+        400,
+      );
+    }
+
+    try {
+      const sidebar = sidebarStateCommands.updateSidebarState(id, patch);
+      return c.json({ sidebar });
+    } catch (error) {
+      if (error instanceof WorkspaceNotFoundError) {
+        return c.json({ error: "Not found" }, 404);
+      }
+      throw error;
+    }
   });
 
   routes.post("/", async (c) => {

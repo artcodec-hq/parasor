@@ -334,6 +334,62 @@ describe("project routes", () => {
     });
   });
 
+  describe("PATCH /api/projects/:id/sidebar-state", () => {
+    it("merges sidebar state patches and broadcasts the full sidebar state", async () => {
+      mocks.projects.set("p1", makeProject({ id: "p1" }));
+      mocks.projectStates.p1 = {
+        ...makeProjectState("p1"),
+        sidebar: {
+          paneOrder: { "/old": ["terminal:old"] },
+          worktreeOpen: { "/repo": true },
+        },
+      };
+
+      const res = await app.request("/api/projects/p1/sidebar-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paneOrder: { "/repo": ["terminal:s1"], "/old": null },
+          worktreeOpen: { "/repo": false },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mocks.projectStates.p1.sidebar).toEqual({
+        paneOrder: { "/repo": ["terminal:s1"] },
+        worktreeOpen: { "/repo": false },
+      });
+      expect(mocks.eventBus.broadcast).toHaveBeenCalledWith({
+        type: "sidebar-state-changed",
+        projectId: "p1",
+        sidebar: {
+          paneOrder: { "/repo": ["terminal:s1"] },
+          worktreeOpen: { "/repo": false },
+        },
+      });
+    });
+
+    it("returns 400 for invalid sidebar patch payloads", async () => {
+      mocks.projects.set("p1", makeProject({ id: "p1" }));
+      mocks.projectStates.p1 = makeProjectState("p1");
+      const res = await app.request("/api/projects/p1/sidebar-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worktreeOpen: { "/repo": "nope" } }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when the project does not exist", async () => {
+      const res = await app.request("/api/projects/missing/sidebar-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worktreeOpen: { "/repo": false } }),
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe("PATCH /api/projects/:id", () => {
     it("updates project name", async () => {
       mocks.projects.set("p1", makeProject({ id: "p1" }));

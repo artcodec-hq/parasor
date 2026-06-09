@@ -31,6 +31,12 @@ interface WorktreeRowProps {
   ) => void;
   onOpenContainer?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
+  worktreeOpen?: Record<string, boolean>;
+  onWorktreeOpenChange?: (
+    projectId: string,
+    worktreePath: string,
+    open: boolean,
+  ) => void;
   onReorderPanes?: (
     projectId: string,
     worktreePath: string,
@@ -50,12 +56,15 @@ export function WorktreeRow({
   onSelectChild,
   onOpenContainer,
   onToggleChildPin,
+  worktreeOpen,
+  onWorktreeOpenChange,
   onReorderPanes,
 }: WorktreeRowProps) {
   const { open: isOpen, toggle: toggleOpen } = useWorktreeDisclosure(
-    project.id,
     worktree.path,
     forceOpen,
+    worktreeOpen,
+    (path, open) => onWorktreeOpenChange?.(project.id, path, open),
   );
   const worktreeFocused =
     selection.selectedWorktreeId === worktree.id &&

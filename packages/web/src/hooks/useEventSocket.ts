@@ -1,6 +1,7 @@
 import type {
   HydrationPayload,
   Project,
+  ProjectSidebarState,
   WsEventEnvelope,
   WsEventMessage,
 } from "@parasor/shared";
@@ -427,6 +428,19 @@ export function useEventSocket() {
     setStore((prev) => ({ ...prev, ideCommands: commands }));
   }, []);
 
+  const seedSidebarState = useCallback(
+    (projectId: string, sidebar: ProjectSidebarState) => {
+      setStore((prev) =>
+        applyEvent(prev, {
+          type: "sidebar-state-changed",
+          projectId,
+          sidebar,
+        }),
+      );
+    },
+    [],
+  );
+
   const unreadCount = useMemo(
     () => store.notifications.filter((n) => !n.read).length,
     [store.notifications],
@@ -441,5 +455,6 @@ export function useEventSocket() {
     seedProject,
     seedPaneCommands,
     seedIdeCommands,
+    seedSidebarState,
   };
 }
