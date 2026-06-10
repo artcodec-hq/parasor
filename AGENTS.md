@@ -16,5 +16,7 @@ Rules:
 - Never weaken authentication, authorization, validation, secret handling,
   sandboxing, file access controls, or production safeguards to make release
   packaging easier.
+- When creating issues, write them in English by default and include both
+  implementation details and clear acceptance criteria.
 - Before review, run the relevant package checks. At minimum, run lint,
   focused tests, build, and package verification for release-facing changes.
