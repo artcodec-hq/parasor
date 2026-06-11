@@ -156,4 +156,28 @@ describe("useLegacySidebarStateMigration", () => {
     rerender({ hydrated: true });
     expect(onMigrate).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps legacy state when migration upload fails", async () => {
+    window.localStorage.setItem(
+      "paneOrder:p1",
+      JSON.stringify({ "/repo": ["terminal:s1"] }),
+    );
+    const onMigrate = vi.fn().mockRejectedValue(new Error("offline"));
+
+    renderHook(() =>
+      useLegacySidebarStateMigration({
+        hydrated: true,
+        projects: [project()],
+        projectStates: projectState(),
+        onMigrate,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onMigrate).toHaveBeenCalledTimes(1);
+    });
+    expect(window.localStorage.getItem("paneOrder:p1")).toBe(
+      JSON.stringify({ "/repo": ["terminal:s1"] }),
+    );
+  });
 });

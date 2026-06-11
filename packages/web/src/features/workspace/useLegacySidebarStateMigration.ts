@@ -56,9 +56,12 @@ export function useLegacySidebarStateMigration({
       }
 
       if (!patch.paneOrder && !patch.worktreeOpen) continue;
-      void onMigrate(project.id, patch).then(() => {
-        removeLegacySidebarState(project.id);
-      });
+      void onMigrate(project.id, patch).then(
+        () => removeLegacySidebarState(project.id),
+        () => {
+          // Keep legacy state so a later hydration can retry the migration.
+        },
+      );
     }
   }, [hydrated, onMigrate, projectStates, projects]);
 }
