@@ -72,6 +72,7 @@ import {
 import {
   attachTerminalTapGestures,
   attachTerminalTouchSelection,
+  attachTerminalTouchWheel,
 } from "./terminal-touch-gestures.js";
 import {
   applyBoundarySelection,
@@ -1314,6 +1315,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         container,
         screenElement,
       });
+      const cleanupTouchWheel = attachTerminalTouchWheel({
+        term,
+        screenElement,
+      });
 
       const cleanupTouchSelection = attachTerminalTouchSelection({
         term,
@@ -1655,6 +1660,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       return () => {
         cleanupViewportLifecycle();
         cleanupTapGestures();
+        cleanupTouchWheel();
         cleanupTouchSelection();
         stopMainThreadTrace();
         screenElement?.removeEventListener(

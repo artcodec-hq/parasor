@@ -135,6 +135,51 @@ function clampInteger(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+type HeadlessTerminalModes = import("@xterm/headless").Terminal["modes"];
+
+interface HeadlessMouseStateService {
+  activeEncoding?: unknown;
+}
+
+function mouseProtocolSequence(mode: HeadlessTerminalModes): string {
+  switch (mode.mouseTrackingMode) {
+    case "x10":
+      return "\x1b[?9h";
+    case "vt200":
+      return "\x1b[?1000h";
+    case "drag":
+      return "\x1b[?1002h";
+    case "any":
+      return "\x1b[?1003h";
+    case "none":
+      return "";
+  }
+}
+
+function mouseEncodingSequence(
+  term: import("@xterm/headless").Terminal,
+): string {
+  const mouseState = (
+    term as unknown as {
+      _core?: { mouseStateService?: HeadlessMouseStateService };
+    }
+  )._core?.mouseStateService;
+  switch (mouseState?.activeEncoding) {
+    case "SGR":
+      return "\x1b[?1006h";
+    case "SGR_PIXELS":
+      return "\x1b[?1016h";
+    default:
+      return "";
+  }
+}
+
+function terminalModePrologue(
+  term: import("@xterm/headless").Terminal,
+): string {
+  return `${mouseProtocolSequence(term.modes)}${mouseEncodingSequence(term)}`;
+}
+
 function lineCursorEndColumn(line: HeadlessBufferLine | undefined): number {
   if (!line) return 0;
   let lastColumn = -1;
@@ -213,6 +258,13 @@ function snapshotTerminal(
   term: import("@xterm/headless").Terminal,
   options: { scrollbackLines: number; rows: number; maxBytes: number },
 ) {
+  const prologue = terminalModePrologue(term);
+  const prologueBytes = Buffer.byteLength(prologue, "utf8");
+  const includePrologue =
+    prologueBytes > 0 && prologueBytes <= options.maxBytes;
+  const contentMaxBytes = includePrologue
+    ? options.maxBytes - prologueBytes
+    : options.maxBytes;
   const buffer = term.buffer.active;
   const cursorAbsY = buffer.baseY + buffer.cursorY;
   const cursorX = clampInteger(buffer.cursorX, 0, Math.max(0, term.cols - 1));
@@ -248,8 +300,8 @@ function snapshotTerminal(
     const separatorBytes = reversedLines.length === 0 ? 0 : 2;
     const lineBytes = Buffer.byteLength(line, "utf8");
     const nextBytes = snapshotBytes + separatorBytes + lineBytes;
-    if (nextBytes > options.maxBytes) {
-      const remainingBytes = options.maxBytes - snapshotBytes - separatorBytes;
+    if (nextBytes > contentMaxBytes) {
+      const remainingBytes = contentMaxBytes - snapshotBytes - separatorBytes;
       if (remainingBytes > 0) {
         const partialLine = utf8Tail(line, remainingBytes);
         if (partialLine.length > 0) {
@@ -290,10 +342,13 @@ function snapshotTerminal(
       (visibleCursorRow !== naturalCursorRow || cursorX !== naturalCursorX);
     if (cursorNeedsRestore) {
       const restore = `\x1b[${visibleCursorRow + 1};${cursorX + 1}H`;
-      if (Buffer.byteLength(text + restore, "utf8") <= options.maxBytes) {
+      if (Buffer.byteLength(text + restore, "utf8") <= contentMaxBytes) {
         text += restore;
       }
     }
+  }
+  if (includePrologue) {
+    text = prologue + text;
   }
   return {
     text,
