@@ -468,6 +468,122 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(wts[2]).toMatchObject({ ahead: 0, behind: 3, dirty: 0 });
   });
 
+  it("preserves projectWorktrees snapshot order so activating a child does not reshuffle rows", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const sessions: Session[] = [
+      session({ id: "s1", projectId: "p1", cwd: "/repos/p1/wt-z" }),
+    ];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/repos/p1/wt-z",
+          head: "def",
+          branch: "feature/z",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/repos/p1/wt-a",
+          head: "ghi",
+          branch: "feature/a",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+      ],
+    };
+
+    const inactive = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions,
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+    const active = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees: [
+        { path: "/repos/p1", panes: [] },
+        {
+          path: "/repos/p1/wt-z",
+          panes: [
+            makeTerminalPane(terminalPaneId("s1"), "/repos/p1/wt-z", "s1"),
+          ],
+        },
+        { path: "/repos/p1/wt-a", panes: [] },
+      ],
+      sessions,
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(inactive[0]?.worktrees.map((w) => w.path)).toEqual([
+      "/repos/p1",
+      "/repos/p1/wt-z",
+      "/repos/p1/wt-a",
+    ]);
+    expect(inactive[0]?.worktrees.map((w) => w.path)).toEqual(
+      active[0]?.worktrees.map((w) => w.path),
+    );
+  });
+
+  it("propagates lineage metadata when the project is inactive", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const lineage = {
+      instanceId: "wt-inst",
+      creationSource: "ui" as const,
+      createdAt: 100,
+      parentWorktreePath: "/repos/p1",
+      lineageCapture: {
+        source: "create-worktree-request" as const,
+        confidence: "explicit" as const,
+      },
+    };
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/repos/p1/wt-linked",
+          head: "def",
+          branch: "feature",
+          lineage,
+        },
+      ],
+    };
+
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(result[0]?.worktrees[1]?.lineage).toBe(lineage);
+  });
+
   it("merges projectWorktrees with session-derived cwds without duplicates", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const sessions: Session[] = [

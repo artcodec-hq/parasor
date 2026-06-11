@@ -292,11 +292,10 @@ function buildInactiveWorktrees({
     list.push(s);
     byCwd.set(cwd, list);
   }
-  const cwds = [...byCwd.keys()].sort((a, b) => {
-    if (a === project.path) return -1;
-    if (b === project.path) return 1;
-    return a.localeCompare(b);
-  });
+  // Preserve the same root-first, server snapshot order used once the project
+  // becomes active. Sorting inactive rows alphabetically makes worktrees jump
+  // when selecting one of their children switches the active project.
+  const cwds = [...byCwd.keys()];
   return cwds.map((cwd) => {
     const wtSessions = byCwd.get(cwd) ?? [];
     const labelCounts = new Map<string, number>();
@@ -353,6 +352,7 @@ function buildInactiveWorktrees({
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
+      ...(meta?.lineage ? { lineage: meta.lineage } : {}),
       ...(meta?.orphan ? { orphan: true } : {}),
     };
   });
