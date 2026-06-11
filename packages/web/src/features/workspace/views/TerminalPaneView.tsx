@@ -1,5 +1,5 @@
 import type { Session, TerminalPaneState } from "@parasor/shared";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, useSyncExternalStore } from "react";
 import {
   PaGlyph,
   PaneHeader,
@@ -7,6 +7,10 @@ import {
 } from "../../../components/primitives/index.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { displayTitleForTerminal } from "../../../lib/session-title.js";
+import {
+  isTerminalTraceEnabled,
+  subscribeTerminalTraceEnabled,
+} from "../../../lib/terminal-trace.js";
 import { EditablePaneTitle } from "./EditablePaneTitle.js";
 import { PaneCloseButton } from "./PaneCloseButton.js";
 import { PinToggleButton } from "./PinToggleButton.js";
@@ -50,8 +54,13 @@ export function TerminalPaneView({
   onClosePane,
 }: TerminalPaneViewProps) {
   const title = displayTitleForTerminal(session, "shell");
+  const terminalTraceEnabled = useSyncExternalStore(
+    subscribeTerminalTraceEnabled,
+    isTerminalTraceEnabled,
+    () => false,
+  );
   const showDiagnosticCapture =
-    session !== undefined && session.state !== "ended";
+    terminalTraceEnabled && session !== undefined && session.state !== "ended";
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <PaneHeader
