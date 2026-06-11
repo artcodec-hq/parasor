@@ -13,8 +13,40 @@ on:
         default: true
 
 jobs:
+  release-policy:
+    name: release branch policy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify release tag branch
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG_COMMIT="$(git rev-list -n 1 "$GITHUB_REF")"
+          if [[ "$VERSION" == *-* ]]; then
+            REQUIRED_BRANCH="origin/dev"
+            REQUIRED_REF="refs/heads/dev"
+            RELEASE_KIND="prerelease"
+          else
+            REQUIRED_BRANCH="origin/main"
+            REQUIRED_REF="refs/heads/main"
+            RELEASE_KIND="stable release"
+          fi
+          git fetch origin "+$REQUIRED_REF:refs/remotes/$REQUIRED_BRANCH"
+
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" "$REQUIRED_BRANCH"; then
+            echo "::error::$RELEASE_KIND tag $GITHUB_REF must point to a commit contained in $REQUIRED_BRANCH"
+            exit 1
+          fi
+
   build:
     name: build & test (${{ matrix.os }})
+    needs: release-policy
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +72,7 @@ jobs:
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
       version: ${{ steps.version.outputs.version }}
+      npm_tag: ${{ steps.version.outputs.npm_tag }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -57,7 +90,14 @@ jobs:
           else
             VERSION="0.0.0-dev.$(date +%Y%m%d%H%M%S)"
           fi
+          if [[ "$VERSION" == *-* ]]; then
+            NPM_TAG="${VERSION#*-}"
+            NPM_TAG="${NPM_TAG%%.*}"
+          else
+            NPM_TAG="latest"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json', JSON.stringify(p,null,2));"
       - run: pnpm build
       - run: node scripts/package.mjs
@@ -91,7 +131,7 @@ jobs:
       - run: |
           TARBALL="./dist/${{ needs.package.outputs.tarball }}"
           test -f "$TARBALL"
-          npm publish "$TARBALL" --access public --dry-run --provenance
+          npm publish "$TARBALL" --access public --dry-run --provenance --tag "${{ needs.package.outputs.npm_tag }}"
 
   publish-npm:
     name: publish npm
@@ -110,7 +150,7 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - run: npm publish "./dist/${{ needs.package.outputs.tarball }}" --access public --provenance
+      - run: npm publish "./dist/${{ needs.package.outputs.tarball }}" --access public --provenance --tag "${{ needs.package.outputs.npm_tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
