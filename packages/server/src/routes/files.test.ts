@@ -339,6 +339,7 @@ describe("media routes (real filesystem)", () => {
   const PNG_MAGIC = Buffer.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
   ]);
+  const PDF_MAGIC = Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n");
 
   let dir: string;
   let app: Hono;
@@ -380,6 +381,43 @@ describe("media routes (real filesystem)", () => {
     expect(buf.equals(PNG_MAGIC)).toBe(true);
   });
 
+  it("serves a verified PDF inline without sandboxing the native viewer", async () => {
+    writeFileSync(join(dir, "spec.pdf"), PDF_MAGIC);
+    const res = await app.request(
+      "/api/files/raw?projectId=proj-1&path=spec.pdf",
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(res.headers.get("content-disposition")).toContain("inline");
+    expect(res.headers.get("accept-ranges")).toBe("bytes");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("x-frame-options")).toBeNull();
+    expect(res.headers.get("content-security-policy")).toBe(
+      "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+    );
+    expect(res.headers.get("content-security-policy")).not.toContain("sandbox");
+    expect(res.headers.get("content-length")).toBe(String(PDF_MAGIC.length));
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.equals(PDF_MAGIC)).toBe(true);
+  });
+
+  it("serves a verified PDF with a non-ASCII filename", async () => {
+    writeFileSync(join(dir, "請求書.pdf"), PDF_MAGIC);
+    const res = await app.request(
+      "/api/files/raw?projectId=proj-1&path=%E8%AB%8B%E6%B1%82%E6%9B%B8.pdf",
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(res.headers.get("content-disposition")).toContain(
+      "filename*=UTF-8''%E8%AB%8B%E6%B1%82%E6%9B%B8.pdf",
+    );
+    expect(res.headers.get("content-disposition")).toContain(
+      'filename="___.pdf"',
+    );
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.equals(PDF_MAGIC)).toBe(true);
+  });
+
   it("rejects non-media extensions with 415", async () => {
     writeFileSync(join(dir, "evil.exe"), Buffer.from([0x4d, 0x5a]));
     const res = await app.request(
@@ -393,6 +431,14 @@ describe("media routes (real filesystem)", () => {
     writeFileSync(join(dir, "fake.png"), Buffer.from("hello world"));
     const res = await app.request(
       "/api/files/raw?projectId=proj-1&path=fake.png",
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it("rejects non-PDF bytes renamed to .pdf with 415", async () => {
+    writeFileSync(join(dir, "fake.pdf"), Buffer.from("hello world"));
+    const res = await app.request(
+      "/api/files/raw?projectId=proj-1&path=fake.pdf",
     );
     expect(res.status).toBe(415);
   });
