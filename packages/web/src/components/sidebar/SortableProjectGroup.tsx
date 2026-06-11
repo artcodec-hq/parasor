@@ -54,6 +54,12 @@ interface SortableProjectsProps {
   ) => void;
   onOpenContainer?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
+  worktreeOpenByProject?: Record<string, Record<string, boolean>>;
+  onWorktreeOpenChange?: (
+    projectId: string,
+    worktreePath: string,
+    open: boolean,
+  ) => void;
   onReorderPanes?: (
     projectId: string,
     worktreePath: string,
@@ -71,6 +77,8 @@ export function SortableProjects({
   onSelectChild,
   onOpenContainer,
   onToggleChildPin,
+  worktreeOpenByProject,
+  onWorktreeOpenChange,
   onReorderPanes,
 }: SortableProjectsProps) {
   const incomingIds = useMemo(() => projects.map((p) => p.id), [projects]);
@@ -147,6 +155,8 @@ export function SortableProjects({
             onSelectChild={onSelectChild}
             onOpenContainer={onOpenContainer}
             onToggleChildPin={onToggleChildPin}
+            worktreeOpenByProject={worktreeOpenByProject}
+            onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
           />
         ))}
@@ -166,6 +176,12 @@ interface SortableProjectItemProps {
   ) => void;
   onOpenContainer?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
+  worktreeOpenByProject?: Record<string, Record<string, boolean>>;
+  onWorktreeOpenChange?: (
+    projectId: string,
+    worktreePath: string,
+    open: boolean,
+  ) => void;
   onReorderPanes?: (
     projectId: string,
     worktreePath: string,
@@ -180,6 +196,8 @@ function SortableProjectItem({
   onSelectChild,
   onOpenContainer,
   onToggleChildPin,
+  worktreeOpenByProject,
+  onWorktreeOpenChange,
   onReorderPanes,
 }: SortableProjectItemProps) {
   const {
@@ -207,6 +225,8 @@ function SortableProjectItem({
         onSelectChild={onSelectChild}
         onOpenContainer={onOpenContainer}
         onToggleChildPin={onToggleChildPin}
+        worktreeOpen={worktreeOpenByProject?.[project.id]}
+        onWorktreeOpenChange={onWorktreeOpenChange}
         onReorderPanes={onReorderPanes}
         dragHandleProps={{
           ...attributes,

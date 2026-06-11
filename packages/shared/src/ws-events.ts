@@ -12,6 +12,7 @@ import type {
 import type {
   AppState,
   Project,
+  ProjectSidebarState,
   ServiceConfig,
   Session,
   SessionEndReason,
@@ -88,6 +89,11 @@ export type WsEventMessage =
     }
   | { type: "session-pin-changed"; sessionId: string; pinned: boolean }
   | { type: "service-config-changed"; config: ServiceConfig }
+  | {
+      type: "sidebar-state-changed";
+      projectId: string;
+      sidebar: ProjectSidebarState;
+    }
   | { type: "pane-commands-changed"; commands: PaneCommandConfig[] }
   | { type: "ide-commands-changed"; commands: IdeCommandConfig[] }
   | { type: "pong"; ts: number };

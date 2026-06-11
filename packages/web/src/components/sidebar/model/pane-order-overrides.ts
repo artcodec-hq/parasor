@@ -1,24 +1,24 @@
 import {
-  type PaneOrderStore,
-  parsePaneOrderStore,
-} from "../../../lib/pane-order-store.js";
+  normalizeProjectSidebarState,
+  type ProjectState,
+} from "@parasor/shared";
 import type { SidebarProject } from "./types.js";
 
 /**
- * Apply the per-project pane-ordering override persisted in localStorage
- * (`paneOrder:<projectId>`) on top of the freshly built sidebar view-model.
+ * Apply the server-owned per-project pane-ordering override on top of the
+ * freshly built sidebar view-model.
  * Children listed in the stored order come first (in stored order); any
  * child not in the stored order is appended after, preserving the builder's
  * order. Projects/worktrees with no stored order pass through unchanged.
  */
 export function applyPaneOrderOverrides(
   projects: SidebarProject[],
+  projectStates: Record<string, ProjectState>,
 ): SidebarProject[] {
-  if (typeof window === "undefined") return projects;
   return projects.map((project) => {
-    const stored: PaneOrderStore = parsePaneOrderStore(
-      window.localStorage.getItem(`paneOrder:${project.id}`),
-    );
+    const stored = normalizeProjectSidebarState(
+      projectStates[project.id]?.sidebar,
+    ).paneOrder;
     if (Object.keys(stored).length === 0) return project;
     const worktrees = project.worktrees.map((wt) => {
       const order = stored[wt.path];

@@ -17,6 +17,12 @@ interface ProjectGroupProps {
   ) => void;
   onOpenContainer?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
+  worktreeOpen?: Record<string, boolean>;
+  onWorktreeOpenChange?: (
+    projectId: string,
+    worktreePath: string,
+    open: boolean,
+  ) => void;
   /**
    * When set, terminal/browser children inside each worktree become
    * draggable. Receives the worktree path and the new child id ordering.
@@ -48,6 +54,8 @@ export function ProjectGroup({
   onSelectChild,
   onOpenContainer,
   onToggleChildPin,
+  worktreeOpen,
+  onWorktreeOpenChange,
   onReorderPanes,
   dragHandleProps,
   forceOpen = false,
@@ -88,6 +96,8 @@ export function ProjectGroup({
             onSelectChild={onSelectChild}
             onOpenContainer={onOpenContainer}
             onToggleChildPin={onToggleChildPin}
+            worktreeOpen={worktreeOpen}
+            onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
           />
         );
