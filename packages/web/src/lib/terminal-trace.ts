@@ -5,6 +5,7 @@ import {
 } from "./terminal-trace-kpi.js";
 
 const TRACE_STORAGE_KEY = "parasor:terminal-trace";
+const TRACE_ENABLED_EVENT = "parasor:terminal-trace-enabled-change";
 const TRACE_LIMIT = 2000;
 const MAIN_THREAD_INTERVAL_MS = 250;
 const MAIN_THREAD_DRIFT_THRESHOLD_MS = 50;
@@ -162,6 +163,7 @@ let eventCount = 0;
 let seq = 0;
 let installed = false;
 let enabledCache: boolean | null = null;
+const terminalTraceEnabledListeners = new Set<() => void>();
 
 interface OutputSampleState {
   firstAt: number;
@@ -182,29 +184,44 @@ function now(): number {
   return performance.now();
 }
 
-function queryEnablesTrace(): boolean {
+function queryTraceSetting(): boolean | null {
   try {
     const params = new URLSearchParams(window.location.search);
     const value = params.get("terminalTrace");
-    return value === "1" || value === "true";
+    if (value === "1" || value === "true") return true;
+    if (value === "0" || value === "false") return false;
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 function readInitialEnabled(): boolean {
   try {
-    if (queryEnablesTrace()) {
+    const querySetting = queryTraceSetting();
+    if (querySetting === true) {
       window.localStorage.setItem(TRACE_STORAGE_KEY, "1");
       return true;
     }
+    if (querySetting === false) {
+      window.localStorage.removeItem(TRACE_STORAGE_KEY);
+      return false;
+    }
     return window.localStorage.getItem(TRACE_STORAGE_KEY) === "1";
   } catch {
-    return queryEnablesTrace();
+    return queryTraceSetting() ?? false;
+  }
+}
+
+function notifyTerminalTraceEnabledChange(): void {
+  for (const listener of terminalTraceEnabledListeners) listener();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TRACE_ENABLED_EVENT));
   }
 }
 
 function setTerminalTraceEnabled(enabled: boolean): void {
+  const changed = enabledCache !== enabled;
   enabledCache = enabled;
   try {
     if (enabled) {
@@ -216,6 +233,7 @@ function setTerminalTraceEnabled(enabled: boolean): void {
     // Storage can be unavailable in private/opaque contexts. The in-memory
     // flag still lets the current tab trace.
   }
+  if (changed) notifyTerminalTraceEnabledChange();
 }
 
 export function enableTerminalTrace(): void {
@@ -234,6 +252,13 @@ export function isTerminalTraceEnabled(): boolean {
     enabledCache = readInitialEnabled();
   }
   return enabledCache;
+}
+
+export function subscribeTerminalTraceEnabled(
+  listener: () => void,
+): () => void {
+  terminalTraceEnabledListeners.add(listener);
+  return () => terminalTraceEnabledListeners.delete(listener);
 }
 
 function summarize(): Record<string, unknown> {

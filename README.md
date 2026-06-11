@@ -170,6 +170,8 @@ Requires Node.js 22+ and pnpm. macOS and Linux are primary. WSL is expected to
 work for foreground use, but service mode requires systemd-enabled WSL. Native
 Windows is not currently supported.
 
+Release and beta branch procedures are documented in [docs/release.md](./docs/release.md).
+
 ## Status
 
 Pre-1.0. Configuration shape and CLI surface may change before `1.0.0`.
