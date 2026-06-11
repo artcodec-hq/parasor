@@ -222,6 +222,7 @@ function buildActiveWorktrees({
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
+      ...(meta?.lineage ? { lineage: meta.lineage } : {}),
       ...(meta?.orphan ? { orphan: true } : {}),
     };
   });

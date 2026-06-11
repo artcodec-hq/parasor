@@ -738,6 +738,56 @@ describe("project routes", () => {
       expect(readFileSync(join(data.path, ".env"), "utf8")).toBe("SECRET=1\n");
       expect(project.worktreeLocalFileAllowlist).toEqual([".env"]);
     }, 15_000);
+
+    it("stores lineage metadata from the create request", async () => {
+      const { projectPath } = makeRepo();
+      const project = makeProject({ id: "p1", path: projectPath });
+      mocks.projects.set("p1", project);
+      mocks.projectStates.p1 = {
+        ...makeProjectState("p1"),
+        worktreeMetadata: {
+          [projectPath]: {
+            instanceId: "root-inst",
+            creationSource: "ui",
+            createdAt: 1,
+            lineageCapture: {
+              source: "manual",
+              confidence: "explicit",
+            },
+          },
+        },
+      };
+
+      const res = await app.request("/api/projects/p1/worktrees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch: "feature/lineage",
+          lineage: {
+            creationSource: "ui",
+            parentWorktreePath: projectPath,
+            createdByPaneCommandId: "cmd:dev",
+            createdByPaneCommandLabel: "Dev",
+          },
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const data = (await res.json()) as { path: string };
+      expect(
+        mocks.projectStates.p1.worktreeMetadata?.[data.path],
+      ).toMatchObject({
+        creationSource: "ui",
+        createdByPaneCommandId: "cmd:dev",
+        createdByPaneCommandLabel: "Dev",
+        parentWorktreePath: projectPath,
+        parentWorktreeInstanceId: "root-inst",
+        lineageCapture: {
+          source: "create-worktree-request",
+          confidence: "explicit",
+        },
+      });
+    }, 15_000);
   });
 
   describe("POST /api/projects/:id/worktrees/open-os", () => {

@@ -63,6 +63,37 @@ export interface PortInfo {
   reachablePort?: number;
 }
 
+export type WorktreeCreationSource =
+  | "ui"
+  | "cli"
+  | "runtime"
+  | "agent"
+  | "unknown";
+
+export type WorktreeLineageCaptureSource =
+  | "create-worktree-request"
+  | "path-prefix"
+  | "manual";
+
+export type WorktreeLineageConfidence = "explicit" | "inferred";
+
+export interface WorktreeLineageMetadata {
+  /** Stable identity for this observed worktree instance, independent of path. */
+  instanceId: string;
+  creationSource: WorktreeCreationSource;
+  createdAt: number;
+  createdWithAgent?: string;
+  createdBySessionId?: string;
+  createdByPaneCommandId?: string;
+  createdByPaneCommandLabel?: string;
+  parentWorktreePath?: string;
+  parentWorktreeInstanceId?: string;
+  lineageCapture: {
+    source: WorktreeLineageCaptureSource;
+    confidence: WorktreeLineageConfidence;
+  };
+}
+
 export interface Worktree {
   path: string;
   head: string;
@@ -80,6 +111,8 @@ export interface Worktree {
    * Surfaced as a sidebar pill so users can spot sub-agent checkouts.
    */
   origin?: "agent";
+  /** Product-level provenance for explicitly created worktrees. */
+  lineage?: WorktreeLineageMetadata;
   /**
    * `true` when `git worktree list --porcelain` enumerates the path but the
    * directory is missing on disk (`git status` returns `ENOENT`). Lets the

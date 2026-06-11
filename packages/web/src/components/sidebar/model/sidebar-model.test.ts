@@ -646,6 +646,45 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
     });
   });
 
+  it("propagates lineage metadata from worktreesByProject", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      { path: "/repos/p1.worktrees/feat", panes: [] },
+    ];
+    const lineage = {
+      instanceId: "wt-inst",
+      creationSource: "ui" as const,
+      createdAt: 100,
+      parentWorktreePath: "/repos/p1",
+      lineageCapture: {
+        source: "create-worktree-request" as const,
+        confidence: "explicit" as const,
+      },
+    };
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1.worktrees/feat",
+          head: "abc",
+          branch: "feat",
+          lineage,
+        },
+      ],
+    };
+
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(result[0]?.worktrees[0]?.lineage).toBe(lineage);
+  });
+
   it("falls back to zeroed counters when worktreesByProject omitted", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const activeWorktrees: WorktreePanes[] = [{ path: "/repos/p1", panes: [] }];

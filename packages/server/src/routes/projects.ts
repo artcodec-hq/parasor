@@ -3,6 +3,7 @@ import {
   normalizeProjectSidebarStatePatch,
   type PaneNode,
   type Worktree,
+  type WorktreeCreationSource,
 } from "@parasor/shared";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -30,6 +31,61 @@ import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
 import { resolveWorktreeOrError } from "./lib/resolve-worktree.js";
 
+const WORKTREE_CREATION_SOURCES = new Set<WorktreeCreationSource>([
+  "ui",
+  "cli",
+  "runtime",
+  "agent",
+  "unknown",
+]);
+
+function normalizeCreateWorktreeLineage(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const lineage: {
+    creationSource?: WorktreeCreationSource;
+    parentWorktreePath?: string;
+    createdWithAgent?: string;
+    createdBySessionId?: string;
+    createdByPaneCommandId?: string;
+    createdByPaneCommandLabel?: string;
+  } = {};
+  if (
+    typeof raw.creationSource === "string" &&
+    WORKTREE_CREATION_SOURCES.has(raw.creationSource as WorktreeCreationSource)
+  ) {
+    lineage.creationSource = raw.creationSource as WorktreeCreationSource;
+  }
+  const parentWorktreePath = optionalString(raw, "parentWorktreePath");
+  if (parentWorktreePath) lineage.parentWorktreePath = parentWorktreePath;
+  const createdWithAgent = optionalString(raw, "createdWithAgent");
+  if (createdWithAgent) lineage.createdWithAgent = createdWithAgent;
+  const createdBySessionId = optionalString(raw, "createdBySessionId");
+  if (createdBySessionId) lineage.createdBySessionId = createdBySessionId;
+  const createdByPaneCommandId = optionalString(raw, "createdByPaneCommandId");
+  if (createdByPaneCommandId) {
+    lineage.createdByPaneCommandId = createdByPaneCommandId;
+  }
+  const createdByPaneCommandLabel = optionalString(
+    raw,
+    "createdByPaneCommandLabel",
+  );
+  if (createdByPaneCommandLabel) {
+    lineage.createdByPaneCommandLabel = createdByPaneCommandLabel;
+  }
+  return Object.keys(lineage).length > 0 ? lineage : undefined;
+}
+
+function optionalString(
+  source: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 export function createProjectRoutes(
   pm: ProjectManager,
   eventBus: EventBus,
@@ -55,11 +111,34 @@ export function createProjectRoutes(
   });
   const projectQueries = createProjectQueries({
     projectManager: pm,
+    getWorktreeMetadata: (projectId) =>
+      store.get().projectStates[projectId]?.worktreeMetadata ?? {},
   });
   const worktreeCommands = createWorktreeCommands({
     projectManager: pm,
     eventBus,
     getProjectWorktrees: (projectId) => worktreeCache.get()[projectId] ?? [],
+    getWorktreeMetadata: (projectId, worktreePath) =>
+      store.get().projectStates[projectId]?.worktreeMetadata?.[worktreePath],
+    setWorktreeMetadata: (projectId, worktreePath, metadata) => {
+      store.mutateProjectStates((state) => {
+        const projectState = state.projectStates[projectId];
+        if (!projectState) return;
+        projectState.worktreeMetadata = {
+          ...(projectState.worktreeMetadata ?? {}),
+          [worktreePath]: metadata,
+        };
+      });
+    },
+    removeWorktreeMetadata: (projectId, worktreePath) => {
+      store.mutateProjectStates((state) => {
+        const projectState = state.projectStates[projectId];
+        if (!projectState?.worktreeMetadata) return;
+        const { [worktreePath]: _drop, ...rest } =
+          projectState.worktreeMetadata;
+        projectState.worktreeMetadata = rest;
+      });
+    },
   });
   const sidebarStateCommands = createSidebarStateCommands({
     appStateStore: store,
@@ -274,6 +353,14 @@ export function createProjectRoutes(
         base?: string;
         copyLocalFiles?: unknown;
         rememberLocalFiles?: unknown;
+        lineage?: {
+          creationSource?: unknown;
+          parentWorktreePath?: unknown;
+          createdWithAgent?: unknown;
+          createdBySessionId?: unknown;
+          createdByPaneCommandId?: unknown;
+          createdByPaneCommandLabel?: unknown;
+        };
       }>()
       .catch(
         () =>
@@ -282,6 +369,7 @@ export function createProjectRoutes(
             base?: string;
             copyLocalFiles?: unknown;
             rememberLocalFiles?: unknown;
+            lineage?: unknown;
           },
       );
     if (!body.branch) {
@@ -293,6 +381,9 @@ export function createProjectRoutes(
         ...(body.base !== undefined && { base: body.base }),
         ...(body.copyLocalFiles !== undefined && {
           copyLocalFiles: body.copyLocalFiles,
+        }),
+        ...(body.lineage !== undefined && {
+          lineage: normalizeCreateWorktreeLineage(body.lineage),
         }),
       });
       if (body.rememberLocalFiles === true) {

@@ -22,6 +22,9 @@ function makeDeps(
     resolveWorktree?: ReturnType<typeof vi.fn>;
     isInsideGitRepo?: ReturnType<typeof vi.fn>;
     copyLocalFiles?: ReturnType<typeof vi.fn>;
+    getWorktreeMetadata?: ReturnType<typeof vi.fn>;
+    setWorktreeMetadata?: ReturnType<typeof vi.fn>;
+    removeWorktreeMetadata?: ReturnType<typeof vi.fn>;
   } = {},
 ) {
   const project =
@@ -46,6 +49,12 @@ function makeDeps(
   // gate test injects a stub returning false.
   const isInsideGitRepo = overrides.isInsideGitRepo ?? vi.fn(async () => true);
   const copyLocalFiles = overrides.copyLocalFiles ?? vi.fn(async () => []);
+  const getWorktreeMetadata =
+    overrides.getWorktreeMetadata ?? vi.fn(() => undefined);
+  const setWorktreeMetadata =
+    overrides.setWorktreeMetadata ?? vi.fn(() => undefined);
+  const removeWorktreeMetadata =
+    overrides.removeWorktreeMetadata ?? vi.fn(() => undefined);
   return {
     pm,
     eventBus,
@@ -55,6 +64,9 @@ function makeDeps(
     resolveWorktree,
     isInsideGitRepo,
     copyLocalFiles,
+    getWorktreeMetadata,
+    setWorktreeMetadata,
+    removeWorktreeMetadata,
   };
 }
 
@@ -311,6 +323,112 @@ describe("createProjectWorktree", () => {
     expect(result.localFileCopies).toEqual([
       { path: ".env", size: 9, status: "copied" },
     ]);
+  });
+
+  it("persists explicit lineage metadata when creation context is supplied", async () => {
+    const parentMetadata = {
+      instanceId: "parent-inst",
+      creationSource: "ui" as const,
+      createdAt: 10,
+      lineageCapture: {
+        source: "create-worktree-request" as const,
+        confidence: "explicit" as const,
+      },
+    };
+    const getWorktreeMetadata = vi.fn((_projectId, worktreePath) =>
+      worktreePath === "/repos/proj" ? parentMetadata : undefined,
+    );
+    const setWorktreeMetadata = vi.fn();
+    const deps = makeDeps({ getWorktreeMetadata, setWorktreeMetadata });
+    const cmds = createWorktreeCommands({
+      projectManager: deps.pm,
+      eventBus: deps.eventBus,
+      runGit: deps.runGit,
+      pathExists: deps.pathExists,
+      getProjectWorktrees: deps.getProjectWorktrees,
+      resolveWorktree: deps.resolveWorktree,
+      isInsideGitRepo: deps.isInsideGitRepo,
+      getWorktreeMetadata: deps.getWorktreeMetadata,
+      setWorktreeMetadata: deps.setWorktreeMetadata,
+      createInstanceId: () => "child-inst",
+      now: () => 1234,
+    });
+
+    const result = await cmds.createProjectWorktree("p1", {
+      branch: "feature/lineage",
+      lineage: {
+        creationSource: "ui",
+        parentWorktreePath: "/repos/proj",
+        createdByPaneCommandId: "cmd:dev",
+        createdByPaneCommandLabel: "Dev",
+      },
+    });
+
+    const expected = {
+      instanceId: "child-inst",
+      creationSource: "ui",
+      createdAt: 1234,
+      createdByPaneCommandId: "cmd:dev",
+      createdByPaneCommandLabel: "Dev",
+      parentWorktreePath: "/repos/proj",
+      parentWorktreeInstanceId: "parent-inst",
+      lineageCapture: {
+        source: "create-worktree-request",
+        confidence: "explicit",
+      },
+    };
+    expect(result.lineage).toEqual(expected);
+    expect(setWorktreeMetadata).toHaveBeenCalledWith(
+      "p1",
+      "/repos/proj.worktrees/feature/lineage",
+      expected,
+    );
+    expect(deps.eventBus.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "worktree-created",
+        worktree: expect.objectContaining({ lineage: expected }),
+      }),
+    );
+  });
+
+  it("drops unregistered parent paths from lineage metadata", async () => {
+    const setWorktreeMetadata = vi.fn();
+    const deps = makeDeps({ setWorktreeMetadata });
+    const cmds = createWorktreeCommands({
+      projectManager: deps.pm,
+      eventBus: deps.eventBus,
+      runGit: deps.runGit,
+      pathExists: deps.pathExists,
+      getProjectWorktrees: deps.getProjectWorktrees,
+      resolveWorktree: deps.resolveWorktree,
+      isInsideGitRepo: deps.isInsideGitRepo,
+      setWorktreeMetadata: deps.setWorktreeMetadata,
+      createInstanceId: () => "child-inst",
+      now: () => 1234,
+    });
+
+    const result = await cmds.createProjectWorktree("p1", {
+      branch: "feature/stray-parent",
+      lineage: {
+        creationSource: "ui",
+        parentWorktreePath: "/Users/somebody/secret",
+        createdByPaneCommandId: "cmd:dev",
+      },
+    });
+
+    expect(result.lineage).toMatchObject({
+      instanceId: "child-inst",
+      createdByPaneCommandId: "cmd:dev",
+    });
+    expect(result.lineage).not.toHaveProperty("parentWorktreePath");
+    expect(result.lineage).not.toHaveProperty("parentWorktreeInstanceId");
+    expect(setWorktreeMetadata).toHaveBeenCalledWith(
+      "p1",
+      "/repos/proj.worktrees/feature/stray-parent",
+      expect.not.objectContaining({
+        parentWorktreePath: "/Users/somebody/secret",
+      }),
+    );
   });
 
   it("translates git failure into ConflictError", async () => {
@@ -665,6 +783,28 @@ describe("removeProjectWorktree", () => {
     });
   });
 
+  it("removes lineage metadata before broadcasting removal", async () => {
+    const removeWorktreeMetadata = vi.fn();
+    const deps = makeDeps({ removeWorktreeMetadata });
+    const cmds = createWorktreeCommands({
+      projectManager: deps.pm,
+      eventBus: deps.eventBus,
+      runGit: deps.runGit,
+      pathExists: deps.pathExists,
+      getProjectWorktrees: deps.getProjectWorktrees,
+      resolveWorktree: deps.resolveWorktree,
+      isInsideGitRepo: deps.isInsideGitRepo,
+      removeWorktreeMetadata: deps.removeWorktreeMetadata,
+    });
+
+    await cmds.removeProjectWorktree("p1", "/tmp/wt");
+
+    expect(removeWorktreeMetadata).toHaveBeenCalledWith("p1", "/tmp/wt");
+    expect(removeWorktreeMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(deps.eventBus.broadcast).mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
   it("appends --force when explicitly requested", async () => {
     const calls: Array<{ args: string[] }> = [];
     const runGit = vi.fn(async (_path: string, args: string[]) => {
@@ -799,6 +939,31 @@ describe("removeProjectWorktree", () => {
       projectId: "p1",
       worktreePath: "/tmp/wt",
     });
+  });
+
+  it("orphan path: removes lineage metadata before broadcasting", async () => {
+    const removeWorktreeMetadata = vi.fn();
+    const deps = makeDeps({
+      registered: [{ path: "/tmp/wt", head: "abc", branch: "feat/a" }],
+      removeWorktreeMetadata,
+    });
+    const cmds = createWorktreeCommands({
+      projectManager: deps.pm,
+      eventBus: deps.eventBus,
+      runGit: deps.runGit,
+      pathExists: deps.pathExists,
+      getProjectWorktrees: deps.getProjectWorktrees,
+      resolveWorktree: deps.resolveWorktree,
+      isInsideGitRepo: deps.isInsideGitRepo,
+      removeWorktreeMetadata: deps.removeWorktreeMetadata,
+    });
+
+    await cmds.removeProjectWorktree("p1", "/tmp/wt");
+
+    expect(removeWorktreeMetadata).toHaveBeenCalledWith("p1", "/tmp/wt");
+    expect(removeWorktreeMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(deps.eventBus.broadcast).mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("orphan path: surfaces ConflictError when git worktree prune fails", async () => {

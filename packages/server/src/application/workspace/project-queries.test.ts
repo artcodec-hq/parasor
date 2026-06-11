@@ -170,6 +170,63 @@ describe("createProjectQueries", () => {
     ]);
   });
 
+  it("merges persisted lineage metadata into hydrated worktrees", async () => {
+    projects.set("proj-1", makeProject({ id: "proj-1" }));
+    const lineage = {
+      instanceId: "wt-inst-1",
+      creationSource: "ui" as const,
+      createdAt: 100,
+      parentWorktreePath: "/tmp/proj",
+      lineageCapture: {
+        source: "create-worktree-request" as const,
+        confidence: "explicit" as const,
+      },
+    };
+    const runGit = vi.fn(async (_: string, args: string[]) => {
+      if (args[0] === "worktree") {
+        return [
+          "worktree /tmp/proj",
+          "HEAD abc",
+          "branch refs/heads/main",
+          "",
+          "worktree /tmp/proj.worktrees/feat",
+          "HEAD def",
+          "branch refs/heads/feat",
+          "",
+        ].join("\n");
+      }
+      if (args[0] === "status") return ["# branch.ab +0 -0", ""].join("\n");
+      return "";
+    });
+    const queries = createProjectQueries({
+      projectManager,
+      runGit,
+      getWorktreeMetadata: () => ({
+        "/tmp/proj.worktrees/feat": lineage,
+      }),
+    });
+
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual([
+      {
+        path: "/tmp/proj",
+        head: "abc",
+        branch: "main",
+        ahead: 0,
+        behind: 0,
+        dirtyCount: 0,
+      },
+      {
+        path: "/tmp/proj.worktrees/feat",
+        head: "def",
+        branch: "feat",
+        ahead: 0,
+        behind: 0,
+        dirtyCount: 0,
+        lineage,
+      },
+    ]);
+  });
+
   it("flags orphan=true when the worktree path is gone (ENOENT)", async () => {
     projects.set("proj-1", makeProject({ id: "proj-1" }));
     const runGit = vi.fn(async (cwd: string, args: string[]) => {
