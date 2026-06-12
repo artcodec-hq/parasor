@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { MOBILE_VIEWPORT_GLOBALS } from "../../stories/storybook-viewports.js";
-import { EditorKeyBar } from "./EditorKeyBar.js";
 import { MobileKeyBar } from "./MobileKeyBar.js";
 
 const noop = () => undefined;
@@ -94,7 +93,13 @@ export const TerminalMoreActions: Story = {
 export const EditorDefault: Story = {
   render: () => (
     <MobileFrame>
-      <EditorKeyBar view={null} keyboardOpen={false} onKeyboardToggle={noop} />
+      <MobileKeyBar
+        onSend={noop}
+        ctrlActive={false}
+        onCtrlToggle={noop}
+        keyboardOpen={false}
+        onKeyboardToggle={noop}
+      />
     </MobileFrame>
   ),
 };
@@ -102,7 +107,13 @@ export const EditorDefault: Story = {
 export const EditorKeyboardActive: Story = {
   render: () => (
     <MobileFrame>
-      <EditorKeyBar view={null} keyboardOpen onKeyboardToggle={noop} />
+      <MobileKeyBar
+        onSend={noop}
+        ctrlActive={false}
+        onCtrlToggle={noop}
+        keyboardOpen
+        onKeyboardToggle={noop}
+      />
     </MobileFrame>
   ),
 };
