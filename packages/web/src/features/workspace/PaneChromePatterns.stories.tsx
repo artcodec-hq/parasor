@@ -197,7 +197,7 @@ export const GitGraphFooter: Story = {
                 tone={includeRemotes ? "active" : "normal"}
                 onClick={() => setIncludeRemotes((value) => !value)}
               >
-                {includeRemotes ? <PaGlyph.eye /> : <PaGlyph.eyeOff />}
+                <PaGlyph.plug />
               </PaneIconButton>
               <PaneIconButton label="Refresh" onClick={noop}>
                 <PaGlyph.refresh />

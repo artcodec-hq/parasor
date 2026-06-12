@@ -714,6 +714,27 @@ function EyeOff({ className, ...p }: GlyphProps) {
   );
 }
 
+function Plug({ className, ...p }: GlyphProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className ?? ICON_BASE_CLASS}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={ICON_STROKE_WIDTH}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      {...p}
+    >
+      <path d="M12 22v-5" />
+      <path d="M9 8V2" />
+      <path d="M15 8V2" />
+      <path d="M18 8v5a6 6 0 0 1-12 0V8Z" />
+    </svg>
+  );
+}
+
 export const PaGlyph = {
   close: Close,
   add: Add,
@@ -755,6 +776,7 @@ export const PaGlyph = {
   split: Split,
   eye: Eye,
   eyeOff: EyeOff,
+  plug: Plug,
 } as const;
 
 export type PaGlyphName = keyof typeof PaGlyph;
