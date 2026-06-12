@@ -60,6 +60,10 @@ const CLIENT_TRACE_PAYLOAD_KEYS = [
   "queueLength",
   "readyState",
   "status",
+  "httpStatus",
+  "traceId",
+  "phase",
+  "source",
   "routeKind",
   "surface",
   "paneId",
@@ -87,6 +91,20 @@ const CLIENT_TRACE_PAYLOAD_KEYS = [
   "generation",
   "driftMs",
   "durationMs",
+  "wallMs",
+  "visibilityState",
+  "hidden",
+  "online",
+  "visibilityChanges",
+  "pageHideCount",
+  "pageShowCount",
+  "focusCount",
+  "onlineCount",
+  "offlineCount",
+  "errorName",
+  "errorMessage",
+  "startedAtWallMs",
+  "endedAtWallMs",
   "sinceReplayStartMs",
   "proposeDurationMs",
   "resizeDurationMs",
@@ -648,16 +666,12 @@ export function createDebugTerminalTraceRoute({
       source: sanitizeDiagnosticSource(body.source),
       bottomRows,
     };
-    const previousEnabled = recorder.isEnabled();
-    recorder.setEnabled(true);
-    try {
-      recorder.record("client-diagnostic", payload, { sessionId, clientId });
-    } finally {
-      recorder.setEnabled(previousEnabled);
-    }
+    const recorded = recorder.isEnabled();
+    recorder.record("client-diagnostic", payload, { sessionId, clientId });
     return c.json({
       ok: true,
-      accepted: 1,
+      accepted: recorded ? 1 : 0,
+      recorded,
       diagnosticEventCount: events.length,
       droppedDiagnosticEvents: payload.droppedEvents,
       hasBottomRows: bottomRows !== null,

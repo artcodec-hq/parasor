@@ -9,6 +9,10 @@ vi.mock("../lib/auth-fetch.js", () => ({
   ensureAuthenticated: () => ensureAuthenticatedMock(),
 }));
 
+import {
+  disableTerminalTrace,
+  enableTerminalTrace,
+} from "../lib/terminal-trace.js";
 import { useEventSocket } from "./useEventSocket.js";
 
 class FakeWebSocket {
@@ -93,6 +97,9 @@ beforeEach(() => {
     host: "127.0.0.1:3000",
   } as Location);
   setVisibility("visible");
+  window.parasorTerminalTrace?.clear();
+  disableTerminalTrace();
+  window.parasorTerminalTrace?.clear();
   vi.useFakeTimers();
 });
 
@@ -171,6 +178,7 @@ describe("useEventSocket heartbeat", () => {
         status: 200,
       }),
     );
+    enableTerminalTrace();
     renderHook(() => useEventSocket());
     await settleAuth();
     const ws = latestSocket();
@@ -191,12 +199,12 @@ describe("useEventSocket heartbeat", () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({
       diagnostic: "client-startup-load",
       reason: "event-socket-snapshot-timeout",
-      events: [
+      events: expect.arrayContaining([
         expect.objectContaining({
           type: "event-socket-snapshot-timeout",
           timeoutMs: 10_000,
         }),
-      ],
+      ]),
     });
   });
 

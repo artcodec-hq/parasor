@@ -6,10 +6,19 @@ import {
 } from "../lib/terminal-trace.js";
 
 const ensureAuthenticatedMock =
-  vi.fn<(options?: { reuseRecentSuccess?: boolean }) => Promise<boolean>>();
+  vi.fn<
+    (options?: {
+      reuseRecentSuccess?: boolean;
+      source?: string;
+      trace?: (event: unknown) => void;
+    }) => Promise<boolean>
+  >();
 vi.mock("../lib/auth-fetch.js", () => ({
-  ensureAuthenticated: (options?: { reuseRecentSuccess?: boolean }) =>
-    ensureAuthenticatedMock(options),
+  ensureAuthenticated: (options?: {
+    reuseRecentSuccess?: boolean;
+    source?: string;
+    trace?: (event: unknown) => void;
+  }) => ensureAuthenticatedMock(options),
 }));
 
 import { useTerminalSocket } from "./useTerminalSocket.js";
@@ -563,9 +572,13 @@ describe("useTerminalSocket", () => {
       ]),
     );
     expect(JSON.stringify(trace)).not.toContain("secret text");
-    expect(ensureAuthenticatedMock).toHaveBeenCalledWith({
-      reuseRecentSuccess: true,
-    });
+    expect(ensureAuthenticatedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reuseRecentSuccess: true,
+        source: "terminal-socket",
+        trace: expect.any(Function),
+      }),
+    );
     expect(
       trace.find((event) => event.type === "socket-auth-complete"),
     ).toEqual(expect.objectContaining({ status: "ok" }));

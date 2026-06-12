@@ -275,9 +275,43 @@ describe("debug terminal trace route", () => {
     });
   });
 
-  it("records one-shot client diagnostics while trace is disabled", async () => {
+  it("does not record one-shot client diagnostics while trace is disabled", async () => {
     const { app, recorder } = makeApp();
     expect(recorder.isEnabled()).toBe(false);
+
+    const res = await app.request(
+      "/api/debug/terminal-trace/client-diagnostic",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          diagnostic: "terminal-input-background",
+          reason: "disabled",
+          sessionId: "s-disabled",
+          events: [{ seq: 1, type: "terminal-resize-apply" }],
+          bottomRows: {
+            rowsSampled: [{ line: 0, text: "visible terminal text" }],
+          },
+        }),
+        headers: { "content-type": "application/json" },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      accepted: 0,
+      recorded: false,
+      diagnosticEventCount: 1,
+      hasBottomRows: true,
+      enabled: false,
+      eventCount: 0,
+    });
+    expect(recorder.list()).toEqual([]);
+  });
+
+  it("records one-shot client diagnostics while trace is enabled", async () => {
+    const { app, recorder } = makeApp();
+    recorder.setEnabled(true);
 
     const rowsSampled = Array.from({ length: 25 }, (_, row) => ({
       line: row,
@@ -366,12 +400,13 @@ describe("debug terminal trace route", () => {
     expect(await res.json()).toMatchObject({
       ok: true,
       accepted: 1,
+      recorded: true,
       diagnosticEventCount: 80,
       droppedDiagnosticEvents: 10,
       hasBottomRows: true,
-      enabled: false,
+      enabled: true,
     });
-    expect(recorder.isEnabled()).toBe(false);
+    expect(recorder.isEnabled()).toBe(true);
     expect(recorder.list()).toHaveLength(1);
     expect(recorder.list()[0]).toMatchObject({
       type: "client-diagnostic",
