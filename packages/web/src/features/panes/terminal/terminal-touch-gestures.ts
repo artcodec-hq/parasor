@@ -22,6 +22,7 @@ const TAP_MAX_DURATION_MS = 400;
 const TAP_POSITION_SLOP_PX = 24;
 const URL_TAP_HIGHLIGHT_MS = 650;
 const TAP_MOVE_SLOP_PX = 10;
+const MOUSE_TRACKING_TOUCH_WHEEL_SLOP_PX = 10;
 
 export interface TerminalTapGestureOptions {
   term: XTerm;
@@ -36,10 +37,11 @@ export interface TerminalTapGestureOptions {
  * from the xterm mount effect. Tap-to-focus defers from touchstart to touchend
  * so scroll / pane-swipe gestures don't raise the soft keyboard mid-gesture; a
  * tap is promoted to focus only when single-finger, within slop, with no active
- * selection, and the tap lands on the live input row or a TUI that tracks the
- * mouse. Normal terminal output taps stay read-only on mobile. The gesture
- * guard drops inertial xterm scroll events that carry no coordinates while a
- * mouse-tracking app owns the screen. Returns a cleanup that removes both.
+ * selection, and the tap lands on the live input row. Normal terminal output
+ * taps stay read-only on mobile, including mouse-tracking TUIs, so browsing
+ * history does not raise the soft keyboard. The gesture guard drops inertial
+ * xterm scroll events that carry no coordinates while a mouse-tracking app owns
+ * the screen. Returns a cleanup that removes both.
  */
 export function attachTerminalTapGestures({
   term,
@@ -86,16 +88,12 @@ export function attachTerminalTapGestures({
     if (te.touches.length > 0) return;
     if (performance.now() - state.startedAt > TAP_MAX_DURATION_MS) return;
     if (term.hasSelection()) return;
-    const modes = term.modes;
     const touch = te.changedTouches[0];
     const point =
       touch && screenElement
         ? getSelectionPointFromTouch(term, screenElement, touch)
         : null;
-    if (
-      modes.mouseTrackingMode !== "none" ||
-      (point && isTerminalInputPoint(term, point))
-    ) {
+    if (point && isTerminalInputPoint(term, point)) {
       term.focus();
     }
   };
@@ -135,6 +133,146 @@ export function attachTerminalTapGestures({
       onCoordinateLessXtermGesture,
       { capture: true },
     );
+  };
+}
+
+export interface TerminalTouchWheelOptions {
+  term: XTerm;
+  /** The `.xterm-screen` element that receives xterm mouse/wheel gestures. */
+  screenElement: Element | null;
+}
+
+/**
+ * Mobile browsers deliver swipes to xterm as touch gestures. When a full-screen
+ * TUI owns mouse tracking, that path becomes drag/click reports, while
+ * mouse-aware scroll regions expect wheel-style input. After a vertical swipe
+ * crosses slop, stop the native touch move and let xterm's existing wheel
+ * encoder emit the app's active mouse protocol.
+ */
+export function attachTerminalTouchWheel({
+  term,
+  screenElement,
+}: TerminalTouchWheelOptions): () => void {
+  let touchState: {
+    id: number;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    active: boolean;
+    cancelled: boolean;
+  } | null = null;
+
+  const reset = () => {
+    touchState = null;
+  };
+
+  const isMouseTrackingActive = () => term.modes.mouseTrackingMode !== "none";
+
+  const dispatchWheel = (touch: Touch, deltaX: number, deltaY: number) => {
+    screenElement?.dispatchEvent(
+      new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        deltaX,
+        deltaY,
+      }),
+    );
+  };
+
+  const onTouchStart = (event: Event) => {
+    if (!screenElement || !isMouseTrackingActive()) {
+      reset();
+      return;
+    }
+    const touchEvent = event as TouchEvent;
+    if (touchEvent.touches.length !== 1) {
+      reset();
+      return;
+    }
+    const touch = touchEvent.touches[0];
+    touchState = {
+      id: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastX: touch.clientX,
+      lastY: touch.clientY,
+      active: false,
+      cancelled: false,
+    };
+  };
+
+  const onTouchMove = (event: Event) => {
+    if (!screenElement || !touchState || touchState.cancelled) return;
+    if (!isMouseTrackingActive()) {
+      reset();
+      return;
+    }
+    const touchEvent = event as TouchEvent;
+    const touch = findTouchById(touchEvent.touches, touchState.id);
+    if (!touch) {
+      reset();
+      return;
+    }
+
+    const totalDx = touch.clientX - touchState.startX;
+    const totalDy = touch.clientY - touchState.startY;
+    if (!touchState.active) {
+      if (Math.hypot(totalDx, totalDy) <= MOUSE_TRACKING_TOUCH_WHEEL_SLOP_PX) {
+        return;
+      }
+      if (Math.abs(totalDy) < Math.abs(totalDx)) {
+        touchState.cancelled = true;
+        return;
+      }
+      touchState.active = true;
+    }
+
+    const deltaX = touchState.lastX - touch.clientX;
+    const deltaY = touchState.lastY - touch.clientY;
+    touchState.lastX = touch.clientX;
+    touchState.lastY = touch.clientY;
+    if (deltaX === 0 && deltaY === 0) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    dispatchWheel(touch, deltaX, deltaY);
+  };
+
+  screenElement?.addEventListener("touchstart", onTouchStart, {
+    capture: true,
+    passive: true,
+  });
+  screenElement?.addEventListener("touchmove", onTouchMove, {
+    capture: true,
+    passive: false,
+  });
+  screenElement?.addEventListener("touchend", reset, {
+    capture: true,
+    passive: true,
+  });
+  screenElement?.addEventListener("touchcancel", reset, {
+    capture: true,
+    passive: true,
+  });
+
+  return () => {
+    reset();
+    screenElement?.removeEventListener("touchstart", onTouchStart, {
+      capture: true,
+    });
+    screenElement?.removeEventListener("touchmove", onTouchMove, {
+      capture: true,
+    });
+    screenElement?.removeEventListener("touchend", reset, {
+      capture: true,
+    });
+    screenElement?.removeEventListener("touchcancel", reset, {
+      capture: true,
+    });
   };
 }
 
@@ -298,6 +436,10 @@ export function attachTerminalTouchSelection({
   };
   const onSelectionTouchStart = (event: Event) => {
     if (!screenElement) return;
+    if (term.modes.mouseTrackingMode !== "none") {
+      resetTouchSelection();
+      return;
+    }
     const touchEvent = event as TouchEvent;
     if (touchEvent.touches.length !== 1) {
       resetTouchSelection();
