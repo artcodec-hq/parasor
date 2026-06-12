@@ -383,6 +383,68 @@ describe("WorkspacePaneRouter open IDE menu", () => {
       null,
     );
   });
+
+  it("shows Close project but not worktree lifecycle actions for the project root", () => {
+    const onCopyWorktreePath = vi.fn();
+    const onDeleteProject = vi.fn();
+    const onRemoveWorktree = vi.fn();
+    const onRenameWorktree = vi.fn();
+    renderBrowserPane({
+      isMobile: false,
+      onCopyWorktreePath,
+      onDeleteProject,
+      onRemoveWorktree,
+      onRenameWorktree,
+      onOpenWorktreeInIde: vi.fn(),
+      canOpenLocalIde: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace menu" }));
+
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual([
+      "Copy path",
+      "Open in Cursor",
+      "Open in VS Code",
+      "Close project…",
+    ]);
+    expect(screen.queryByRole("menuitem", { name: "Rename branch…" })).toBe(
+      null,
+    );
+    expect(screen.queryByRole("menuitem", { name: "Remove worktree…" })).toBe(
+      null,
+    );
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
+    expect(onCopyWorktreePath).toHaveBeenCalledWith("/repo");
+  });
+
+  it("shows Remove worktree but not Close project for a worktree header", () => {
+    const onDeleteProject = vi.fn();
+    const onRemoveWorktree = vi.fn();
+    renderBrowserPane({
+      isMobile: false,
+      worktreePath: "/repo/worktrees/feature",
+      onDeleteProject,
+      onRemoveWorktree,
+      onOpenWorktreeInIde: vi.fn(),
+      canOpenLocalIde: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace menu" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Close project…" })).toBe(
+      null,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove worktree…" }));
+    expect(onRemoveWorktree).toHaveBeenCalledWith(
+      "p1",
+      "/repo/worktrees/feature",
+      "main",
+    );
+    expect(onDeleteProject).not.toHaveBeenCalled();
+  });
 });
 
 describe("WorkspacePaneRouter terminal retention", () => {
@@ -646,10 +708,14 @@ function renderBrowserPane({
   isMobile,
   ideCommands,
   url = "https://example.com",
+  worktreePath = "/repo",
   onRequestClosePane = vi.fn(),
   onBrowserUrlChange = vi.fn(),
+  onCopyWorktreePath,
   onOpenWorktreeInIde,
   canOpenLocalIde,
+  onRenameWorktree,
+  onRemoveWorktree,
   onDeleteProject,
 }: {
   isMobile: boolean;
@@ -660,6 +726,7 @@ function renderBrowserPane({
     args: string[];
   }>;
   url?: string;
+  worktreePath?: string;
   onRequestClosePane?: (
     paneId: string,
     paneKind: "terminal" | "browser",
@@ -672,9 +739,20 @@ function renderBrowserPane({
     editor: IdeEditor,
   ) => void;
   canOpenLocalIde?: boolean;
+  onCopyWorktreePath?: (worktreePath: string) => void;
+  onRenameWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
+  onRemoveWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onDeleteProject?: (projectId: string) => void;
 }) {
-  const focusedPane = makeBrowserPane("browser:p1-main", "/repo", url);
+  const focusedPane = makeBrowserPane("browser:p1-main", worktreePath, url);
 
   return render(
     <WorkspacePaneRouter
@@ -686,6 +764,9 @@ function renderBrowserPane({
         onOpenWorktreeInIde,
         ideCommands,
         canOpenLocalIde,
+        onCopyWorktreePath,
+        onRenameWorktree,
+        onRemoveWorktree,
         onDeleteProject,
       })}
     />,

@@ -254,11 +254,21 @@ export function WorkspacePaneRouter({
     if (!focusedPane || !activeProjectId) return [];
     const worktreePath = focusedPane.worktreePath;
     const branch = focusedWorktreeDirName ?? "main";
+    const isProjectRootPane =
+      !!activeProjectPath && worktreePath === activeProjectPath;
     const items: PaMenuItem[] = [];
+    if (onCopyWorktreePath) {
+      items.push({
+        id: "copy-path",
+        label: "Copy path",
+        onSelect: () => onCopyWorktreePath(worktreePath),
+      });
+    }
     if (onOpenWorktreeInFinder) {
       items.push({
         id: "open-finder",
         label: "Open in Finder",
+        separatorBefore: items.length > 0,
         onSelect: () => onOpenWorktreeInFinder(activeProjectId, worktreePath),
       });
     }
@@ -267,12 +277,14 @@ export function WorkspacePaneRouter({
       const title = disabled
         ? "Available when parasor is opened from localhost on the server machine"
         : undefined;
+      const separatorBefore = items.length > 0 && !onOpenWorktreeInFinder;
       items.push(
         {
           id: "open-cursor",
           label: "Open in Cursor",
           disabled,
           title,
+          separatorBefore,
           onSelect: () =>
             onOpenWorktreeInIde(activeProjectId, worktreePath, "cursor"),
         },
@@ -296,33 +308,36 @@ export function WorkspacePaneRouter({
         });
       }
     }
-    if (onCopyWorktreePath) {
-      items.push({
-        id: "copy-path",
-        label: "Copy path",
-        onSelect: () => onCopyWorktreePath(worktreePath),
-      });
-    }
     // Rename / Remove operate on git refs (`git branch -m`, `git worktree
-    // remove`); a non-repo project root has neither, so hide both entries.
-    if (activeProjectIsRepo && onRenameWorktree) {
+    // remove`), so keep them scoped to worktree headers only.
+    let lifecycleSeparatorUsed = false;
+    const separatorBeforeLifecycle = () => {
+      if (lifecycleSeparatorUsed || items.length === 0) return false;
+      lifecycleSeparatorUsed = true;
+      return true;
+    };
+    if (!isProjectRootPane && activeProjectIsRepo && onRenameWorktree) {
       items.push({
         id: "rename",
         label: "Rename branch…",
+        separatorBefore: separatorBeforeLifecycle(),
         onSelect: () => onRenameWorktree(activeProjectId, worktreePath, branch),
       });
     }
-    if (activeProjectIsRepo && onRemoveWorktree) {
+    if (!isProjectRootPane && activeProjectIsRepo && onRemoveWorktree) {
       items.push({
         id: "remove",
         label: "Remove worktree…",
+        separatorBefore: separatorBeforeLifecycle(),
+        tone: "danger",
         onSelect: () => onRemoveWorktree(activeProjectId, worktreePath, branch),
       });
     }
-    if (onDeleteProject) {
+    if (isProjectRootPane && onDeleteProject) {
       items.push({
         id: "close-project",
         label: "Close project…",
+        separatorBefore: separatorBeforeLifecycle(),
         onSelect: () => onDeleteProject(activeProjectId),
       });
     }
@@ -330,6 +345,7 @@ export function WorkspacePaneRouter({
   }, [
     focusedPane,
     activeProjectId,
+    activeProjectPath,
     activeProjectIsRepo,
     focusedWorktreeDirName,
     onOpenWorktreeInFinder,

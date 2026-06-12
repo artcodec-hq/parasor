@@ -36,6 +36,11 @@ import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
+import {
+  hasTerminalPasteCandidate,
+  readTerminalInternalClipboard,
+  writeTerminalInternalClipboard,
+} from "../../../lib/terminal-internal-clipboard.js";
 import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
 import {
   getTerminalReplayCache,
@@ -108,8 +113,6 @@ const HISTORY_LOAD_SUPPRESS_MS = 750;
 const IME_DUPLICATE_SUPPRESS_MS = 120;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS = [80, 250] as const;
-const TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY =
-  "parasor:terminal-internal-clipboard";
 const TERMINAL_UNICODE_VERSION = "11";
 
 type SelectionOverlayState = {
@@ -130,32 +133,6 @@ function isPrintableImeData(data: string): boolean {
 function clampNumber(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.min(Math.max(value, min), max);
-}
-
-function writeTerminalInternalClipboard(text: string): boolean {
-  try {
-    window.localStorage.setItem(TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY, text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function readTerminalInternalClipboard(): string | null {
-  try {
-    const text = window.localStorage.getItem(
-      TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY,
-    );
-    return text && text.length > 0 ? text : null;
-  } catch {
-    return null;
-  }
-}
-
-function hasTerminalPasteCandidate(): boolean {
-  return (
-    readTerminalInternalClipboard() !== null || !!navigator.clipboard?.readText
-  );
 }
 
 function createInitialRendererTrace(input: {
