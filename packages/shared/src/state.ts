@@ -2,6 +2,12 @@ import type { IdeCommandConfig } from "./ide-commands.js";
 import type { PaneCommandConfig } from "./pane-commands.js";
 import type { WorktreePanes } from "./pane-model.js";
 import type { PaneNode } from "./panes.js";
+import type {
+  WorktreeCreationSource,
+  WorktreeLineageCaptureSource,
+  WorktreeLineageConfidence,
+  WorktreeLineageMetadata,
+} from "./runtime.js";
 import type { WorktreeLocalFileCandidate } from "./worktree-local-files.js";
 
 export interface AppState {
@@ -116,6 +122,12 @@ export interface ProjectState {
    * state migration and project creation backfill it for runtime data.
    */
   sidebar?: ProjectSidebarState;
+  /**
+   * Server-owned product metadata keyed by absolute worktree path. The git
+   * worktree list remains authoritative for existence; this map only records
+   * lineage/provenance for display and context.
+   */
+  worktreeMetadata?: Record<string, WorktreeLineageMetadata>;
   lastAccessedAt: number;
 }
 
@@ -151,6 +163,122 @@ export function normalizeProjectSidebarState(
     paneOrder: normalizePaneOrderMap(value.paneOrder),
     worktreeOpen: normalizeWorktreeOpenMap(value.worktreeOpen),
   };
+}
+
+const WORKTREE_CREATION_SOURCES: WorktreeCreationSource[] = [
+  "ui",
+  "cli",
+  "runtime",
+  "agent",
+  "unknown",
+];
+const WORKTREE_LINEAGE_CAPTURE_SOURCES: WorktreeLineageCaptureSource[] = [
+  "create-worktree-request",
+  "path-prefix",
+  "manual",
+];
+const WORKTREE_LINEAGE_CONFIDENCES: WorktreeLineageConfidence[] = [
+  "explicit",
+  "inferred",
+];
+
+export function normalizeWorktreeMetadataMap(
+  value: unknown,
+): Record<string, WorktreeLineageMetadata> {
+  if (!isPlainObject(value)) return {};
+  const out: Record<string, WorktreeLineageMetadata> = {};
+  for (const [path, raw] of Object.entries(value)) {
+    const metadata = normalizeWorktreeLineageMetadata(raw);
+    if (path && metadata) out[path] = metadata;
+  }
+  return out;
+}
+
+function normalizeWorktreeLineageMetadata(
+  value: unknown,
+): WorktreeLineageMetadata | null {
+  if (!isPlainObject(value)) return null;
+  if (typeof value.instanceId !== "string" || value.instanceId.length === 0) {
+    return null;
+  }
+  if (
+    typeof value.createdAt !== "number" ||
+    !Number.isFinite(value.createdAt) ||
+    value.createdAt < 0
+  ) {
+    return null;
+  }
+  if (
+    typeof value.creationSource !== "string" ||
+    !WORKTREE_CREATION_SOURCES.includes(
+      value.creationSource as WorktreeCreationSource,
+    )
+  ) {
+    return null;
+  }
+  if (!isPlainObject(value.lineageCapture)) return null;
+  if (
+    typeof value.lineageCapture.source !== "string" ||
+    !WORKTREE_LINEAGE_CAPTURE_SOURCES.includes(
+      value.lineageCapture.source as WorktreeLineageCaptureSource,
+    )
+  ) {
+    return null;
+  }
+  if (
+    typeof value.lineageCapture.confidence !== "string" ||
+    !WORKTREE_LINEAGE_CONFIDENCES.includes(
+      value.lineageCapture.confidence as WorktreeLineageConfidence,
+    )
+  ) {
+    return null;
+  }
+
+  const metadata: WorktreeLineageMetadata = {
+    instanceId: value.instanceId,
+    creationSource: value.creationSource as WorktreeCreationSource,
+    createdAt: value.createdAt,
+    lineageCapture: {
+      source: value.lineageCapture.source as WorktreeLineageCaptureSource,
+      confidence: value.lineageCapture.confidence as WorktreeLineageConfidence,
+    },
+  };
+  const createdWithAgent = optionalString(value, "createdWithAgent");
+  if (createdWithAgent) metadata.createdWithAgent = createdWithAgent;
+  const createdBySessionId = optionalString(value, "createdBySessionId");
+  if (createdBySessionId) metadata.createdBySessionId = createdBySessionId;
+  const createdByPaneCommandId = optionalString(
+    value,
+    "createdByPaneCommandId",
+  );
+  if (createdByPaneCommandId) {
+    metadata.createdByPaneCommandId = createdByPaneCommandId;
+  }
+  const createdByPaneCommandLabel = optionalString(
+    value,
+    "createdByPaneCommandLabel",
+  );
+  if (createdByPaneCommandLabel) {
+    metadata.createdByPaneCommandLabel = createdByPaneCommandLabel;
+  }
+  const parentWorktreePath = optionalString(value, "parentWorktreePath");
+  if (parentWorktreePath) metadata.parentWorktreePath = parentWorktreePath;
+  const parentWorktreeInstanceId = optionalString(
+    value,
+    "parentWorktreeInstanceId",
+  );
+  if (parentWorktreeInstanceId) {
+    metadata.parentWorktreeInstanceId = parentWorktreeInstanceId;
+  }
+  return metadata;
+}
+
+function optionalString(
+  source: Record<string, unknown>,
+  key: keyof WorktreeLineageMetadata & string,
+): string | undefined {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 export function normalizeProjectSidebarStatePatch(

@@ -569,6 +569,7 @@ export function App() {
         base: string;
         copyLocalFiles: string[];
         rememberLocalFiles: boolean;
+        parentWorktreePath: string;
         command: PaneCommand;
       },
     ) => {
@@ -577,6 +578,12 @@ export function App() {
         base: input.base,
         copyLocalFiles: input.copyLocalFiles,
         rememberLocalFiles: input.rememberLocalFiles,
+        lineage: {
+          creationSource: "ui",
+          parentWorktreePath: input.parentWorktreePath,
+          createdByPaneCommandId: input.command.id,
+          createdByPaneCommandLabel: input.command.label,
+        },
       });
       const worktreePath = data.path;
       const copyMessage = summarizeLocalFileCopies(data.localFileCopies);

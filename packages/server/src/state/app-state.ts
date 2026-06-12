@@ -9,6 +9,7 @@ import {
   normalizePaneCommands,
   normalizeProjectSidebarState,
   normalizeWorktreeLocalFileAllowlist,
+  normalizeWorktreeMetadataMap,
   type PortDetectionMode,
   type Project,
   type ProjectState,
@@ -118,6 +119,7 @@ function normalizeProjectStates(value: unknown): Record<string, ProjectState> {
       lastFocusedPaneId: raw.lastFocusedPaneId ?? null,
       focusedPaneId: raw.focusedPaneId ?? null,
       sidebar: normalizeProjectSidebarState(raw.sidebar),
+      worktreeMetadata: normalizeWorktreeMetadataMap(raw.worktreeMetadata),
       lastAccessedAt:
         typeof raw.lastAccessedAt === "number" ? raw.lastAccessedAt : 0,
     };

@@ -80,6 +80,9 @@ export function WorktreeRow({
       : undefined;
   const dirtyDotClass =
     worktree.dirty > 0 ? "bg-[var(--theme-git-modified)]" : "";
+  const lineageTitle = worktree.lineage
+    ? formatLineageTitle(worktree.lineage)
+    : null;
 
   return (
     <div className="border-t border-border">
@@ -152,6 +155,16 @@ export function WorktreeRow({
               agent
             </span>
           )}
+          {lineageTitle && (
+            <span
+              role="img"
+              aria-label="Linked worktree"
+              title={lineageTitle}
+              className="shrink-0 rounded-tag border border-text-secondary/30 bg-bg-primary px-1 text-[10px] font-medium leading-tight text-text-secondary"
+            >
+              linked
+            </span>
+          )}
           {worktree.orphan && (
             <span
               role="img"
@@ -192,4 +205,22 @@ export function WorktreeRow({
       )}
     </div>
   );
+}
+
+function formatLineageTitle(
+  lineage: NonNullable<SidebarWorktree["lineage"]>,
+): string {
+  const parts = ["Created from workspace context"];
+  if (lineage.parentWorktreePath) {
+    parts.push(`parent: ${lastPathSegment(lineage.parentWorktreePath)}`);
+  }
+  if (lineage.createdByPaneCommandLabel) {
+    parts.push(`command: ${lineage.createdByPaneCommandLabel}`);
+  }
+  return parts.join(" | ");
+}
+
+function lastPathSegment(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.split("/").pop() || path;
 }

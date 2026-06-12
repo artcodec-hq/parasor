@@ -281,6 +281,74 @@ describe("AppStateStore", () => {
     ]);
   });
 
+  it("normalizes persisted worktree lineage metadata", () => {
+    const state = {
+      version: 1,
+      projects: [],
+      projectStates: {
+        p1: {
+          projectId: "p1",
+          layout: null,
+          worktrees: [],
+          openFiles: [],
+          lastFocusedPaneId: null,
+          focusedPaneId: null,
+          lastAccessedAt: 1,
+          worktreeMetadata: {
+            "/repo/wt": {
+              instanceId: "wt-inst-1",
+              creationSource: "ui",
+              createdAt: 42,
+              createdByPaneCommandId: "cmd:dev",
+              createdByPaneCommandLabel: "Dev",
+              parentWorktreePath: "/repo",
+              parentWorktreeInstanceId: "wt-root",
+              lineageCapture: {
+                source: "create-worktree-request",
+                confidence: "explicit",
+              },
+            },
+            "/repo/bad": {
+              instanceId: "",
+              creationSource: "future",
+              createdAt: -1,
+              lineageCapture: { source: "bad", confidence: "bad" },
+            },
+          },
+        },
+      },
+      sessions: [],
+      sessionRecords: [],
+      paneCommands: [],
+      ideCommands: [],
+      serviceConfig: {
+        preventIdleSleep: false,
+        portDetection: "all-interfaces",
+        dropSizeMaxBytes: DEFAULT_DROP_SIZE_MAX_BYTES,
+        dropSizeHardMaxBytes: DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
+      },
+    };
+    writeFileSync(join(dir, "state.json"), JSON.stringify(state), "utf-8");
+
+    const store = new AppStateStore({ dir });
+
+    expect(store.get().projectStates.p1?.worktreeMetadata).toEqual({
+      "/repo/wt": {
+        instanceId: "wt-inst-1",
+        creationSource: "ui",
+        createdAt: 42,
+        createdByPaneCommandId: "cmd:dev",
+        createdByPaneCommandLabel: "Dev",
+        parentWorktreePath: "/repo",
+        parentWorktreeInstanceId: "wt-root",
+        lineageCapture: {
+          source: "create-worktree-request",
+          confidence: "explicit",
+        },
+      },
+    });
+  });
+
   it("falls back to all-interfaces when persisted portDetection is unknown", () => {
     const tampered = {
       version: 1,

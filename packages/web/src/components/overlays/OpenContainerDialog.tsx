@@ -32,6 +32,7 @@ export interface OpenContainerDialogProps {
     base: string;
     copyLocalFiles: string[];
     rememberLocalFiles: boolean;
+    parentWorktreePath: string;
     command: PaneCommand;
   }) => Promise<void> | void;
 }
@@ -136,6 +137,7 @@ export function OpenContainerDialog({
         projectName={project.name}
         projectPath={project.path}
         selectedIndex={selectedIndex}
+        parentWorktreePath={worktree.path}
         onBack={() => setMode("launcher")}
         onCreated={onClose}
         onCreate={onCreateWorktreeSession}
@@ -311,6 +313,7 @@ function NewWorktreeSessionBody({
   projectName,
   projectPath,
   selectedIndex,
+  parentWorktreePath,
   onBack,
   onCreated,
   onCreate,
@@ -325,6 +328,7 @@ function NewWorktreeSessionBody({
   projectName: string;
   projectPath: string;
   selectedIndex: number;
+  parentWorktreePath: string;
   onBack: () => void;
   onCreated: () => void;
   onCreate?: (input: {
@@ -332,6 +336,7 @@ function NewWorktreeSessionBody({
     base: string;
     copyLocalFiles: string[];
     rememberLocalFiles: boolean;
+    parentWorktreePath: string;
     command: PaneCommand;
   }) => Promise<void> | void;
   onSelectCommand: (index: number) => void;
@@ -403,6 +408,7 @@ function NewWorktreeSessionBody({
         base: base.trim(),
         copyLocalFiles: [...selectedLocalFiles],
         rememberLocalFiles,
+        parentWorktreePath,
         command: selectedCommand,
       });
       onCreated();

@@ -1,8 +1,14 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { Worktree, WorktreeLocalFileCopyResult } from "@parasor/shared";
+import type {
+  Worktree,
+  WorktreeCreationSource,
+  WorktreeLineageMetadata,
+  WorktreeLocalFileCopyResult,
+} from "@parasor/shared";
 import { parseGitStatusV2 } from "../../fs/git-watcher.js";
 import {
   resolveWorktreePath,
@@ -23,12 +29,23 @@ export interface CreateWorktreeInput {
   branch: string;
   base?: string;
   copyLocalFiles?: unknown;
+  lineage?: CreateWorktreeLineageInput;
+}
+
+export interface CreateWorktreeLineageInput {
+  creationSource?: WorktreeCreationSource;
+  parentWorktreePath?: string;
+  createdWithAgent?: string;
+  createdBySessionId?: string;
+  createdByPaneCommandId?: string;
+  createdByPaneCommandLabel?: string;
 }
 
 export interface CreateWorktreeResult {
   path: string;
   head: string;
   branch: string;
+  lineage?: WorktreeLineageMetadata;
   localFileCopies?: WorktreeLocalFileCopyResult[];
 }
 
@@ -66,6 +83,18 @@ interface CreateWorktreeCommandsDeps {
     worktreePath: string,
     selectedPaths: unknown,
   ) => Promise<WorktreeLocalFileCopyResult[]>;
+  getWorktreeMetadata?: (
+    projectId: string,
+    worktreePath: string,
+  ) => WorktreeLineageMetadata | undefined;
+  setWorktreeMetadata?: (
+    projectId: string,
+    worktreePath: string,
+    metadata: WorktreeLineageMetadata,
+  ) => void;
+  removeWorktreeMetadata?: (projectId: string, worktreePath: string) => void;
+  createInstanceId?: () => string;
+  now?: () => number;
 }
 
 async function defaultRunGit(projectPath: string, args: string[]) {
@@ -216,6 +245,11 @@ export function createWorktreeCommands({
     defaultIsInsideGitRepo(projectPath, runGit),
   resolveWorktree = resolveWorktreePath,
   copyLocalFiles = copyWorktreeLocalFiles,
+  getWorktreeMetadata = () => undefined,
+  setWorktreeMetadata = () => undefined,
+  removeWorktreeMetadata = () => undefined,
+  createInstanceId = randomUUID,
+  now = Date.now,
 }: CreateWorktreeCommandsDeps) {
   const fenceWorktreePath = (projectId: string, worktreePath: string) =>
     fenceWorktreePathWith(
@@ -293,6 +327,26 @@ export function createWorktreeCommands({
         head,
         branch,
       };
+      const knownParentPaths = new Set([
+        project.path,
+        ...getProjectWorktrees(projectId).map((worktree) => worktree.path),
+      ]);
+      const parentWorktreePath = input.lineage?.parentWorktreePath;
+      const lineage = buildWorktreeLineage({
+        input: input.lineage,
+        parentMetadata:
+          parentWorktreePath !== undefined &&
+          knownParentPaths.has(parentWorktreePath)
+            ? getWorktreeMetadata(projectId, parentWorktreePath)
+            : undefined,
+        knownParentPaths,
+        createInstanceId,
+        now,
+      });
+      if (lineage) {
+        result.lineage = lineage;
+        setWorktreeMetadata(projectId, worktreePath, lineage);
+      }
 
       const localFileCopies = await copyLocalFiles(
         project.path,
@@ -411,6 +465,7 @@ export function createWorktreeCommands({
             err instanceof Error ? err.message : "git worktree prune failed";
           throw new WorkspaceConflictError(message);
         }
+        removeWorktreeMetadata(projectId, cachedHit.path);
         eventBus.broadcast({
           type: "worktree-removed",
           projectId,
@@ -439,6 +494,7 @@ export function createWorktreeCommands({
         throw new WorkspaceConflictError(message);
       }
 
+      removeWorktreeMetadata(projectId, resolved);
       eventBus.broadcast({
         type: "worktree-removed",
         projectId,
@@ -446,6 +502,53 @@ export function createWorktreeCommands({
       });
     },
   };
+}
+
+function buildWorktreeLineage({
+  input,
+  parentMetadata,
+  knownParentPaths,
+  createInstanceId,
+  now,
+}: {
+  input: CreateWorktreeLineageInput | undefined;
+  parentMetadata: WorktreeLineageMetadata | undefined;
+  knownParentPaths: Set<string>;
+  createInstanceId: () => string;
+  now: () => number;
+}): WorktreeLineageMetadata | undefined {
+  if (!input) return undefined;
+  const metadata: WorktreeLineageMetadata = {
+    instanceId: createInstanceId(),
+    creationSource: input.creationSource ?? "unknown",
+    createdAt: now(),
+    lineageCapture: {
+      source: "create-worktree-request",
+      confidence: "explicit",
+    },
+  };
+  if (input.createdWithAgent) {
+    metadata.createdWithAgent = input.createdWithAgent;
+  }
+  if (input.createdBySessionId) {
+    metadata.createdBySessionId = input.createdBySessionId;
+  }
+  if (input.createdByPaneCommandId) {
+    metadata.createdByPaneCommandId = input.createdByPaneCommandId;
+  }
+  if (input.createdByPaneCommandLabel) {
+    metadata.createdByPaneCommandLabel = input.createdByPaneCommandLabel;
+  }
+  if (
+    input.parentWorktreePath &&
+    knownParentPaths.has(input.parentWorktreePath)
+  ) {
+    metadata.parentWorktreePath = input.parentWorktreePath;
+  }
+  if (parentMetadata) {
+    metadata.parentWorktreeInstanceId = parentMetadata.instanceId;
+  }
+  return metadata;
 }
 
 async function branchRefExists(

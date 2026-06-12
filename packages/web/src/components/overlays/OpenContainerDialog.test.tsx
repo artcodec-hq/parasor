@@ -127,6 +127,7 @@ describe("OpenContainerDialog command launcher", () => {
       base: "",
       copyLocalFiles: [".env"],
       rememberLocalFiles: true,
+      parentWorktreePath: "/repo",
       command: props.commands[0],
     });
   });

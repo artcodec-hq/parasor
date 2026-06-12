@@ -1,3 +1,4 @@
+import type { WorktreeLineageMetadata } from "@parasor/shared";
 import type { AgentDotState } from "../../primitives/index.js";
 
 /**
@@ -47,6 +48,7 @@ export interface SidebarWorktree {
    * Agent Team isolation root (see `Worktree.origin`).
    */
   origin?: "agent";
+  lineage?: WorktreeLineageMetadata;
   /**
    * `true` when the worktree path no longer exists on disk. The sidebar
    * surfaces a pill and the remove dialog defaults to `--force`.
