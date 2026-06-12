@@ -74,16 +74,30 @@ interface IconKeyDef {
   title: string;
 }
 
+const KEYBAR_ICON_PROPS = { width: 20, height: 20 } as const;
+
 const LEADING_KEYS: KeyDef[] = [
-  { icon: <KeyEscIcon />, seq: "\x1b", title: "Escape" },
-  { icon: <KeyTabIcon />, seq: "\t", title: "Tab" },
+  { icon: <KeyEscIcon {...KEYBAR_ICON_PROPS} />, seq: "\x1b", title: "Escape" },
+  { icon: <KeyTabIcon {...KEYBAR_ICON_PROPS} />, seq: "\t", title: "Tab" },
 ];
 
 const ARROW_KEYS: IconKeyDef[] = [
-  { icon: <ArrowUpIcon />, seq: "\x1b[A", title: "Up" },
-  { icon: <ArrowDownIcon />, seq: "\x1b[B", title: "Down" },
-  { icon: <ArrowLeftIcon />, seq: "\x1b[D", title: "Left" },
-  { icon: <ArrowRightIcon />, seq: "\x1b[C", title: "Right" },
+  { icon: <ArrowUpIcon {...KEYBAR_ICON_PROPS} />, seq: "\x1b[A", title: "Up" },
+  {
+    icon: <ArrowDownIcon {...KEYBAR_ICON_PROPS} />,
+    seq: "\x1b[B",
+    title: "Down",
+  },
+  {
+    icon: <ArrowLeftIcon {...KEYBAR_ICON_PROPS} />,
+    seq: "\x1b[D",
+    title: "Left",
+  },
+  {
+    icon: <ArrowRightIcon {...KEYBAR_ICON_PROPS} />,
+    seq: "\x1b[C",
+    title: "Right",
+  },
 ];
 
 const BUTTON_BASE =
@@ -167,7 +181,7 @@ export function MobileKeyBar({
               ctrlActive ? "bg-accent text-bg-primary" : "text-text-primary"
             }`}
           >
-            <KeyCtrlIcon />
+            <KeyCtrlIcon {...KEYBAR_ICON_PROPS} />
           </button>
           <button
             key="return"
@@ -178,7 +192,7 @@ export function MobileKeyBar({
             onClick={() => handleKey("\n")}
             className={`${BUTTON_BASE} text-text-primary`}
           >
-            <CornerDownLeftIcon />
+            <CornerDownLeftIcon {...KEYBAR_ICON_PROPS} />
           </button>
           {ARROW_KEYS.map((k) => (
             <button
@@ -207,7 +221,7 @@ export function MobileKeyBar({
             onClick={() => setSheetOpen(true)}
             className={`${BUTTON_BASE} text-text-primary`}
           >
-            <CirclePlusIcon />
+            <CirclePlusIcon {...KEYBAR_ICON_PROPS} />
           </button>
           <button
             key="keyboard"
@@ -221,7 +235,7 @@ export function MobileKeyBar({
               keyboardOpen ? "bg-accent text-bg-primary" : "text-text-primary"
             }`}
           >
-            <KeyboardIcon />
+            <KeyboardIcon {...KEYBAR_ICON_PROPS} />
           </button>
         </div>
       </div>
@@ -240,7 +254,7 @@ export function MobileKeyBar({
             onClick={() => cameraInputRef.current?.click()}
             className={SHEET_ROW}
           >
-            <CameraIcon />
+            <CameraIcon {...KEYBAR_ICON_PROPS} />
             <span>Take Photo</span>
           </button>
           <button
@@ -250,7 +264,7 @@ export function MobileKeyBar({
             onClick={() => libraryInputRef.current?.click()}
             className={SHEET_ROW}
           >
-            <ImageLibraryIcon />
+            <ImageLibraryIcon {...KEYBAR_ICON_PROPS} />
             <span>Photo Library</span>
           </button>
           <div className="mt-2 border-t border-border px-4 pt-3 pb-1">

@@ -89,7 +89,6 @@ export const TerminalHeader: Story = {
     return (
       <PaneFrame width={420}>
         <PaneHeader
-          icon={<PaGlyph.terminal />}
           title="codex"
           titleAttr="codex"
           actions={

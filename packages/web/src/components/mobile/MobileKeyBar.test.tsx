@@ -65,7 +65,7 @@ describe("MobileKeyBar", () => {
     ]);
   });
 
-  it("uses shared 16px / 1px SVG icons for controls", () => {
+  it("uses shared SVG icons at the keybar's original 20px size", () => {
     const { container } = renderBar();
     const labels = [
       "Return",
@@ -79,8 +79,8 @@ describe("MobileKeyBar", () => {
     for (const label of labels) {
       const svg = buttonByLabel(container, label).querySelector("svg");
       expect(svg).not.toBeNull();
-      expect(svg?.getAttribute("width")).toBe("16");
-      expect(svg?.getAttribute("height")).toBe("16");
+      expect(svg?.getAttribute("width")).toBe("20");
+      expect(svg?.getAttribute("height")).toBe("20");
       expect(svg?.getAttribute("stroke-width")).toBe("1");
     }
   });
@@ -96,8 +96,8 @@ describe("MobileKeyBar", () => {
     for (const button of [escapeKey, tab, ctrl]) {
       const svg = button.querySelector("svg");
       expect(svg).not.toBeNull();
-      expect(svg?.getAttribute("width")).toBe("16");
-      expect(svg?.getAttribute("height")).toBe("16");
+      expect(svg?.getAttribute("width")).toBe("20");
+      expect(svg?.getAttribute("height")).toBe("20");
     }
   });
 

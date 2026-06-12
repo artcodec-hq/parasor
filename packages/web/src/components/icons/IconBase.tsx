@@ -8,6 +8,17 @@ type BaseIconProps = SVGProps<SVGSVGElement> & {
   children: ReactNode;
 };
 
+function iconClassName(
+  className: string | undefined,
+  width: SVGProps<SVGSVGElement>["width"],
+  height: SVGProps<SVGSVGElement>["height"],
+): string | undefined {
+  if (className !== undefined) return className;
+  return width === ICON_SIZE && height === ICON_SIZE
+    ? ICON_BASE_CLASS
+    : undefined;
+}
+
 export function StrokeIcon({
   className,
   children,
@@ -21,7 +32,7 @@ export function StrokeIcon({
       viewBox={viewBox}
       width={width}
       height={height}
-      className={className ?? ICON_BASE_CLASS}
+      className={iconClassName(className, width, height)}
       fill="none"
       stroke="currentColor"
       strokeWidth={ICON_STROKE_WIDTH}
@@ -48,7 +59,7 @@ export function FillIcon({
       viewBox={viewBox}
       width={width}
       height={height}
-      className={className ?? ICON_BASE_CLASS}
+      className={iconClassName(className, width, height)}
       fill="currentColor"
       aria-hidden
       {...p}

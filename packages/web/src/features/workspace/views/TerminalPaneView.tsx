@@ -64,7 +64,6 @@ export function TerminalPaneView({
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <PaneHeader
-        icon={<PaGlyph.terminal />}
         title={title}
         titleAttr={title}
         titleElement={

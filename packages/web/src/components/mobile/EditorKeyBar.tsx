@@ -41,17 +41,47 @@ interface KeyDef {
   title: string;
 }
 
+const EDITOR_KEYBAR_ICON_PROPS = {
+  width: 22,
+  height: 22,
+  strokeWidth: 1.6,
+} as const;
+
 const ACTION_KEYS: KeyDef[] = [
   { label: "Tab", cmd: insertTab, title: "Tab" },
-  { label: <UndoIcon />, cmd: undo, title: "Undo" },
-  { label: <RedoIcon />, cmd: redo, title: "Redo" },
+  {
+    label: <UndoIcon {...EDITOR_KEYBAR_ICON_PROPS} />,
+    cmd: undo,
+    title: "Undo",
+  },
+  {
+    label: <RedoIcon {...EDITOR_KEYBAR_ICON_PROPS} />,
+    cmd: redo,
+    title: "Redo",
+  },
 ];
 
 const ARROW_KEYS: KeyDef[] = [
-  { label: <ArrowUpIcon />, cmd: cursorLineUp, title: "Up" },
-  { label: <ArrowDownIcon />, cmd: cursorLineDown, title: "Down" },
-  { label: <ArrowLeftIcon />, cmd: cursorCharLeft, title: "Left" },
-  { label: <ArrowRightIcon />, cmd: cursorCharRight, title: "Right" },
+  {
+    label: <ArrowUpIcon {...EDITOR_KEYBAR_ICON_PROPS} />,
+    cmd: cursorLineUp,
+    title: "Up",
+  },
+  {
+    label: <ArrowDownIcon {...EDITOR_KEYBAR_ICON_PROPS} />,
+    cmd: cursorLineDown,
+    title: "Down",
+  },
+  {
+    label: <ArrowLeftIcon {...EDITOR_KEYBAR_ICON_PROPS} />,
+    cmd: cursorCharLeft,
+    title: "Left",
+  },
+  {
+    label: <ArrowRightIcon {...EDITOR_KEYBAR_ICON_PROPS} />,
+    cmd: cursorCharRight,
+    title: "Right",
+  },
 ];
 
 const BUTTON_BASE =
@@ -122,7 +152,7 @@ export function EditorKeyBar({
             keyboardOpen ? "bg-accent text-bg-primary" : "text-text-primary"
           }`}
         >
-          <KeyboardIcon />
+          <KeyboardIcon {...EDITOR_KEYBAR_ICON_PROPS} />
         </button>
       </div>
     </div>
