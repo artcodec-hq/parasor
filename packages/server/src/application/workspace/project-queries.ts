@@ -238,7 +238,10 @@ export function createProjectQueries({
             ]);
             const list = parseWorktreeList(porcelain);
             const enriched = await enrichWithCounters(list, runGit);
-            return [project.id, enriched] as const;
+            return [
+              project.id,
+              mergeWorktreeMetadata(enriched, getWorktreeMetadata(project.id)),
+            ] as const;
           } catch {
             return [project.id, []] as const;
           }
