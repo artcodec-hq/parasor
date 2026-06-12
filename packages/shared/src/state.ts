@@ -25,9 +25,9 @@ export interface AppState {
   sessionRecords: SessionRecord[];
   serviceConfig: ServiceConfig;
   /**
-   * User-defined commands shown by the Open Container terminal launcher.
-   * The built-in empty-shell Terminal entry is client-owned UI behavior and
-   * is intentionally not persisted here.
+   * Terminal launcher command configuration. User-defined command entries use
+   * custom ids; built-in preset ids store only user overrides such as
+   * enabled/disabled state or a custom command line.
    */
   paneCommands: PaneCommandConfig[];
   /**

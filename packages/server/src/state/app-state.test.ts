@@ -265,7 +265,13 @@ describe("AppStateStore", () => {
       paneCommands: [
         { id: "cmd:1", label: " Dev ", initialInput: " pnpm dev " },
         { id: "cmd:1", label: "Duplicate", initialInput: "echo duplicate" },
-        { id: "builtin:terminal", label: "Nope", initialInput: "echo nope" },
+        {
+          id: "builtin:claude",
+          label: "Nope",
+          initialInput: " claude --model opus ",
+          enabled: false,
+        },
+        { id: "builtin:missing", label: "Nope", initialInput: "echo nope" },
       ],
       serviceConfig: {
         preventIdleSleep: false,
@@ -278,6 +284,12 @@ describe("AppStateStore", () => {
     const store = new AppStateStore({ dir });
     expect(store.get().paneCommands).toEqual([
       { id: "cmd:1", label: "Dev", initialInput: "pnpm dev" },
+      {
+        id: "builtin:claude",
+        label: "Claude",
+        initialInput: "claude --model opus",
+        enabled: false,
+      },
     ]);
   });
 

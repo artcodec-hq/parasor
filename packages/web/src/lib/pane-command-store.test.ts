@@ -20,9 +20,9 @@ describe("pane-command-store", () => {
     ]);
   });
 
-  it("drops malformed, duplicate, builtin, and empty commands", () => {
+  it("drops malformed, duplicate, unknown builtin, and empty commands", () => {
     const raw = JSON.stringify([
-      { id: "builtin:terminal", label: "x", initialInput: "x" },
+      { id: "builtin:missing", label: "x", initialInput: "x" },
       { id: "cmd:1", label: "Dev", initialInput: "pnpm dev" },
       { id: "cmd:1", label: "Duplicate", initialInput: "echo duplicate" },
       { id: "cmd:2", label: "", initialInput: "echo no-label" },
@@ -34,8 +34,13 @@ describe("pane-command-store", () => {
     ]);
   });
 
-  it("prepends immutable built-in shell presets", () => {
+  it("prepends configurable built-in shell presets", () => {
     const commands = paneCommandsWithBuiltins([
+      {
+        id: "builtin:claude",
+        label: "Claude",
+        initialInput: "claude --model opus",
+      },
       { id: "cmd:1", label: "Dev", initialInput: "pnpm dev" },
     ]);
 
@@ -70,5 +75,35 @@ describe("pane-command-store", () => {
         commandLine: "pnpm dev",
       },
     });
+    expect(commands[1]).toMatchObject({
+      id: "builtin:claude",
+      label: "Claude",
+      initialInput: "claude --model opus",
+      builtin: true,
+      launchPreset: {
+        presetId: "builtin:claude",
+        source: "builtin",
+        label: "Claude",
+        commandLine: "claude --model opus",
+      },
+    });
+  });
+
+  it("hides disabled built-in agent presets", () => {
+    const commands = paneCommandsWithBuiltins([
+      {
+        id: "builtin:claude",
+        label: "Claude",
+        initialInput: "claude",
+        enabled: false,
+      },
+    ]);
+
+    expect(commands.map((command) => command.id)).toEqual([
+      "builtin:terminal",
+      "builtin:codex",
+      "builtin:opencode",
+      "builtin:gemini",
+    ]);
   });
 });

@@ -20,6 +20,7 @@ function renderDialog(
     project,
     worktree,
     commands: paneCommandsWithBuiltins(customCommands),
+    commandConfigs: customCommands,
     onClose: vi.fn(),
     onCommandsChange: vi.fn(),
     onRunCommand: vi.fn(),
@@ -90,6 +91,7 @@ describe("OpenContainerDialog command launcher", () => {
     const onCommandsChange = vi.fn();
     const { getByText, container } = renderDialog({
       commands: paneCommandsWithBuiltins([]),
+      commandConfigs: [],
       onCommandsChange,
     });
     fireEvent.click(getByText("Edit commands"));
@@ -101,6 +103,58 @@ describe("OpenContainerDialog command launcher", () => {
     expect(onCommandsChange).toHaveBeenCalledWith([
       expect.objectContaining({ label: "Test", initialInput: "echo test" }),
     ]);
+  });
+
+  it("updates built-in agent command presets from the editor", () => {
+    const onCommandsChange = vi.fn();
+    const { getByText, getAllByText, container } = renderDialog({
+      commandConfigs: [],
+      onCommandsChange,
+    });
+
+    fireEvent.click(getByText("Edit commands"));
+    fireEvent.click(getAllByText("Edit")[1]);
+    const commandInput = Array.from(container.querySelectorAll("input")).at(-1);
+    expect(commandInput).toBeTruthy();
+    fireEvent.change(commandInput as HTMLInputElement, {
+      target: { value: "claude --model opus" },
+    });
+    fireEvent.click(getByText("Save"));
+
+    expect(onCommandsChange).toHaveBeenCalledWith([
+      {
+        id: "builtin:claude",
+        label: "Claude",
+        initialInput: "claude --model opus",
+        enabled: true,
+      },
+    ]);
+  });
+
+  it("toggles built-in agents out of the launcher", () => {
+    const commands = paneCommandsWithBuiltins([
+      {
+        id: "builtin:claude",
+        label: "Claude",
+        initialInput: "claude",
+        enabled: false,
+      },
+    ]);
+
+    const { queryByText } = renderDialog({
+      commands,
+      commandConfigs: [
+        {
+          id: "builtin:claude",
+          label: "Claude",
+          initialInput: "claude",
+          enabled: false,
+        },
+      ],
+    });
+
+    expect(queryByText("Terminal")).toBeTruthy();
+    expect(queryByText("Claude")).toBeNull();
   });
 
   it("creates a new worktree session from the launcher", async () => {

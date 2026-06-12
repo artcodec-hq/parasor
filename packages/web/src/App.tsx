@@ -1345,6 +1345,7 @@ export function App() {
             project={containerDialogContext.project}
             worktree={containerDialogContext.worktree}
             commands={paneCommands}
+            commandConfigs={store.paneCommands}
             isMobile={isMobile}
             loadLocalFiles={loadWorktreeLocalFiles}
             onClose={containerDialog.close}

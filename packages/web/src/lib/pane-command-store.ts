@@ -21,11 +21,22 @@ export const BUILTIN_TERMINAL_COMMAND: PaneCommand = paneCommandFromBuiltin(
 );
 
 export function paneCommandsWithBuiltins(
-  customCommands: CustomPaneCommand[],
+  storedCommands: CustomPaneCommand[],
 ): PaneCommand[] {
+  const overrides = new Map(
+    storedCommands
+      .filter((command) => command.id.startsWith("builtin:"))
+      .map((command) => [command.id, command]),
+  );
   return [
-    ...BUILTIN_SHELL_PRESETS.map(paneCommandFromBuiltin),
-    ...customCommands.map(paneCommandFromCustom),
+    ...BUILTIN_SHELL_PRESETS.flatMap((preset) => {
+      const override = overrides.get(preset.id);
+      if (preset.group === "agent" && override?.enabled === false) return [];
+      return [paneCommandFromBuiltin(preset, override)];
+    }),
+    ...storedCommands
+      .filter((command) => !command.id.startsWith("builtin:"))
+      .map(paneCommandFromCustom),
   ];
 }
 
@@ -44,13 +55,18 @@ export function paneCommandFromCustom(command: CustomPaneCommand): PaneCommand {
 
 function paneCommandFromBuiltin(
   preset: (typeof BUILTIN_SHELL_PRESETS)[number],
+  override?: CustomPaneCommand,
 ): PaneCommand {
+  const commandLine = override?.initialInput ?? preset.commandLine;
   return {
     id: preset.id,
     label: preset.label,
-    initialInput: preset.commandLine,
+    initialInput: commandLine,
     builtin: true,
-    launchPreset: shellPresetToLaunchPreset(preset),
+    launchPreset: {
+      ...shellPresetToLaunchPreset(preset),
+      commandLine,
+    },
   };
 }
 

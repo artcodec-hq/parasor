@@ -49,14 +49,28 @@ describe("createPaneCommandRoutes", () => {
       body: JSON.stringify({
         commands: [
           { id: "cmd:1", label: " Dev ", initialInput: " pnpm dev " },
-          { id: "builtin:terminal", label: "Nope", initialInput: "echo no" },
+          {
+            id: "builtin:claude",
+            label: "Nope",
+            initialInput: " claude --model opus ",
+            enabled: false,
+          },
+          { id: "builtin:missing", label: "Nope", initialInput: "echo no" },
           { id: "cmd:1", label: "Duplicate", initialInput: "echo dupe" },
           { id: "cmd:2", label: "", initialInput: "echo no-label" },
         ],
       }),
     });
 
-    const expected = [{ id: "cmd:1", label: "Dev", initialInput: "pnpm dev" }];
+    const expected = [
+      { id: "cmd:1", label: "Dev", initialInput: "pnpm dev" },
+      {
+        id: "builtin:claude",
+        label: "Claude",
+        initialInput: "claude --model opus",
+        enabled: false,
+      },
+    ];
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ commands: expected });
     expect(appStateStore.get().paneCommands).toEqual(expected);
