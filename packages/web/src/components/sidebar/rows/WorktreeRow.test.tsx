@@ -125,6 +125,21 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(label.className).toContain("text-text-secondary");
     expect(screen.queryByLabelText("Modified")).toBeNull();
   });
+
+  it("uses secondary text for the project root label", () => {
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={makeWorktree(0)}
+        selection={selection}
+        displayName="demo"
+        isProjectRoot
+      />,
+    );
+    const label = screen.getByText("demo");
+    expect(label.className).toContain("text-text-secondary");
+    expect(label.className).not.toContain("text-text-primary");
+  });
 });
 
 describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {

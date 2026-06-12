@@ -102,6 +102,7 @@ describe("buildSessionCrumbs", () => {
   it("uses the folder glyph for the project root when the project is not a git repo", () => {
     const crumbs = buildSessionCrumbs("acme", "root", true, false, null);
     expect(crumbs.map((c) => c.label)).toEqual(["acme", "root"]);
+    expect(crumbs[0].dim).toBe(true);
     expect(glyphType(crumbs[1])).toBe(PaGlyph.folder);
   });
 

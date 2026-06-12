@@ -737,7 +737,7 @@ export function buildSessionCrumbs(
 ): SessionCrumb[] {
   const crumbs: SessionCrumb[] = [];
   if (projectName) {
-    crumbs.push({ label: projectName, maxWidth: 96 });
+    crumbs.push({ label: projectName, dim: true, maxWidth: 96 });
   }
   if (worktreeDirName) {
     const worktreeGlyph = !worktreeIsRepo ? (

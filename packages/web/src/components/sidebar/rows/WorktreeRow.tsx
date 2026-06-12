@@ -124,9 +124,7 @@ export function WorktreeRow({
             title={dirtyTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
-            className={
-              isProjectRoot ? "text-text-primary" : "text-text-secondary"
-            }
+            className="text-text-secondary"
           >
             {label}
           </SidebarRowLabel>
