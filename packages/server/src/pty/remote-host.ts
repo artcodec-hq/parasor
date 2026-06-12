@@ -649,6 +649,7 @@ export class RemotePtyHost implements PtyHost {
       command: input.command,
       cwd: input.cwd,
       title: input.title,
+      launchPreset: input.launchPreset,
       bootstrapInput: input.bootstrapInput,
     };
     const ack = await this.request(

@@ -222,6 +222,7 @@ function buildActiveWorktrees({
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
+      ...(meta?.lineage ? { lineage: meta.lineage } : {}),
       ...(meta?.orphan ? { orphan: true } : {}),
     };
   });
@@ -291,11 +292,10 @@ function buildInactiveWorktrees({
     list.push(s);
     byCwd.set(cwd, list);
   }
-  const cwds = [...byCwd.keys()].sort((a, b) => {
-    if (a === project.path) return -1;
-    if (b === project.path) return 1;
-    return a.localeCompare(b);
-  });
+  // Preserve the same root-first, server snapshot order used once the project
+  // becomes active. Sorting inactive rows alphabetically makes worktrees jump
+  // when selecting one of their children switches the active project.
+  const cwds = [...byCwd.keys()];
   return cwds.map((cwd) => {
     const wtSessions = byCwd.get(cwd) ?? [];
     const labelCounts = new Map<string, number>();
@@ -322,7 +322,7 @@ function buildInactiveWorktrees({
         hint: session.state === "ended" ? "ended" : undefined,
         status: lifecycleToStatus(lifecycle, inReview),
         pinned: session.pinned === true,
-        agentType: session.command?.type === "claude" ? "claude" : undefined,
+        agentType: agentTypeForSession(session),
       });
     }
     for (const pane of childPanes[cwd] ?? []) {
@@ -352,6 +352,7 @@ function buildInactiveWorktrees({
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
+      ...(meta?.lineage ? { lineage: meta.lineage } : {}),
       ...(meta?.orphan ? { orphan: true } : {}),
     };
   });
@@ -435,7 +436,7 @@ function paneToChild(
       hint: session?.state === "ended" ? "ended" : undefined,
       status: lifecycleToStatus(lifecycle, inReview),
       pinned: session?.pinned === true,
-      agentType: session?.command?.type === "claude" ? "claude" : undefined,
+      agentType: session ? agentTypeForSession(session) : undefined,
     };
   }
   if (state.kind === "browser") {
@@ -454,6 +455,12 @@ function paneToChild(
 
 function labelForTerminal(session: Session): string {
   return displayTitleForTerminal(session);
+}
+
+function agentTypeForSession(session: Session): string | undefined {
+  if (session.command?.type === "claude") return "claude";
+  const runtimeId = session.launchPreset?.runtimeHint?.runtimeId;
+  return runtimeId && runtimeId !== "terminal" ? runtimeId : undefined;
 }
 
 function browserLabel(url: string): string {

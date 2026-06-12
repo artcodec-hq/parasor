@@ -165,6 +165,33 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
     expect(getByLabelText("Orphan worktree").textContent).toBe("orphan");
   });
 
+  it("renders a linked pill when lineage metadata is present", () => {
+    const { getByLabelText } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{
+          ...makeWorktree(0),
+          lineage: {
+            instanceId: "wt-inst",
+            creationSource: "ui",
+            createdAt: 100,
+            parentWorktreePath: "/repo/main",
+            createdByPaneCommandLabel: "Dev",
+            lineageCapture: {
+              source: "create-worktree-request",
+              confidence: "explicit",
+            },
+          },
+        }}
+        selection={selection}
+      />,
+    );
+    const pill = getByLabelText("Linked worktree");
+    expect(pill.textContent).toBe("linked");
+    expect(pill.getAttribute("title")).toContain("parent: main");
+    expect(pill.getAttribute("title")).toContain("command: Dev");
+  });
+
   it("omits both pills when neither flag is set", () => {
     const { queryByLabelText } = render(
       <WorktreeRow
@@ -174,6 +201,7 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
       />,
     );
     expect(queryByLabelText("Agent worktree")).toBeNull();
+    expect(queryByLabelText("Linked worktree")).toBeNull();
     expect(queryByLabelText("Orphan worktree")).toBeNull();
   });
 });

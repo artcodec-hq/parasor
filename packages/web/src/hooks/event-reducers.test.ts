@@ -282,6 +282,33 @@ describe("applyEvent: worktree-created", () => {
     expect(next.worktrees.p1).toEqual([fresh]);
   });
 
+  it("keeps an existing worktree in place when a refresh upserts it", () => {
+    const siblingBefore = {
+      path: "/tmp/wt-z",
+      head: "def",
+      branch: "feat/z",
+    };
+    const stale = { ...worktree, ahead: 0, behind: 0, dirtyCount: 0 };
+    const siblingAfter = {
+      path: "/tmp/wt-a",
+      head: "ghi",
+      branch: "feat/a",
+    };
+    const fresh = { ...worktree, ahead: 3, behind: 1, dirtyCount: 5 };
+    const store = storeWith({
+      projects: [project],
+      worktrees: { p1: [siblingBefore, stale, siblingAfter] },
+    });
+
+    const next = applyEvent(store, {
+      type: "worktree-created",
+      projectId: "p1",
+      worktree: fresh,
+    });
+
+    expect(next.worktrees.p1).toEqual([siblingBefore, fresh, siblingAfter]);
+  });
+
   it("does not mutate the previous map (referential change on update)", () => {
     const store = storeWith({
       projects: [project],

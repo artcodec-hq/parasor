@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { nativeIntegrationHasInstallKind } from "../application/integrations/native-status-integrations.js";
 
 export interface ShimPaths {
   binDir: string;
@@ -13,6 +14,7 @@ export interface ShimPaths {
 const CLAUDE_HOOK_SCRIPT_NAME = "parasor-claude-hook.sh";
 const CODEX_EVENT_SCRIPT_NAME = "parasor-codex-event.sh";
 const CODEX_NOTIFY_SCRIPT_NAME = "parasor-codex-notify.sh";
+const OPENCODE_PLUGIN_NAME = "parasor-status.js";
 
 export function installShims(configDir: string): ShimPaths {
   const binDir = join(configDir, "bin");
@@ -20,12 +22,27 @@ export function installShims(configDir: string): ShimPaths {
   const zshDotdir = join(shellDir, "zsh");
   const bashDir = join(shellDir, "bash");
   const bashRcPath = join(bashDir, ".bashrc");
+  const opencodeConfigDir = join(configDir, "opencode");
+  const opencodePluginDir = join(opencodeConfigDir, "plugins");
   mkdirSync(binDir, { recursive: true });
   mkdirSync(zshDotdir, { recursive: true });
   mkdirSync(bashDir, { recursive: true });
+  mkdirSync(opencodePluginDir, { recursive: true });
 
   const realOpen = resolveRealBinary("open", binDir);
   const realXdgOpen = resolveRealBinary("xdg-open", binDir);
+  const installClaudeWrapper = nativeIntegrationHasInstallKind(
+    "claude",
+    "shim-wrapper",
+  );
+  const installCodexWrapper = nativeIntegrationHasInstallKind(
+    "codex",
+    "shim-wrapper",
+  );
+  const installOpenCodeWrapper = nativeIntegrationHasInstallKind(
+    "opencode",
+    "shim-wrapper",
+  );
 
   if (realOpen) {
     writeFileSync(
@@ -50,20 +67,24 @@ export function installShims(configDir: string): ShimPaths {
   // pays the boot cost while Claude Code blocks on hook completion. A
   // posix shell + curl one-shot runs in single-digit milliseconds.
   const claudeHookPath = join(binDir, CLAUDE_HOOK_SCRIPT_NAME);
-  writeFileSync(claudeHookPath, buildClaudeHookBridge(), { mode: 0o755 });
+  if (installClaudeWrapper) {
+    writeFileSync(claudeHookPath, buildClaudeHookBridge(), { mode: 0o755 });
+  }
 
   // Claude Code wrapper. Sits in PATH ahead of the real `claude` binary,
   // injects per-invocation `--settings <hooks JSON>` so Claude Code's hook
   // events fire the bridge script for each state transition. We do not
   // touch the user's `~/.claude/settings.json` -- Claude Code's `--settings`
   // flag accepts an inline JSON string and merges additively at runtime.
-  writeFileSync(
-    join(binDir, "claude"),
-    buildClaudeWrapper(binDir, claudeHookPath),
-    {
-      mode: 0o755,
-    },
-  );
+  if (installClaudeWrapper) {
+    writeFileSync(
+      join(binDir, "claude"),
+      buildClaudeWrapper(binDir, claudeHookPath),
+      {
+        mode: 0o755,
+      },
+    );
+  }
 
   // Codex wrapper. Unlike Claude, Codex's native hooks currently require a
   // hooks.json layer, which would either mutate the user's ~/.codex or force
@@ -74,15 +95,29 @@ export function installShims(configDir: string): ShimPaths {
   // signals.
   const codexEventPath = join(binDir, CODEX_EVENT_SCRIPT_NAME);
   const codexNotifyPath = join(binDir, CODEX_NOTIFY_SCRIPT_NAME);
-  writeFileSync(codexEventPath, buildCodexEventBridge(), { mode: 0o755 });
-  writeFileSync(codexNotifyPath, buildCodexNotifyBridge(), { mode: 0o755 });
-  writeFileSync(
-    join(binDir, "codex"),
-    buildCodexWrapper(binDir, codexEventPath, codexNotifyPath),
-    {
-      mode: 0o755,
-    },
-  );
+  if (installCodexWrapper) {
+    writeFileSync(codexEventPath, buildCodexEventBridge(), { mode: 0o755 });
+    writeFileSync(codexNotifyPath, buildCodexNotifyBridge(), { mode: 0o755 });
+    writeFileSync(
+      join(binDir, "codex"),
+      buildCodexWrapper(binDir, codexEventPath, codexNotifyPath),
+      {
+        mode: 0o755,
+      },
+    );
+  }
+
+  const opencodePluginPath = join(opencodePluginDir, OPENCODE_PLUGIN_NAME);
+  if (installOpenCodeWrapper) {
+    writeFileSync(opencodePluginPath, buildOpenCodePlugin(), { mode: 0o644 });
+    writeFileSync(
+      join(binDir, "opencode"),
+      buildOpenCodeWrapper(binDir, opencodeConfigDir),
+      {
+        mode: 0o755,
+      },
+    );
+  }
 
   writeFileSync(join(zshDotdir, ".zshenv"), buildParasorZshEnv(binDir), {
     mode: 0o644,
@@ -95,6 +130,83 @@ export function installShims(configDir: string): ShimPaths {
   });
 
   return { bashRcPath, binDir, realOpen, realXdgOpen, zshDotdir };
+}
+
+export function buildOpenCodePlugin(): string {
+  return `// parasor OpenCode status plugin.
+// Loaded through OPENCODE_CONFIG_DIR by the parasor opencode shim. It mirrors
+// OpenCode plugin events to parasor's loopback hook endpoint without mutating
+// user OpenCode config or logging event payloads.
+
+const AGENT = "opencode";
+const FORWARDED_EVENTS = new Set([
+  "session.idle",
+  "session.error",
+  "permission.asked",
+  "permission.replied",
+  "question.asked",
+  "question.replied",
+  "question.rejected",
+]);
+
+async function post(path, body) {
+  const port = process.env.PARASOR_PORT;
+  if (!port || !process.env.PARASOR_SESSION_ID) return;
+  try {
+    await fetch(\`http://127.0.0.1:\${port}\${path}\`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(2000),
+    });
+  } catch {
+    // Hook delivery is advisory UI state; never disrupt OpenCode.
+  }
+}
+
+async function notify(event) {
+  const sessionId = process.env.PARASOR_SESSION_ID;
+  if (!sessionId || !event) return;
+  await post("/hook/debug", {
+    sessionId,
+    label: "opencode-plugin-event",
+    detail: event,
+  });
+  await post("/hook/notify", { sessionId, agent: AGENT, event });
+}
+
+function statusType(status) {
+  if (typeof status === "string") return status;
+  if (status && typeof status === "object" && typeof status.type === "string") {
+    return status.type;
+  }
+  return "";
+}
+
+function eventName(event) {
+  const type = event && typeof event.type === "string" ? event.type : "";
+  if (!type) return "";
+  if (type === "session.status") {
+    const value = statusType(event.properties?.status);
+    return value ? \`\${type}:\${value}\` : "";
+  }
+  return FORWARDED_EVENTS.has(type) ? type : "";
+}
+
+export const ParasorStatusPlugin = async () => {
+  return {
+    event: async ({ event }) => {
+      await notify(eventName(event));
+    },
+    "tool.execute.before": async () => {
+      await notify("tool.execute.before");
+    },
+    "tool.execute.after": async () => {
+      await notify("tool.execute.after");
+    },
+  };
+};
+`;
 }
 
 export function buildCodexEventBridge(): string {
@@ -644,6 +756,87 @@ exit "$PARASOR_CODEX_STATUS"
 `;
 }
 
+export function buildOpenCodeWrapper(
+  binDir: string,
+  opencodeConfigDir: string,
+): string {
+  return `#!/usr/bin/env bash
+# parasor opencode wrapper -- injects a parasor-managed OPENCODE_CONFIG_DIR
+# containing a local plugin that mirrors OpenCode lifecycle events to
+# parasor's loopback hook endpoint. The user's ~/.config/opencode and project
+# .opencode directories are not modified.
+
+set -u
+
+SHIM_DIR='${binDir}'
+PARASOR_OPENCODE_CONFIG_DIR='${opencodeConfigDir}'
+
+find_real_opencode() {
+  local IFS=:
+  for d in $PATH; do
+    [ -z "$d" ] && continue
+    [ "$d" = "$SHIM_DIR" ] && continue
+    if [ -x "$d/opencode" ] && [ "$d/opencode" != "$0" ]; then
+      printf '%s\\n' "$d/opencode"
+      return 0
+    fi
+  done
+  return 1
+}
+
+inside_parasor() {
+  [ -n "\${PARASOR_PORT:-}" ] || return 1
+  [ -n "\${PARASOR_SESSION_ID:-}" ] || return 1
+  return 0
+}
+
+emit_debug() {
+  [ -n "\${PARASOR_PORT:-}" ] || return 0
+  [ -n "\${PARASOR_SESSION_ID:-}" ] || return 0
+  local label
+  local detail
+  label="\${1:-opencode-wrapper-exec}"
+  detail="\${2:-}"
+  local body
+  body="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"$label\\",\\"detail\\":\\"$detail\\"}"
+  curl -s -X POST "http://127.0.0.1:$PARASOR_PORT/hook/debug" \\
+    -H "Content-Type: application/json" \\
+    -d "$body" \\
+    --connect-timeout 1 \\
+    --max-time 2 \\
+    -o /dev/null \\
+    >/dev/null 2>&1 || true
+}
+
+REAL_OPENCODE="$(find_real_opencode)" || {
+  echo 'parasor opencode shim: real opencode binary not found in PATH' >&2
+  emit_debug opencode-wrapper-realpath missing
+  exit 127
+}
+
+case "\${1:-}" in
+  help|--help|-h|--version|-v|upgrade|auth|github|github-install|models|stats|serve)
+    exec "$REAL_OPENCODE" "$@"
+    ;;
+esac
+
+if ! inside_parasor; then
+  exec "$REAL_OPENCODE" "$@"
+fi
+
+emit_debug opencode-wrapper-entry "\${1:-}"
+
+if [ -n "\${OPENCODE_CONFIG_DIR:-}" ] && [ "$OPENCODE_CONFIG_DIR" != "$PARASOR_OPENCODE_CONFIG_DIR" ]; then
+  emit_debug opencode-wrapper-config-dir-skip "$OPENCODE_CONFIG_DIR"
+  exec "$REAL_OPENCODE" "$@"
+fi
+
+export OPENCODE_CONFIG_DIR="$PARASOR_OPENCODE_CONFIG_DIR"
+emit_debug opencode-wrapper-config-dir "$OPENCODE_CONFIG_DIR"
+exec "$REAL_OPENCODE" "$@"
+`;
+}
+
 export function buildParasorZshEnv(binDir: string): string {
   return `# parasor zsh env overlay
 if [ -f "$HOME/.zshenv" ]; then
@@ -661,11 +854,15 @@ fi
 export PATH='${binDir}':"$PATH"
 unalias claude 2>/dev/null || true
 unalias codex 2>/dev/null || true
+unalias opencode 2>/dev/null || true
 claude() {
   command '${join(binDir, "claude")}' "$@"
 }
 codex() {
   command '${join(binDir, "codex")}' "$@"
+}
+opencode() {
+  command '${join(binDir, "opencode")}' "$@"
 }
 rehash 2>/dev/null || true
 `;
@@ -679,11 +876,15 @@ fi
 export PATH='${binDir}':"$PATH"
 unalias claude 2>/dev/null || true
 unalias codex 2>/dev/null || true
+unalias opencode 2>/dev/null || true
 claude() {
   command '${join(binDir, "claude")}' "$@"
 }
 codex() {
   command '${join(binDir, "codex")}' "$@"
+}
+opencode() {
+  command '${join(binDir, "opencode")}' "$@"
 }
 hash -r 2>/dev/null || true
 `;

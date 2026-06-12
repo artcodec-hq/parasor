@@ -510,6 +510,9 @@ async function captureTerminalInputDiagnostics(
   reason = "manual",
   target?: TerminalDiagnosticTarget,
 ): Promise<unknown> {
+  if (!isTerminalTraceEnabled()) {
+    return { ok: false, enabled: false, skipped: "terminal-trace-disabled" };
+  }
   const payload = buildTerminalInputPayload(reason, [], target);
   const response = await postDiagnosticPayload(payload);
   return response.json().catch(() => ({ ok: response.ok }));
@@ -647,6 +650,7 @@ export function scheduleTerminalInputDiagnosticCapture(
   event: Omit<TerminalTraceEvent, "seq" | "t">,
 ): void {
   if (typeof window === "undefined") return;
+  if (!isTerminalTraceEnabled()) return;
   if (terminalInputAutoCaptureCount >= TERMINAL_INPUT_AUTO_CAPTURE_LIMIT)
     return;
   const payload = buildTerminalInputPayload(reason, [
@@ -670,6 +674,7 @@ export function scheduleClientStartupDiagnosticCapture(
   event: Omit<TerminalTraceEvent, "seq" | "t">,
 ): void {
   if (typeof window === "undefined") return;
+  if (!isTerminalTraceEnabled()) return;
   if (clientStartupAutoCaptureCount >= CLIENT_STARTUP_AUTO_CAPTURE_LIMIT)
     return;
   const payload = buildClientStartupPayload(reason, [
@@ -753,9 +758,9 @@ export function traceTerminalEvent(
   type: string,
   fields: Omit<TerminalTraceEvent, "seq" | "t" | "type"> = {},
 ): void {
+  if (!isTerminalTraceEnabled()) return;
   const event = { t: now(), type, ...fields };
   const warning = warningForEvent(event);
-  if (!isTerminalTraceEnabled() && !warning) return;
   const sampled = sampleOutputEvent({ ...event, ...warning });
   if (!sampled) return;
   pushEvent({ seq: ++seq, ...sampled });

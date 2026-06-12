@@ -64,6 +64,39 @@ describe("worktree-api", () => {
       });
     });
 
+    it("includes lineage context when present", async () => {
+      authFetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ path: "/wt" })),
+      );
+
+      await createWorktree("p1", {
+        branch: "feat",
+        base: "",
+        copyLocalFiles: [],
+        rememberLocalFiles: false,
+        lineage: {
+          creationSource: "ui",
+          parentWorktreePath: "/repo",
+          createdByPaneCommandId: "cmd:dev",
+          createdByPaneCommandLabel: "Dev",
+        },
+      });
+
+      expect(authFetchMock).toHaveBeenCalledWith("/api/projects/p1/worktrees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch: "feat",
+          lineage: {
+            creationSource: "ui",
+            parentWorktreePath: "/repo",
+            createdByPaneCommandId: "cmd:dev",
+            createdByPaneCommandLabel: "Dev",
+          },
+        }),
+      });
+    });
+
     it("throws the server error on a non-ok response", async () => {
       authFetchMock.mockResolvedValueOnce(
         new Response(JSON.stringify({ error: "boom" }), { status: 400 }),

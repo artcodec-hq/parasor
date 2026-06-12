@@ -3,6 +3,7 @@ import type {
   Session,
   SessionCommand,
   SessionEndReason,
+  SessionLaunchPreset,
   TerminalCapabilities,
   TerminalLastSeen,
   TerminalReplayKind,
@@ -95,6 +96,7 @@ export interface CreateSessionInput {
   command: SessionCommand;
   cwd: string;
   title?: string;
+  launchPreset?: SessionLaunchPreset;
   bootstrapInput?: string;
 }
 

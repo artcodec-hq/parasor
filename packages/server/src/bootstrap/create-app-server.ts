@@ -137,7 +137,10 @@ export function createAppServer({
   app.use("/api/*", async (c, next) => {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("X-Frame-Options", "DENY");
+    const contentType = c.res.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("application/pdf")) {
+      c.header("X-Frame-Options", "DENY");
+    }
   });
 
   app.route(

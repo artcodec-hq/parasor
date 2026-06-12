@@ -88,8 +88,7 @@ function parseRange(
  * fields, then RFC 5987-encodes for the `filename*` parameter when needed.
  */
 function buildContentDisposition(filename: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: Content-Disposition fallback must reject C0 bytes.
-  const ascii = filename.replace(/[\x00-\x1f"\\]/g, "_");
+  const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, "_");
   // RFC 5987: percent-encode UTF-8, leaving a small reserved unreserved set.
   const encoded = encodeURIComponent(filename).replace(
     /['()*]/g,
@@ -491,17 +490,20 @@ export function createFileRoutes(
       c.header("Content-Disposition", buildContentDisposition(filename));
       c.header("Cache-Control", "private, max-age=0, must-revalidate");
       c.header("Accept-Ranges", "bytes");
-      // SVG and PDF can both execute script when navigated to directly
-      // (script-in-svg, JavaScript actions in PDF). `<img>`/`<iframe>`
-      // callers still render fine -- `default-src 'none'` lets the renderer
-      // parse the bytes but blocks any script the file tries to run.
-      if (
-        detection.contentType === "image/svg+xml" ||
-        detection.contentType === "application/pdf"
-      ) {
+      c.header("X-Content-Type-Options", "nosniff");
+      // SVG remains a document-like image format with active content risk, so
+      // keep it in a strict sandbox. PDF native viewers need a normal browsing
+      // context; a CSP sandbox breaks Chromium's built-in PDF viewer.
+      if (detection.contentType === "image/svg+xml") {
         c.header(
           "Content-Security-Policy",
           "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+        );
+      }
+      if (detection.contentType === "application/pdf") {
+        c.header(
+          "Content-Security-Policy",
+          "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
         );
       }
 

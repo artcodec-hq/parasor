@@ -48,6 +48,7 @@ export class ProjectManager {
         lastFocusedPaneId: null,
         focusedPaneId: null,
         sidebar: createEmptyProjectSidebarState(),
+        worktreeMetadata: {},
         lastAccessedAt: now,
       };
     });

@@ -1,13 +1,20 @@
+import { BUILTIN_SHELL_PRESETS } from "./builtin-shell-presets.js";
+
 export interface PaneCommandConfig {
   id: string;
   label: string;
   initialInput: string;
+  enabled?: boolean;
 }
 
 const MAX_COMMANDS = 100;
 const MAX_ID_LENGTH = 128;
 const MAX_LABEL_LENGTH = 200;
 const MAX_INITIAL_INPUT_LENGTH = 4000;
+const BUILTIN_PRESETS_BY_ID = new Map<
+  string,
+  (typeof BUILTIN_SHELL_PRESETS)[number]
+>(BUILTIN_SHELL_PRESETS.map((preset) => [preset.id, preset]));
 
 export function normalizePaneCommands(value: unknown): PaneCommandConfig[] {
   if (!Array.isArray(value)) return [];
@@ -30,10 +37,30 @@ export function normalizePaneCommands(value: unknown): PaneCommandConfig[] {
     }
     const normalizedLabel = label.trim();
     const normalizedInput = initialInput.trim();
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    const builtinPreset = BUILTIN_PRESETS_BY_ID.get(id);
+    if (builtinPreset) {
+      if (
+        normalizedInput.length > MAX_INITIAL_INPUT_LENGTH ||
+        (builtinPreset.commandLine && !normalizedInput)
+      ) {
+        continue;
+      }
+      seen.add(id);
+      out.push({
+        id,
+        label: builtinPreset.label,
+        initialInput: normalizedInput,
+        enabled:
+          builtinPreset.group === "terminal" ? true : item.enabled !== false,
+      });
+      if (out.length >= MAX_COMMANDS) break;
+      continue;
+    }
     if (
-      !id ||
       id.startsWith("builtin:") ||
-      seen.has(id) ||
       !normalizedLabel ||
       normalizedLabel.length > MAX_LABEL_LENGTH ||
       !normalizedInput

@@ -47,6 +47,26 @@ function renderModel(
 }
 
 describe("useWorkspacePaneModel", () => {
+  it("preserves incoming worktree snapshot order after the project root", () => {
+    const model = renderModel({
+      projectId: "p1",
+      projectPath: "/repo",
+      worktrees: [
+        worktree("/repo.worktrees/z"),
+        worktree("/repo"),
+        worktree("/repo.worktrees/a"),
+      ],
+      sessions: [],
+      focusedPaneId: null,
+    });
+
+    expect(model.worktrees.map((wt) => wt.path)).toEqual([
+      "/repo",
+      "/repo.worktrees/z",
+      "/repo.worktrees/a",
+    ]);
+  });
+
   it("keeps sessions outside the known worktree list in their own active worktree row", () => {
     const model = renderModel({
       projectId: "p1",

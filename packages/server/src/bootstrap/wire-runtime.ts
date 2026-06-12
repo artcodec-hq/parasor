@@ -87,7 +87,11 @@ export function wireRuntime({
   worktreeCache,
   uploadStaging,
 }: WireRuntimeDeps): void {
-  const projectQueries = createProjectQueries({ projectManager });
+  const projectQueries = createProjectQueries({
+    projectManager,
+    getWorktreeMetadata: (projectId) =>
+      appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
+  });
   const getLiveSessionIds = () =>
     ptyManager
       .list()

@@ -5,6 +5,7 @@ import type {
   ProjectSidebarStatePatch,
   Session,
   SessionCommand,
+  SessionLaunchPreset,
 } from "@parasor/shared";
 import {
   applyProjectSidebarStatePatch,
@@ -517,6 +518,7 @@ export function App() {
       title?: string,
       cwd?: string,
       bootstrapInput?: string,
+      launchPreset?: SessionLaunchPreset,
     ) => {
       const session = await createSessionRequest({
         projectId,
@@ -524,6 +526,7 @@ export function App() {
         title,
         cwd,
         bootstrapInput,
+        launchPreset,
       });
       if (!session) return;
       setOptimisticSessions((current) =>
@@ -553,9 +556,10 @@ export function App() {
       void createSession(
         projectId,
         undefined,
-        command.builtin ? undefined : command.label,
+        command.builtin && !initialInput ? undefined : command.label,
         worktreePath,
         bootstrapInput,
+        command.launchPreset,
       );
     },
     [createSession],
@@ -569,6 +573,7 @@ export function App() {
         base: string;
         copyLocalFiles: string[];
         rememberLocalFiles: boolean;
+        parentWorktreePath: string;
         command: PaneCommand;
       },
     ) => {
@@ -577,6 +582,12 @@ export function App() {
         base: input.base,
         copyLocalFiles: input.copyLocalFiles,
         rememberLocalFiles: input.rememberLocalFiles,
+        lineage: {
+          creationSource: "ui",
+          parentWorktreePath: input.parentWorktreePath,
+          createdByPaneCommandId: input.command.id,
+          createdByPaneCommandLabel: input.command.label,
+        },
       });
       const worktreePath = data.path;
       const copyMessage = summarizeLocalFileCopies(data.localFileCopies);
@@ -586,9 +597,12 @@ export function App() {
       await createSession(
         projectId,
         undefined,
-        input.command.builtin ? undefined : input.command.label,
+        input.command.builtin && !initialInput
+          ? undefined
+          : input.command.label,
         worktreePath,
         bootstrapInput,
+        input.command.launchPreset,
       );
     },
     [createSession, setErrorToast],
@@ -1331,6 +1345,7 @@ export function App() {
             project={containerDialogContext.project}
             worktree={containerDialogContext.worktree}
             commands={paneCommands}
+            commandConfigs={store.paneCommands}
             isMobile={isMobile}
             loadLocalFiles={loadWorktreeLocalFiles}
             onClose={containerDialog.close}

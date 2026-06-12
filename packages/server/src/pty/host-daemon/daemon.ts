@@ -387,6 +387,7 @@ export class PtyHostDaemon {
         command: req.command,
         cwd: req.cwd,
         title: req.title,
+        launchPreset: req.launchPreset,
         bootstrapInput: req.bootstrapInput,
       })
       .then((session) => {
