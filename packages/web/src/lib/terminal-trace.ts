@@ -44,6 +44,10 @@ export type TerminalTraceEvent = {
   queueLength?: number;
   readyState?: number;
   status?: string;
+  httpStatus?: number;
+  traceId?: string;
+  phase?: string;
+  source?: string;
   routeKind?: string;
   surface?: string;
   paneId?: string | null;
@@ -71,6 +75,20 @@ export type TerminalTraceEvent = {
   generation?: number;
   driftMs?: number;
   durationMs?: number;
+  wallMs?: number;
+  visibilityState?: string;
+  hidden?: boolean;
+  online?: boolean;
+  visibilityChanges?: number;
+  pageHideCount?: number;
+  pageShowCount?: number;
+  focusCount?: number;
+  onlineCount?: number;
+  offlineCount?: number;
+  errorName?: string;
+  errorMessage?: string;
+  startedAtWallMs?: number;
+  endedAtWallMs?: number;
   sinceReplayStartMs?: number;
   proposeDurationMs?: number;
   resizeDurationMs?: number;
@@ -492,6 +510,9 @@ async function captureTerminalInputDiagnostics(
   reason = "manual",
   target?: TerminalDiagnosticTarget,
 ): Promise<unknown> {
+  if (!isTerminalTraceEnabled()) {
+    return { ok: false, enabled: false, skipped: "terminal-trace-disabled" };
+  }
   const payload = buildTerminalInputPayload(reason, [], target);
   const response = await postDiagnosticPayload(payload);
   return response.json().catch(() => ({ ok: response.ok }));
@@ -629,6 +650,7 @@ export function scheduleTerminalInputDiagnosticCapture(
   event: Omit<TerminalTraceEvent, "seq" | "t">,
 ): void {
   if (typeof window === "undefined") return;
+  if (!isTerminalTraceEnabled()) return;
   if (terminalInputAutoCaptureCount >= TERMINAL_INPUT_AUTO_CAPTURE_LIMIT)
     return;
   const payload = buildTerminalInputPayload(reason, [
@@ -652,6 +674,7 @@ export function scheduleClientStartupDiagnosticCapture(
   event: Omit<TerminalTraceEvent, "seq" | "t">,
 ): void {
   if (typeof window === "undefined") return;
+  if (!isTerminalTraceEnabled()) return;
   if (clientStartupAutoCaptureCount >= CLIENT_STARTUP_AUTO_CAPTURE_LIMIT)
     return;
   const payload = buildClientStartupPayload(reason, [
@@ -735,9 +758,9 @@ export function traceTerminalEvent(
   type: string,
   fields: Omit<TerminalTraceEvent, "seq" | "t" | "type"> = {},
 ): void {
+  if (!isTerminalTraceEnabled()) return;
   const event = { t: now(), type, ...fields };
   const warning = warningForEvent(event);
-  if (!isTerminalTraceEnabled() && !warning) return;
   const sampled = sampleOutputEvent({ ...event, ...warning });
   if (!sampled) return;
   pushEvent({ seq: ++seq, ...sampled });

@@ -44,6 +44,51 @@ describe("ensureAuthenticated", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not add auth trace headers unless tracing is requested", async () => {
+    const { ensureAuthenticated } = await loadAuthFetch();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+
+    await expect(ensureAuthenticated()).resolves.toBe(true);
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.headers).toBeUndefined();
+  });
+
+  it("emits auth preflight trace events with a correlation header", async () => {
+    const { ensureAuthenticated } = await loadAuthFetch();
+    const fetchMock = vi.mocked(fetch);
+    const trace = vi.fn();
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+
+    await expect(
+      ensureAuthenticated({ source: "event-socket", trace }),
+    ).resolves.toBe(true);
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = init?.headers as Record<string, string> | undefined;
+    expect(headers?.["x-parasor-auth-trace-id"]).toMatch(/^auth-/);
+    expect(trace).toHaveBeenCalledTimes(2);
+    const start = trace.mock.calls[0]?.[0];
+    const complete = trace.mock.calls[1]?.[0];
+    expect(start).toMatchObject({
+      phase: "start",
+      source: "event-socket",
+      traceId: headers?.["x-parasor-auth-trace-id"],
+    });
+    expect(complete).toMatchObject({
+      phase: "complete",
+      source: "event-socket",
+      traceId: headers?.["x-parasor-auth-trace-id"],
+      httpStatus: 200,
+      ok: true,
+      startedAtWallMs: expect.any(Number),
+      endedAtWallMs: expect.any(Number),
+    });
+    expect(complete.durationMs).toEqual(expect.any(Number));
+    expect(complete.wallMs).toEqual(expect.any(Number));
+  });
+
   it("refreshes the preflight after the success cache expires", async () => {
     const { AUTH_PREFLIGHT_SUCCESS_CACHE_MS, ensureAuthenticated } =
       await loadAuthFetch();

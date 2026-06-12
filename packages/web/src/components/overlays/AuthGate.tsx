@@ -4,6 +4,7 @@ import {
   ensureAuthenticated,
 } from "../../lib/auth-fetch.js";
 import {
+  isTerminalTraceEnabled,
   scheduleClientStartupDiagnosticCapture,
   traceTerminalEvent,
 } from "../../lib/terminal-trace.js";
@@ -37,7 +38,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     void (async () => {
       const startedAt = performance.now();
-      const ok = await ensureAuthenticated({ dispatchOn401: false });
+      const ok = await ensureAuthenticated({
+        dispatchOn401: false,
+        source: "auth-gate",
+        trace: isTerminalTraceEnabled()
+          ? (event) => {
+              traceTerminalEvent("auth-preflight", event);
+            }
+          : undefined,
+      });
       const durationMs = performance.now() - startedAt;
       traceTerminalEvent("auth-gate-preflight-complete", {
         durationMs,

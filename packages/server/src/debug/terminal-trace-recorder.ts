@@ -26,7 +26,8 @@ export type TerminalTraceEventType =
   | "client-event"
   | "client-diagnostic"
   | "probe-start"
-  | "probe-finish";
+  | "probe-finish"
+  | "auth-verify";
 
 export interface TerminalTraceEvent {
   seq: number;

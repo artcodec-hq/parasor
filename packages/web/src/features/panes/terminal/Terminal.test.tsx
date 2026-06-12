@@ -1954,6 +1954,7 @@ describe("Terminal", () => {
         new Response(JSON.stringify({ ok: true }), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
+    enableTerminalTrace();
     render(<Terminal sessionId="s-input-diagnostic" />, { wrapper });
     mockSend.mockClear();
 
@@ -1990,7 +1991,7 @@ describe("Terminal", () => {
         expect.objectContaining({
           diagnostic: "terminal-input-background",
           sessionId: "s-input-diagnostic",
-          events: [
+          events: expect.arrayContaining([
             expect.objectContaining({
               type: "terminal-input-diagnostic",
               sessionId: "s-input-diagnostic",
@@ -2003,7 +2004,7 @@ describe("Terminal", () => {
               viewportY: 5,
               baseY: 5,
             }),
-          ],
+          ]),
         }),
       ]),
     );

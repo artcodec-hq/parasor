@@ -553,7 +553,18 @@ export function useTerminalSocket({
         sessionId,
         attempt: attemptRef.current,
       });
-      const authed = await ensureAuthenticated({ reuseRecentSuccess: true });
+      const authed = await ensureAuthenticated({
+        reuseRecentSuccess: true,
+        source: "terminal-socket",
+        trace: isTerminalTraceEnabled()
+          ? (event) => {
+              traceTerminalEvent("auth-preflight", {
+                sessionId,
+                ...event,
+              });
+            }
+          : undefined,
+      });
       const authDurationMs =
         Math.round((performance.now() - authStart) * 10) / 10;
       if (cancelled || endedRef.current) {
@@ -640,10 +651,14 @@ export function useTerminalSocket({
         binaryAttachedRef.current = false;
         decoderRef.current = null;
         resetForReplayRef.current = false;
-        traceTerminalEvent("socket-close", {
-          sessionId,
-          status: String(event.code),
-        });
+        if (isTerminalTraceEnabled()) {
+          traceTerminalEvent("socket-close", {
+            sessionId,
+            status: String(event.code),
+            reason: event.reason,
+            established,
+          });
+        }
         // PTY generation gate: do NOT reset currentGenerationRef here.
         // The session's PTY generation persists across the WS drop;
         // any input typed during the reconnect window must keep its
