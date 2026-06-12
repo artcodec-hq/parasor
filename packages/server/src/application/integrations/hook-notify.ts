@@ -8,6 +8,7 @@ import {
   HookRateLimitError,
   HookValidationError,
 } from "./errors.js";
+import { nativeStatusIntegrationForHookAgent } from "./native-status-integrations.js";
 
 const LITERAL_LOOPBACK_HOSTS = new Set([
   "127.0.0.1",
@@ -78,7 +79,11 @@ export function createHookNotifier({
       if (typeof sessionId !== "string" || sessionId.length === 0) {
         throw new HookValidationError("sessionId required");
       }
-      if (typeof agent !== "string" || !isKnownAgent(agent)) {
+      if (
+        typeof agent !== "string" ||
+        !isKnownAgent(agent) ||
+        !nativeStatusIntegrationForHookAgent(agent)
+      ) {
         throw new HookValidationError("unknown agent");
       }
       if (typeof event !== "string" || event.length === 0) {

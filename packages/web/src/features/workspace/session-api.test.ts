@@ -50,6 +50,12 @@ describe("session-api", () => {
         command: { type: "claude" } as const,
         title: "T",
         cwd: "/repo",
+        launchPreset: {
+          presetId: "builtin:codex",
+          source: "builtin",
+          label: "Codex",
+          commandLine: "codex",
+        },
         bootstrapInput: "hi\r",
       });
 
@@ -61,6 +67,12 @@ describe("session-api", () => {
           command: { type: "claude" } as const,
           title: "T",
           cwd: "/repo",
+          launchPreset: {
+            presetId: "builtin:codex",
+            source: "builtin",
+            label: "Codex",
+            commandLine: "codex",
+          },
           bootstrapInput: "hi\r",
         }),
       });

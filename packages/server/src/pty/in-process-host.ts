@@ -285,6 +285,9 @@ export class InProcessPtyHost implements PtyHost {
         command: input.command,
         cwd: input.cwd,
         shell: spawnCmd,
+        ...(input.launchPreset !== undefined && {
+          launchPreset: input.launchPreset,
+        }),
         createdAt: Date.now(),
       };
 

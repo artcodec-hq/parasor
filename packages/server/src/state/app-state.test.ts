@@ -281,6 +281,69 @@ describe("AppStateStore", () => {
     ]);
   });
 
+  it("normalizes persisted session launchPreset metadata", () => {
+    const state = {
+      version: 1,
+      projects: [],
+      projectStates: {},
+      sessions: [
+        {
+          id: "s1",
+          projectId: "p1",
+          pid: null,
+          state: "ended",
+          generation: 1,
+          title: "Terminal",
+          command: { type: "shell" },
+          cwd: "/repo",
+          shell: "/bin/zsh",
+          createdAt: 1,
+          launchPreset: {
+            presetId: "builtin:terminal",
+            source: "builtin",
+            label: "Terminal",
+            commandLine: "",
+          },
+        },
+        {
+          id: "s2",
+          projectId: "p1",
+          pid: null,
+          state: "ended",
+          generation: 1,
+          title: "Bad",
+          command: { type: "shell" },
+          cwd: "/repo",
+          shell: "/bin/zsh",
+          createdAt: 1,
+          launchPreset: {
+            presetId: "cmd:bad",
+            source: "user",
+            label: "",
+            commandLine: "codex",
+          },
+        },
+      ],
+      sessionRecords: [],
+      paneCommands: [],
+      serviceConfig: {
+        preventIdleSleep: false,
+        portDetection: "all-interfaces",
+        dropSizeMaxBytes: DEFAULT_DROP_SIZE_MAX_BYTES,
+        dropSizeHardMaxBytes: DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
+      },
+    };
+    writeFileSync(join(dir, "state.json"), JSON.stringify(state), "utf-8");
+    const store = new AppStateStore({ dir });
+    expect(store.get().sessions[0]?.launchPreset).toEqual({
+      presetId: "builtin:terminal",
+      source: "builtin",
+      label: "Terminal",
+      commandLine: "",
+    });
+    expect(store.get().sessions[1]?.launchPreset).toBeUndefined();
+  });
+
   it("normalizes persisted worktree lineage metadata", () => {
     const state = {
       version: 1,

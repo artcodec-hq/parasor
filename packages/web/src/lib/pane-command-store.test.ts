@@ -34,24 +34,41 @@ describe("pane-command-store", () => {
     ]);
   });
 
-  it("prepends the immutable Terminal command", () => {
-    expect(
-      paneCommandsWithBuiltins([
-        { id: "cmd:1", label: "Dev", initialInput: "pnpm dev" },
-      ]),
-    ).toEqual([
-      {
-        id: "builtin:terminal",
-        label: "Terminal",
-        initialInput: "",
-        builtin: true,
-      },
-      {
-        id: "cmd:1",
-        label: "Dev",
-        initialInput: "pnpm dev",
-        builtin: false,
-      },
+  it("prepends immutable built-in shell presets", () => {
+    const commands = paneCommandsWithBuiltins([
+      { id: "cmd:1", label: "Dev", initialInput: "pnpm dev" },
     ]);
+
+    expect(commands.map((command) => command.id)).toEqual([
+      "builtin:terminal",
+      "builtin:claude",
+      "builtin:codex",
+      "builtin:opencode",
+      "builtin:gemini",
+      "cmd:1",
+    ]);
+    expect(commands[0]).toMatchObject({
+      id: "builtin:terminal",
+      label: "Terminal",
+      initialInput: "",
+      builtin: true,
+      launchPreset: {
+        presetId: "builtin:terminal",
+        source: "builtin",
+        label: "Terminal",
+      },
+    });
+    expect(commands[5]).toEqual({
+      id: "cmd:1",
+      label: "Dev",
+      initialInput: "pnpm dev",
+      builtin: false,
+      launchPreset: {
+        presetId: "cmd:1",
+        source: "user",
+        label: "Dev",
+        commandLine: "pnpm dev",
+      },
+    });
   });
 });

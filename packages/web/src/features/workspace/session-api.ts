@@ -1,4 +1,8 @@
-import type { Session, SessionCommand } from "@parasor/shared";
+import type {
+  Session,
+  SessionCommand,
+  SessionLaunchPreset,
+} from "@parasor/shared";
 import { authFetch } from "../../lib/auth-fetch.js";
 
 export interface CreateSessionInput {
@@ -6,6 +10,7 @@ export interface CreateSessionInput {
   command?: SessionCommand;
   title?: string;
   cwd?: string;
+  launchPreset?: SessionLaunchPreset;
   bootstrapInput?: string;
 }
 
@@ -25,6 +30,7 @@ export async function createSession(
       ...(input.command && { command: input.command }),
       ...(input.title && { title: input.title }),
       ...(input.cwd && { cwd: input.cwd }),
+      ...(input.launchPreset && { launchPreset: input.launchPreset }),
       ...(input.bootstrapInput && { bootstrapInput: input.bootstrapInput }),
     }),
   });

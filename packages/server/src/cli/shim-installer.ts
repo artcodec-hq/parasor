@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { nativeIntegrationHasInstallKind } from "../application/integrations/native-status-integrations.js";
 
 export interface ShimPaths {
   binDir: string;
@@ -30,6 +31,18 @@ export function installShims(configDir: string): ShimPaths {
 
   const realOpen = resolveRealBinary("open", binDir);
   const realXdgOpen = resolveRealBinary("xdg-open", binDir);
+  const installClaudeWrapper = nativeIntegrationHasInstallKind(
+    "claude",
+    "shim-wrapper",
+  );
+  const installCodexWrapper = nativeIntegrationHasInstallKind(
+    "codex",
+    "shim-wrapper",
+  );
+  const installOpenCodeWrapper = nativeIntegrationHasInstallKind(
+    "opencode",
+    "shim-wrapper",
+  );
 
   if (realOpen) {
     writeFileSync(
@@ -54,20 +67,24 @@ export function installShims(configDir: string): ShimPaths {
   // pays the boot cost while Claude Code blocks on hook completion. A
   // posix shell + curl one-shot runs in single-digit milliseconds.
   const claudeHookPath = join(binDir, CLAUDE_HOOK_SCRIPT_NAME);
-  writeFileSync(claudeHookPath, buildClaudeHookBridge(), { mode: 0o755 });
+  if (installClaudeWrapper) {
+    writeFileSync(claudeHookPath, buildClaudeHookBridge(), { mode: 0o755 });
+  }
 
   // Claude Code wrapper. Sits in PATH ahead of the real `claude` binary,
   // injects per-invocation `--settings <hooks JSON>` so Claude Code's hook
   // events fire the bridge script for each state transition. We do not
   // touch the user's `~/.claude/settings.json` -- Claude Code's `--settings`
   // flag accepts an inline JSON string and merges additively at runtime.
-  writeFileSync(
-    join(binDir, "claude"),
-    buildClaudeWrapper(binDir, claudeHookPath),
-    {
-      mode: 0o755,
-    },
-  );
+  if (installClaudeWrapper) {
+    writeFileSync(
+      join(binDir, "claude"),
+      buildClaudeWrapper(binDir, claudeHookPath),
+      {
+        mode: 0o755,
+      },
+    );
+  }
 
   // Codex wrapper. Unlike Claude, Codex's native hooks currently require a
   // hooks.json layer, which would either mutate the user's ~/.codex or force
@@ -78,25 +95,29 @@ export function installShims(configDir: string): ShimPaths {
   // signals.
   const codexEventPath = join(binDir, CODEX_EVENT_SCRIPT_NAME);
   const codexNotifyPath = join(binDir, CODEX_NOTIFY_SCRIPT_NAME);
-  writeFileSync(codexEventPath, buildCodexEventBridge(), { mode: 0o755 });
-  writeFileSync(codexNotifyPath, buildCodexNotifyBridge(), { mode: 0o755 });
-  writeFileSync(
-    join(binDir, "codex"),
-    buildCodexWrapper(binDir, codexEventPath, codexNotifyPath),
-    {
-      mode: 0o755,
-    },
-  );
+  if (installCodexWrapper) {
+    writeFileSync(codexEventPath, buildCodexEventBridge(), { mode: 0o755 });
+    writeFileSync(codexNotifyPath, buildCodexNotifyBridge(), { mode: 0o755 });
+    writeFileSync(
+      join(binDir, "codex"),
+      buildCodexWrapper(binDir, codexEventPath, codexNotifyPath),
+      {
+        mode: 0o755,
+      },
+    );
+  }
 
   const opencodePluginPath = join(opencodePluginDir, OPENCODE_PLUGIN_NAME);
-  writeFileSync(opencodePluginPath, buildOpenCodePlugin(), { mode: 0o644 });
-  writeFileSync(
-    join(binDir, "opencode"),
-    buildOpenCodeWrapper(binDir, opencodeConfigDir),
-    {
-      mode: 0o755,
-    },
-  );
+  if (installOpenCodeWrapper) {
+    writeFileSync(opencodePluginPath, buildOpenCodePlugin(), { mode: 0o644 });
+    writeFileSync(
+      join(binDir, "opencode"),
+      buildOpenCodeWrapper(binDir, opencodeConfigDir),
+      {
+        mode: 0o755,
+      },
+    );
+  }
 
   writeFileSync(join(zshDotdir, ".zshenv"), buildParasorZshEnv(binDir), {
     mode: 0o644,

@@ -80,7 +80,10 @@ describe("OpenContainerDialog command launcher", () => {
     const { getByText, props } = renderDialog({ onRunCommand });
     fireEvent.focus(getByText("Dev server"));
     fireEvent.keyDown(document, { key: "Enter" });
-    expect(onRunCommand).toHaveBeenCalledWith("/repo", props.commands[1]);
+    expect(onRunCommand).toHaveBeenCalledWith(
+      "/repo",
+      props.commands.find((command) => command.id === "cmd:1"),
+    );
   });
 
   it("creates a custom command from the editor", () => {

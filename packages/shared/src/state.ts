@@ -8,6 +8,7 @@ import type {
   WorktreeLineageConfidence,
   WorktreeLineageMetadata,
 } from "./runtime.js";
+import type { SessionLaunchPreset } from "./shell-presets.js";
 import type { WorktreeLocalFileCandidate } from "./worktree-local-files.js";
 
 export interface AppState {
@@ -413,6 +414,7 @@ export interface Session {
   command: SessionCommand;
   cwd: string;
   shell: string;
+  launchPreset?: SessionLaunchPreset;
   createdAt: number;
   endedAt?: number;
   endReason?: SessionEndReason;
