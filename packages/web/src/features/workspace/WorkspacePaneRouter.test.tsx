@@ -105,16 +105,16 @@ describe("buildSessionCrumbs", () => {
     expect(glyphType(crumbs[1])).toBe(PaGlyph.folder);
   });
 
-  it("uses the worktreeActive glyph for the focused root of a git repo", () => {
+  it("uses the git glyph for the focused root of a git repo", () => {
     const crumbs = buildSessionCrumbs("acme", "main", true, true, null);
     expect(crumbs.map((c) => c.label)).toEqual(["acme", "main"]);
-    expect(glyphType(crumbs[1])).toBe(PaGlyph.worktreeActive);
+    expect(glyphType(crumbs[1])).toBe(PaGlyph.git);
   });
 
-  it("uses the worktreeInactive glyph for an inactive worktree of a git repo", () => {
+  it("uses the git glyph for an inactive worktree of a git repo", () => {
     const crumbs = buildSessionCrumbs("acme", "feature", false, true, null);
     expect(crumbs.map((c) => c.label)).toEqual(["acme", "feature"]);
-    expect(glyphType(crumbs[1])).toBe(PaGlyph.worktreeInactive);
+    expect(glyphType(crumbs[1])).toBe(PaGlyph.git);
   });
 
   it("appends the branch crumb when branchName is non-null", () => {

@@ -723,8 +723,7 @@ function buildChildTitle(pane: PaneEntry, sessions: Session[]): string | null {
  *
  * Glyph selection mirrors the sidebar's WorktreeRow:
  *   - non-repo project root -> folder
- *   - repo, focused on the active worktree -> worktreeActive
- *   - repo, focused on an inactive worktree -> worktreeInactive
+ *   - repo worktree -> git
  *
  * `branchName` surfaces only when the git poll has produced a non-empty
  * branch (caller passes `null` otherwise).
@@ -732,7 +731,7 @@ function buildChildTitle(pane: PaneEntry, sessions: Session[]): string | null {
 export function buildSessionCrumbs(
   projectName: string | null,
   worktreeDirName: string | null,
-  worktreeIsActive: boolean,
+  _worktreeIsActive: boolean,
   worktreeIsRepo: boolean,
   branchName: string | null,
 ): SessionCrumb[] {
@@ -743,10 +742,8 @@ export function buildSessionCrumbs(
   if (worktreeDirName) {
     const worktreeGlyph = !worktreeIsRepo ? (
       <PaGlyph.folder />
-    ) : worktreeIsActive ? (
-      <PaGlyph.worktreeActive />
     ) : (
-      <PaGlyph.worktreeInactive />
+      <PaGlyph.git />
     );
     crumbs.push({
       label: worktreeDirName,

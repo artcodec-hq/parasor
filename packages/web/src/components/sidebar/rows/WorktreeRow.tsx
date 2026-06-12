@@ -69,9 +69,8 @@ export function WorktreeRow({
   const worktreeFocused =
     selection.selectedWorktreeId === worktree.id &&
     selection.selectedChildId === null;
-  // When the project root isn't a git repo, git-flavored glyphs
-  // (worktreeActive/Inactive) misrepresent the row. Render a plain
-  // folder so the sidebar matches the `root` label.
+  // When the project root isn't a git repo, a git glyph misrepresents
+  // the row. Render a plain folder so the sidebar matches the `root` label.
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
   const dirtyTitle =
@@ -112,13 +111,7 @@ export function WorktreeRow({
             tone={worktreeFocused ? "accent" : "secondary"}
             className="relative"
           >
-            {nonRepo ? (
-              <PaGlyph.folder />
-            ) : worktree.active ? (
-              <PaGlyph.worktreeActive />
-            ) : (
-              <PaGlyph.worktreeInactive />
-            )}
+            {nonRepo ? <PaGlyph.folder /> : <PaGlyph.git />}
           </SidebarRowIcon>
         )}
         <button

@@ -96,7 +96,7 @@ export const HeaderTerminal: Story = {
             { label: "parasor", dim: true },
             {
               label: "feature/storybook",
-              glyph: <PaGlyph.branch />,
+              glyph: <PaGlyph.git />,
               maxWidth: 220,
             },
             { label: "codex", maxWidth: 180 },
@@ -148,7 +148,7 @@ export const HeaderMobileWorktree: Story = {
         <SessionPaneHeader
           crumbs={[
             { label: "parasor", dim: true },
-            { label: "feature/storybook", glyph: <PaGlyph.branch /> },
+            { label: "feature/storybook", glyph: <PaGlyph.git /> },
           ]}
           onBack={noop}
           onToggleDrawer={noop}
