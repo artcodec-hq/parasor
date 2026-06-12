@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ensureAuthenticated } from "../lib/auth-fetch.js";
 import { MIN_STABLE_MS, nextReconnectDelay } from "../lib/reconnect-backoff.js";
 import {
+  isTerminalTraceEnabled,
   scheduleClientStartupDiagnosticCapture,
   traceTerminalEvent,
 } from "../lib/terminal-trace.js";
@@ -82,11 +83,26 @@ export function useEventSocket() {
     };
     const scheduleReconnect = (immediate: boolean) => {
       if (immediate) {
+        if (isTerminalTraceEnabled()) {
+          traceTerminalEvent("event-socket-reconnect-scheduled", {
+            established: true,
+            delayMs: 0,
+            attempt: attemptRef.current,
+          });
+        }
         reconnect(0);
         return;
       }
       attemptRef.current += 1;
-      reconnect(nextReconnectDelay(attemptRef.current));
+      const delayMs = nextReconnectDelay(attemptRef.current);
+      if (isTerminalTraceEnabled()) {
+        traceTerminalEvent("event-socket-reconnect-scheduled", {
+          established: false,
+          delayMs,
+          attempt: attemptRef.current,
+        });
+      }
+      reconnect(delayMs);
     };
 
     const connect = async () => {
@@ -100,7 +116,14 @@ export function useEventSocket() {
        * flow -- just bail.
        */
       const authStartedAt = performance.now();
-      const authed = await ensureAuthenticated();
+      const authed = await ensureAuthenticated({
+        source: "event-socket",
+        trace: isTerminalTraceEnabled()
+          ? (event) => {
+              traceTerminalEvent("auth-preflight", event);
+            }
+          : undefined,
+      });
       const authDurationMs = performance.now() - authStartedAt;
       traceTerminalEvent("event-socket-auth-complete", {
         attempt: attemptRef.current,
@@ -334,7 +357,7 @@ export function useEventSocket() {
         });
       });
 
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (event) => {
         stopHeartbeat();
         if (!mountedRef.current || wsRef.current !== ws) return;
         setEventSocketConnected(false);
@@ -343,6 +366,14 @@ export function useEventSocket() {
         // a sub-MIN_STABLE_MS flap takes the backoff branch.
         const stableEnough =
           established && Date.now() - establishedAt >= MIN_STABLE_MS;
+        if (isTerminalTraceEnabled()) {
+          traceTerminalEvent("event-socket-close", {
+            status: String(event.code),
+            reason: event.reason,
+            established,
+            durationMs: openedAt > 0 ? performance.now() - openedAt : undefined,
+          });
+        }
         scheduleReconnect(stableEnough);
       });
 
