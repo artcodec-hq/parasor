@@ -155,7 +155,6 @@ export function WorkspacePaneRouter({
   ideCommands = [],
   canOpenLocalIde = false,
   onCopyWorktreePath,
-  onRenameWorktree,
   onRemoveWorktree,
   onDeleteProject,
 }: WorkspacePaneRouterProps) {
@@ -253,7 +252,6 @@ export function WorkspacePaneRouter({
   const moreMenuItems = useMemo<PaMenuItem[]>(() => {
     if (!focusedPane || !activeProjectId) return [];
     const worktreePath = focusedPane.worktreePath;
-    const branch = focusedWorktreeDirName ?? "main";
     const isProjectRootPane =
       !!activeProjectPath && worktreePath === activeProjectPath;
     const items: PaMenuItem[] = [];
@@ -308,36 +306,25 @@ export function WorkspacePaneRouter({
         });
       }
     }
-    // Rename / Remove operate on git refs (`git branch -m`, `git worktree
-    // remove`), so keep them scoped to worktree headers only.
-    let lifecycleSeparatorUsed = false;
-    const separatorBeforeLifecycle = () => {
-      if (lifecycleSeparatorUsed || items.length === 0) return false;
-      lifecycleSeparatorUsed = true;
-      return true;
-    };
-    if (!isProjectRootPane && activeProjectIsRepo && onRenameWorktree) {
-      items.push({
-        id: "rename",
-        label: "Rename branch…",
-        separatorBefore: separatorBeforeLifecycle(),
-        onSelect: () => onRenameWorktree(activeProjectId, worktreePath, branch),
-      });
-    }
     if (!isProjectRootPane && activeProjectIsRepo && onRemoveWorktree) {
       items.push({
         id: "remove",
         label: "Remove worktree…",
-        separatorBefore: separatorBeforeLifecycle(),
+        separatorBefore: items.length > 0,
         tone: "danger",
-        onSelect: () => onRemoveWorktree(activeProjectId, worktreePath, branch),
+        onSelect: () =>
+          onRemoveWorktree(
+            activeProjectId,
+            worktreePath,
+            focusedWorktreeDirName ?? "main",
+          ),
       });
     }
     if (isProjectRootPane && onDeleteProject) {
       items.push({
         id: "close-project",
         label: "Close project…",
-        separatorBefore: separatorBeforeLifecycle(),
+        separatorBefore: items.length > 0,
         onSelect: () => onDeleteProject(activeProjectId),
       });
     }
@@ -353,7 +340,6 @@ export function WorkspacePaneRouter({
     ideCommands,
     canOpenLocalIde,
     onCopyWorktreePath,
-    onRenameWorktree,
     onRemoveWorktree,
     onDeleteProject,
   ]);

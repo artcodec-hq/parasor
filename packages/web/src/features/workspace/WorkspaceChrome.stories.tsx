@@ -199,14 +199,9 @@ export const HeaderWorktreeMenu: Story = {
           },
           { id: "open-vscode", label: "Open in VS Code", onSelect: noop },
           {
-            id: "rename",
-            label: "Rename branch…",
-            separatorBefore: true,
-            onSelect: noop,
-          },
-          {
             id: "remove",
             label: "Remove worktree…",
+            separatorBefore: true,
             tone: "danger",
             onSelect: noop,
           },
