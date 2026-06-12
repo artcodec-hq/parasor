@@ -22,10 +22,10 @@ export interface SidebarChild {
   auto?: boolean;
   /**
    * Only meaningful for kind==="terminal". Identifies the agent runtime so
-   * the row icon can specialise (e.g. claudecode -> message-circle).
+   * the row icon can specialise.
    * Undefined = generic shell.
    */
-  agentType?: "claude";
+  agentType?: string;
 }
 
 export interface SidebarWorktree {

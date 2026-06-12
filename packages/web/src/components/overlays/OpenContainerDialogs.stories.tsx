@@ -44,6 +44,7 @@ function StoryDialog({
       project={project}
       worktree={worktree}
       commands={paneCommandsWithBuiltins(emptyCommands ? [] : customCommands)}
+      commandConfigs={emptyCommands ? [] : customCommands}
       isMobile={isMobile}
       loadLocalFiles={async () => ({
         candidates: [

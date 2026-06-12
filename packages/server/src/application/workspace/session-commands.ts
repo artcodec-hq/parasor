@@ -1,4 +1,8 @@
-import type { PaneNode, SessionCommand } from "@parasor/shared";
+import type {
+  PaneNode,
+  SessionCommand,
+  SessionLaunchPreset,
+} from "@parasor/shared";
 import { expandUserHome } from "../../lib/path.js";
 import type { PtyHost } from "../../pty/host.js";
 import type { AppStateStore } from "../../state/app-state.js";
@@ -48,6 +52,7 @@ export function createSessionCommands({
       command?: SessionCommand;
       cwd?: string;
       title?: string;
+      launchPreset?: SessionLaunchPreset;
       bootstrapInput?: string;
     }) {
       const project = appStateStore
@@ -62,6 +67,9 @@ export function createSessionCommands({
         command: input.command ?? { type: "shell" },
         cwd: expandUserHome(input.cwd ?? project.path),
         ...(input.title !== undefined && { title: input.title }),
+        ...(input.launchPreset !== undefined && {
+          launchPreset: input.launchPreset,
+        }),
         ...(input.bootstrapInput !== undefined && {
           bootstrapInput: input.bootstrapInput,
         }),

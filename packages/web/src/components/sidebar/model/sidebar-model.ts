@@ -322,7 +322,7 @@ function buildInactiveWorktrees({
         hint: session.state === "ended" ? "ended" : undefined,
         status: lifecycleToStatus(lifecycle, inReview),
         pinned: session.pinned === true,
-        agentType: session.command?.type === "claude" ? "claude" : undefined,
+        agentType: agentTypeForSession(session),
       });
     }
     for (const pane of childPanes[cwd] ?? []) {
@@ -436,7 +436,7 @@ function paneToChild(
       hint: session?.state === "ended" ? "ended" : undefined,
       status: lifecycleToStatus(lifecycle, inReview),
       pinned: session?.pinned === true,
-      agentType: session?.command?.type === "claude" ? "claude" : undefined,
+      agentType: session ? agentTypeForSession(session) : undefined,
     };
   }
   if (state.kind === "browser") {
@@ -455,6 +455,12 @@ function paneToChild(
 
 function labelForTerminal(session: Session): string {
   return displayTitleForTerminal(session);
+}
+
+function agentTypeForSession(session: Session): string | undefined {
+  if (session.command?.type === "claude") return "claude";
+  const runtimeId = session.launchPreset?.runtimeHint?.runtimeId;
+  return runtimeId && runtimeId !== "terminal" ? runtimeId : undefined;
 }
 
 function browserLabel(url: string): string {

@@ -8,6 +8,7 @@ import {
   normalizeIdeCommands,
   normalizePaneCommands,
   normalizeProjectSidebarState,
+  normalizeSessionLaunchPreset,
   normalizeWorktreeLocalFileAllowlist,
   normalizeWorktreeMetadataMap,
   type PortDetectionMode,
@@ -92,6 +93,7 @@ function migrate(raw: Partial<AppState>): AppState {
         })
       : [],
     projectStates: normalizeProjectStates(raw.projectStates),
+    sessions: normalizeSessions(raw.sessions),
     sessionRecords: Array.isArray(raw.sessionRecords) ? raw.sessionRecords : [],
     ideCommands: normalizeIdeCommands(raw.ideCommands),
     paneCommands: normalizePaneCommands(raw.paneCommands),
@@ -102,6 +104,30 @@ function migrate(raw: Partial<AppState>): AppState {
       dropSizeHardMaxBytes: hardMax,
     },
   };
+}
+
+function normalizeSessions(value: unknown): Session[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((session): session is Session => {
+      return (
+        typeof session === "object" &&
+        session !== null &&
+        !Array.isArray(session) &&
+        typeof (session as Session).id === "string"
+      );
+    })
+    .map((session) => {
+      const raw = session as Session & { launchPreset?: unknown };
+      const launchPreset = normalizeSessionLaunchPreset(raw.launchPreset);
+      const next: Session = { ...raw };
+      if (launchPreset) {
+        next.launchPreset = launchPreset;
+      } else {
+        delete next.launchPreset;
+      }
+      return next;
+    });
 }
 
 function normalizeProjectStates(value: unknown): Record<string, ProjectState> {

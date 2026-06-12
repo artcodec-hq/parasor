@@ -325,7 +325,9 @@ describe("InProcessPtyHost", () => {
     await manager.testEagerSpawn(session.id);
     await manager.initClient(session.id, "client-1", 80, 24, () => {});
 
-    expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+    await vi.waitFor(() => {
+      expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+    });
   });
 
   /*

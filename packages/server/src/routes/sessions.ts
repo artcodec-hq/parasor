@@ -1,4 +1,4 @@
-import type { SessionCommand } from "@parasor/shared";
+import type { SessionCommand, SessionLaunchPreset } from "@parasor/shared";
 import { Hono } from "hono";
 import {
   WorkspaceConflictError,
@@ -64,6 +64,7 @@ export function createSessionRoutes(
         command?: SessionCommand;
         cwd?: string;
         title?: string;
+        launchPreset?: SessionLaunchPreset;
         bootstrapInput?: unknown;
       }>()
       .catch(
@@ -73,6 +74,7 @@ export function createSessionRoutes(
             command?: SessionCommand;
             cwd?: string;
             title?: string;
+            launchPreset?: SessionLaunchPreset;
             bootstrapInput?: unknown;
           },
       );
@@ -87,6 +89,7 @@ export function createSessionRoutes(
       commandType: body.command?.type ?? "shell",
       hasCwd: typeof body.cwd === "string",
       hasTitle: typeof body.title === "string",
+      hasLaunchPreset: body.launchPreset !== undefined,
       hasBootstrapInput: typeof body.bootstrapInput === "string",
     });
 
@@ -96,6 +99,9 @@ export function createSessionRoutes(
         ...(body.command !== undefined && { command: body.command }),
         ...(body.cwd !== undefined && { cwd: body.cwd }),
         ...(body.title !== undefined && { title: body.title }),
+        ...(body.launchPreset !== undefined && {
+          launchPreset: body.launchPreset,
+        }),
         ...(typeof body.bootstrapInput === "string" && {
           bootstrapInput: body.bootstrapInput,
         }),

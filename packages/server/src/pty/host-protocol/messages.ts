@@ -18,9 +18,15 @@ import type {
   Session,
   SessionCommand,
   SessionEndReason,
+  SessionLaunchPreset,
 } from "@parasor/shared";
 
 /*
+ * 2.5.0 -- adds optional `launchPreset` to CREATE_REQ so shell-preset
+ * sessions keep their launch/runtime metadata across the daemon boundary.
+ * A 2.4.x daemon would ACK but silently ignore that field, so the minor bump
+ * forces a daemon restart before the server relies on preset identity.
+ *
  * 2.4.0 -- adds `ideCommands` to PERSIST_PROJECT_DOMAINS_REQ so custom
  * IDE launchers persist through the daemon single-writer path. A 2.3.x
  * daemon would ACK but silently ignore that field, so the minor bump forces
@@ -81,7 +87,7 @@ import type {
  *
  * 1.0.0 -- initial release.
  */
-export const PROTOCOL_VERSION = "2.4.0";
+export const PROTOCOL_VERSION = "2.5.0";
 
 export interface HelloPayload {
   protocolVersion: string;
@@ -125,6 +131,7 @@ export interface CreateReqPayload {
   command: SessionCommand;
   cwd: string;
   title?: string;
+  launchPreset?: SessionLaunchPreset;
   bootstrapInput?: string;
 }
 export interface CreateAckPayload {
