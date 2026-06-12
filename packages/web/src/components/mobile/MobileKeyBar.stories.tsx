@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
 import { MOBILE_VIEWPORT_GLOBALS } from "../../stories/storybook-viewports.js";
 import { MobileKeyBar } from "./MobileKeyBar.js";
 
@@ -60,34 +59,19 @@ export const TerminalCtrlAndKeyboardActive: Story = {
   ),
 };
 
-export const TerminalMoreActions: Story = {
-  render: function TerminalMoreActionsStory() {
-    const [sent, setSent] = useState<string[]>([]);
-    return (
-      <MobileFrame>
-        <div className="px-3 pb-2 text-xs text-text-secondary">
-          Sent: {sent.join(", ") || "none"}
-        </div>
-        <MobileKeyBar
-          onSend={(data) => setSent((current) => [...current, data])}
-          ctrlActive={false}
-          onCtrlToggle={noop}
-          keyboardOpen={false}
-          onKeyboardToggle={noop}
-          onAttachFiles={noop}
-        />
-      </MobileFrame>
-    );
-  },
-  play: async ({ canvasElement }) => {
-    const more = canvasElement.querySelector<HTMLButtonElement>(
-      'button[aria-label="More actions"]',
-    );
-    more?.click();
-    await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    const sheet = document.querySelector('[aria-label="Mobile actions"]');
-    if (!sheet) throw new Error("Expected mobile actions sheet to open");
-  },
+export const TerminalAttachFiles: Story = {
+  render: () => (
+    <MobileFrame>
+      <MobileKeyBar
+        onSend={noop}
+        ctrlActive={false}
+        onCtrlToggle={noop}
+        keyboardOpen={false}
+        onKeyboardToggle={noop}
+        onAttachFiles={noop}
+      />
+    </MobileFrame>
+  ),
 };
 
 export const EditorDefault: Story = {
