@@ -17,6 +17,11 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  HistoryLoadingIcon,
+} from "../../../components/icons/index.js";
 import { MobileKeyBar } from "../../../components/mobile/MobileKeyBar.js";
 import {
   DEFAULT_RECONNECTING_OVERLAY_DELAY_MS,
@@ -1845,23 +1850,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               }}
               className="absolute left-1/2 top-3 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-bg-secondary/95 text-text-primary shadow-md transition-opacity hover:bg-bg-secondary active:bg-bg-tertiary disabled:opacity-60"
             >
-              <svg
-                aria-hidden
-                viewBox="0 0 16 16"
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                {visibleHistoryLoadStatus === "loading" ? (
-                  <path d="M8 3a5 5 0 1 1-4.2 2.3" />
-                ) : (
-                  <path d="M4 10l4-4 4 4" />
-                )}
-              </svg>
+              {visibleHistoryLoadStatus === "loading" ? (
+                <HistoryLoadingIcon />
+              ) : (
+                <ChevronUpIcon />
+              )}
             </button>
           )}
           {showScrollDown && (
@@ -1873,19 +1866,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               onClick={() => xtermRef.current?.scrollToBottom()}
               className="absolute bottom-3 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-bg-secondary/95 text-text-primary shadow-md transition-opacity hover:bg-bg-secondary active:bg-bg-tertiary"
             >
-              <svg
-                aria-hidden
-                viewBox="0 0 16 16"
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 6l4 4 4-4" />
-              </svg>
+              <ChevronDownIcon />
             </button>
           )}
         </div>

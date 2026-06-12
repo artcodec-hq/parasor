@@ -65,35 +65,24 @@ describe("MobileKeyBar", () => {
     ]);
   });
 
-  it("uses lucide SVG icons for Return, arrows, attach, and keyboard controls", () => {
+  it("uses shared 16px / 1px SVG icons for controls", () => {
     const { container } = renderBar();
-    expect(
-      buttonByLabel(container, "Return").querySelector(
-        ".lucide-corner-down-left",
-      ),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Left").querySelector(".lucide-arrow-left"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Up").querySelector(".lucide-arrow-up"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Down").querySelector(".lucide-arrow-down"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Right").querySelector(".lucide-arrow-right"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "More actions").querySelector(
-        ".lucide-circle-plus",
-      ),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Show keyboard").querySelector(
-        ".lucide-keyboard",
-      ),
-    ).not.toBeNull();
+    const labels = [
+      "Return",
+      "Left",
+      "Up",
+      "Down",
+      "Right",
+      "More actions",
+      "Show keyboard",
+    ];
+    for (const label of labels) {
+      const svg = buttonByLabel(container, label).querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg?.getAttribute("width")).toBe("16");
+      expect(svg?.getAttribute("height")).toBe("16");
+      expect(svg?.getAttribute("stroke-width")).toBe("1");
+    }
   });
 
   it("renders text keys as supplied SVG glyphs", () => {
@@ -104,9 +93,12 @@ describe("MobileKeyBar", () => {
     expect(escapeKey.textContent).toBe("");
     expect(tab.textContent).toBe("");
     expect(ctrl.textContent).toBe("");
-    expect(escapeKey.querySelector(".key-glyph-esc")).not.toBeNull();
-    expect(tab.querySelector(".key-glyph-tab")).not.toBeNull();
-    expect(ctrl.querySelector(".key-glyph-ctrl")).not.toBeNull();
+    for (const button of [escapeKey, tab, ctrl]) {
+      const svg = button.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg?.getAttribute("width")).toBe("16");
+      expect(svg?.getAttribute("height")).toBe("16");
+    }
   });
 
   it("keeps safe-area padding outside the fixed-height key row", () => {
