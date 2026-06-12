@@ -243,6 +243,9 @@ describe("createProjectQueries", () => {
         confidence: "explicit" as const,
       },
     };
+    const metadataByProject: Record<string, Record<string, typeof lineage>> = {
+      "proj-2": { "/tmp/proj2.worktrees/child": lineage },
+    };
     const runGit = vi.fn(async (cwd: string, args: string[]) => {
       if (args[0] === "worktree" && cwd === "/tmp/proj") {
         return [
@@ -270,10 +273,7 @@ describe("createProjectQueries", () => {
     const queries = createProjectQueries({
       projectManager,
       runGit,
-      getWorktreeMetadata: (projectId) =>
-        projectId === "proj-2"
-          ? { "/tmp/proj2.worktrees/child": lineage }
-          : {},
+      getWorktreeMetadata: (projectId) => metadataByProject[projectId] ?? {},
     });
 
     await expect(queries.listAllWorktrees()).resolves.toMatchObject({
