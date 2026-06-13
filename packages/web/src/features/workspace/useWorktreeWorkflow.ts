@@ -9,6 +9,7 @@ import {
   renameWorktree,
 } from "../../lib/git-api.js";
 import { dismissSyncToast, showSyncToast } from "../../lib/sync-toast.js";
+import { writeTerminalInternalClipboard } from "../../lib/terminal-internal-clipboard.js";
 
 export interface RenameDialogState {
   projectId: string;
@@ -278,11 +279,22 @@ export function useWorktreeWorkflow(): UseWorktreeWorkflowResult {
 }
 
 async function copyToClipboard(value: string): Promise<boolean> {
+  const internalWritten = writeTerminalInternalClipboard(value);
+  const nativeWritten = await copyToNativeClipboard(value);
+  return internalWritten || nativeWritten;
+}
+
+async function copyToNativeClipboard(value: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value);
       return true;
     }
+  } catch {
+    // Fall through to the textarea path.
+  }
+
+  try {
     const ta = document.createElement("textarea");
     ta.value = value;
     ta.style.position = "fixed";

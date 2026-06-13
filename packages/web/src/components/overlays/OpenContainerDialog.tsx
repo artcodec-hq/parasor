@@ -223,9 +223,6 @@ function OpenContainerHeader({
           <PaGlyph.back />
         </button>
       )}
-      <span className="inline-flex text-accent" aria-hidden>
-        {mode === "editor" ? <PaGlyph.settings /> : <PaGlyph.terminal />}
-      </span>
       <span className="text-sm text-text-secondary">
         {mode === "editor"
           ? "Commands"

@@ -124,7 +124,7 @@ export function NetworkPortCenter({
   }, [open, setOpen]);
 
   return (
-    <span ref={rootRef} className="flex items-center gap-2">
+    <span ref={rootRef} className="flex items-center">
       <SidebarRowActionButton
         aria-label={hasUnread ? "Network ports, new ports" : "Network ports"}
         aria-expanded={open}
@@ -139,7 +139,7 @@ export function NetworkPortCenter({
         {hasUnread && (
           <span
             aria-hidden
-            className="absolute top-1 right-1 h-2 w-2 rounded-tag bg-accent shadow-[0_0_0_2px_var(--color-bg-secondary)]"
+            className="absolute top-1/2 -right-1.5 h-1.5 w-1.5 -translate-y-1/2 rounded-tag bg-accent"
           />
         )}
       </SidebarRowActionButton>

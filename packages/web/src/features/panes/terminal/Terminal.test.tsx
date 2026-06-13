@@ -574,9 +574,8 @@ function dispatchClipboardImagePaste(): void {
 
 describe("Terminal", () => {
   afterEach(() => {
-    // Required: BottomSheet uses createPortal into document.body, and
-    // without cleanup, leftover portals from a prior test pollute the
-    // global DOM and contaminate `document.querySelectorAll` lookups.
+    // Required so portal/dialog DOM from prior tests does not contaminate
+    // `document.querySelectorAll` lookups.
     cleanup();
     vi.useRealTimers();
   });
@@ -3613,24 +3612,23 @@ describe("Terminal", () => {
     expect(endEvent.defaultPrevented).toBe(false);
   });
 
-  it("opens the bottom sheet via the + button on the key bar", () => {
+  it("opens the OS file picker via the + button on the key bar", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn().mockReturnValue({ matches: true }),
     });
+    const clickSpy = vi
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => undefined);
     const { container } = render(<Terminal sessionId="s1" />, { wrapper });
 
-    const more = buttonByLabel(container, "More actions");
-    expect(more.getAttribute("aria-expanded")).toBe("false");
+    const attach = buttonByLabel(container, "Attach files");
+    expect(attach.disabled).toBe(false);
     act(() => {
-      more.click();
+      attach.click();
     });
-    expect(more.getAttribute("aria-expanded")).toBe("true");
-    // Sheet is rendered into document.body via portal.
-    const sheet = document.querySelector(
-      '[role="dialog"][aria-label="Mobile actions"]',
-    );
-    expect(sheet).not.toBeNull();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
   });
 
   it("dismisses the keyboard via the keyboard toggle on the bar", async () => {

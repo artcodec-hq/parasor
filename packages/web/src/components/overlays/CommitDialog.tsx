@@ -3,6 +3,7 @@ import {
   type DiffFile,
   DiffHunkBody,
 } from "../../features/panes/diff/diff-render.js";
+import { ChevronRightIcon } from "../icons/index.js";
 import {
   DialogButton,
   DialogCloseButton,
@@ -34,16 +35,9 @@ export const SUBJECT_LIMIT = 72;
 
 function Caret({ open }: { open: boolean }) {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden
-      className={`transition-transform ${open ? "rotate-90" : ""}`}
-    >
-      <path d="M5.7 4.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 0 1-1.4-1.4L8 8 5.7 5.7a1 1 0 0 1 0-1.4Z" />
-    </svg>
+    <ChevronRightIcon
+      className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`}
+    />
   );
 }
 

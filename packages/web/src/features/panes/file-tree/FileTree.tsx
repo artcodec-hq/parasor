@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+} from "../../../components/icons/index.js";
 import { useFileTreeDrop } from "../../../hooks/useFileTreeDrop.js";
 import { FILE_DRAG_MIME } from "../../../hooks/useOsFileDrop.js";
 import {
@@ -12,39 +16,6 @@ import { FileContextMenu } from "./FileContextMenu.js";
 import { FileTreeUploadConflictDialog } from "./FileTreeUploadConflictDialog.js";
 
 export { FILE_DRAG_MIME };
-
-/*
- * Tree expand chevrons. Editor file explorers use chevron-right (collapsed)
- * and chevron-down (expanded) at 16×16 in descriptionForeground. These
- * inline SVGs match that shape -- much more legible than the U+25B8 / U+25BE
- * triangle characters which were rendering at ~10px because of font scaling.
- */
-function ChevronRight() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden
-    >
-      <path d="M5.7 4.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 0 1-1.4-1.4L8 8 5.7 5.7a1 1 0 0 1 0-1.4Z" />
-    </svg>
-  );
-}
-function ChevronDown() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden
-    >
-      <path d="M3.3 5.7a1 1 0 0 1 1.4 0L8 9l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" />
-    </svg>
-  );
-}
 
 interface FileEntry {
   name: string;
@@ -417,7 +388,7 @@ export function FileTree({
           >
             {isDir ? (
               <span className="flex w-4 shrink-0 items-center justify-center text-text-secondary">
-                {isExpanded ? <ChevronDown /> : <ChevronRight />}
+                {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
               </span>
             ) : (
               <span className="w-4 shrink-0" />
