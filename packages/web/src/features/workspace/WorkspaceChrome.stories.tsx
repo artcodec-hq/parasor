@@ -96,7 +96,7 @@ export const HeaderTerminal: Story = {
             { label: "parasor", dim: true },
             {
               label: "feature/storybook",
-              glyph: <PaGlyph.branch />,
+              glyph: <PaGlyph.git />,
               maxWidth: 220,
             },
             { label: "codex", maxWidth: 180 },
@@ -137,6 +137,88 @@ export const HeaderTerminal: Story = {
   },
 };
 
+export const HeaderProjectMenu: Story = {
+  render: () => (
+    <div className="h-screen bg-bg-primary pt-10 text-text-primary">
+      <SessionPaneHeader
+        crumbs={[
+          { label: "parasor", dim: true },
+          { label: "main", glyph: <PaGlyph.git />, maxWidth: 220 },
+        ]}
+        onToggleDrawer={noop}
+        moreMenuItems={[
+          { id: "copy-path", label: "Copy path", onSelect: noop },
+          {
+            id: "open-cursor",
+            label: "Open in Cursor",
+            separatorBefore: true,
+            onSelect: noop,
+          },
+          { id: "open-vscode", label: "Open in VS Code", onSelect: noop },
+          {
+            id: "close-project",
+            label: "Close project…",
+            separatorBefore: true,
+            onSelect: noop,
+          },
+        ]}
+      />
+      <Panel label="project root pane" tone="primary" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const button = canvasElement.querySelector<HTMLButtonElement>(
+      'button[aria-label="Workspace menu"]',
+    );
+    button?.click();
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  },
+};
+
+export const HeaderWorktreeMenu: Story = {
+  render: () => (
+    <div className="h-screen bg-bg-primary pt-10 text-text-primary">
+      <SessionPaneHeader
+        crumbs={[
+          { label: "parasor", dim: true },
+          {
+            label: "feature/menu-cleanup",
+            glyph: <PaGlyph.git />,
+            maxWidth: 220,
+          },
+        ]}
+        dirty={3}
+        onToggleDrawer={noop}
+        moreMenuItems={[
+          { id: "copy-path", label: "Copy path", onSelect: noop },
+          {
+            id: "open-cursor",
+            label: "Open in Cursor",
+            separatorBefore: true,
+            onSelect: noop,
+          },
+          { id: "open-vscode", label: "Open in VS Code", onSelect: noop },
+          {
+            id: "remove",
+            label: "Remove worktree…",
+            separatorBefore: true,
+            tone: "danger",
+            onSelect: noop,
+          },
+        ]}
+      />
+      <Panel label="worktree pane" tone="primary" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const button = canvasElement.querySelector<HTMLButtonElement>(
+      'button[aria-label="Workspace menu"]',
+    );
+    button?.click();
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  },
+};
+
 export const HeaderMobileWorktree: Story = {
   render: function HeaderMobileWorktreeStory() {
     const [view, setView] = useState<SessionPaneView>("files");
@@ -148,7 +230,7 @@ export const HeaderMobileWorktree: Story = {
         <SessionPaneHeader
           crumbs={[
             { label: "parasor", dim: true },
-            { label: "feature/storybook", glyph: <PaGlyph.branch /> },
+            { label: "feature/storybook", glyph: <PaGlyph.git /> },
           ]}
           onBack={noop}
           onToggleDrawer={noop}

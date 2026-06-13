@@ -32,6 +32,8 @@ const DEFAULT_HEADLESS_REPLAY_MAX_BYTES =
   DEFAULT_IN_PROCESS_LEGACY_REPLAY_MAX_BYTES;
 const DEFAULT_HEADLESS_STATE_MAX_SESSIONS = 8;
 const DEFAULT_HEADLESS_STATE_TTL_MS = 10 * 60_000;
+const BOOTSTRAP_INPUT_AFTER_OUTPUT_DELAY_MS = 50;
+const BOOTSTRAP_INPUT_FALLBACK_DELAY_MS = 400;
 
 function readPositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name];
@@ -285,6 +287,9 @@ export class InProcessPtyHost implements PtyHost {
         command: input.command,
         cwd: input.cwd,
         shell: spawnCmd,
+        ...(input.launchPreset !== undefined && {
+          launchPreset: input.launchPreset,
+        }),
         createdAt: Date.now(),
       };
 
@@ -1141,11 +1146,55 @@ export class InProcessPtyHost implements PtyHost {
     }
 
     this.attachProcHandlers(managed, managed.currentGeneration);
-    const bootstrapInput = managed.bootstrapInput;
-    if (bootstrapInput) {
+    this.scheduleBootstrapInput(managed, proc, managed.currentGeneration);
+  }
+
+  private scheduleBootstrapInput(
+    managed: ManagedSession,
+    proc: pty.IPty,
+    generationAtSpawn: number,
+  ): void {
+    if (!managed.bootstrapInput) return;
+
+    let outputSubscription: ReturnType<pty.IPty["onData"]> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      outputSubscription?.dispose();
+      outputSubscription = null;
+    };
+
+    const send = () => {
+      cleanup();
+      const bootstrapInput = managed.bootstrapInput;
+      if (!bootstrapInput) return;
+      if (
+        managed.process !== proc ||
+        managed.currentGeneration !== generationAtSpawn ||
+        managed.info.state !== "running"
+      ) {
+        return;
+      }
+
       managed.bootstrapInput = null;
-      this.write(managed.info.id, bootstrapInput, managed.currentGeneration);
-    }
+      this.write(managed.info.id, bootstrapInput, generationAtSpawn);
+    };
+
+    const arm = (delayMs: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(send, delayMs);
+    };
+
+    outputSubscription = proc.onData(() => {
+      arm(BOOTSTRAP_INPUT_AFTER_OUTPUT_DELAY_MS);
+      outputSubscription?.dispose();
+      outputSubscription = null;
+    });
+    arm(BOOTSTRAP_INPUT_FALLBACK_DELAY_MS);
   }
 
   private attachProcHandlers(

@@ -17,6 +17,11 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  HistoryLoadingIcon,
+} from "../../../components/icons/index.js";
 import { MobileKeyBar } from "../../../components/mobile/MobileKeyBar.js";
 import {
   DEFAULT_RECONNECTING_OVERLAY_DELAY_MS,
@@ -31,6 +36,11 @@ import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
+import {
+  hasTerminalPasteCandidate,
+  readTerminalInternalClipboard,
+  writeTerminalInternalClipboard,
+} from "../../../lib/terminal-internal-clipboard.js";
 import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
 import {
   getTerminalReplayCache,
@@ -72,6 +82,7 @@ import {
 import {
   attachTerminalTapGestures,
   attachTerminalTouchSelection,
+  attachTerminalTouchWheel,
 } from "./terminal-touch-gestures.js";
 import {
   applyBoundarySelection,
@@ -103,8 +114,6 @@ const HISTORY_LOAD_SUPPRESS_MS = 750;
 const IME_DUPLICATE_SUPPRESS_MS = 120;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS = [80, 250] as const;
-const TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY =
-  "parasor:terminal-internal-clipboard";
 const TERMINAL_UNICODE_VERSION = "11";
 
 type SelectionOverlayState = {
@@ -125,32 +134,6 @@ function isPrintableImeData(data: string): boolean {
 function clampNumber(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.min(Math.max(value, min), max);
-}
-
-function writeTerminalInternalClipboard(text: string): boolean {
-  try {
-    window.localStorage.setItem(TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY, text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function readTerminalInternalClipboard(): string | null {
-  try {
-    const text = window.localStorage.getItem(
-      TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY,
-    );
-    return text && text.length > 0 ? text : null;
-  } catch {
-    return null;
-  }
-}
-
-function hasTerminalPasteCandidate(): boolean {
-  return (
-    readTerminalInternalClipboard() !== null || !!navigator.clipboard?.readText
-  );
 }
 
 function createInitialRendererTrace(input: {
@@ -1314,6 +1297,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         container,
         screenElement,
       });
+      const cleanupTouchWheel = attachTerminalTouchWheel({
+        term,
+        screenElement,
+      });
 
       const cleanupTouchSelection = attachTerminalTouchSelection({
         term,
@@ -1655,6 +1642,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       return () => {
         cleanupViewportLifecycle();
         cleanupTapGestures();
+        cleanupTouchWheel();
         cleanupTouchSelection();
         stopMainThreadTrace();
         screenElement?.removeEventListener(
@@ -1845,23 +1833,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               }}
               className="absolute left-1/2 top-3 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-bg-secondary/95 text-text-primary shadow-md transition-opacity hover:bg-bg-secondary active:bg-bg-tertiary disabled:opacity-60"
             >
-              <svg
-                aria-hidden
-                viewBox="0 0 16 16"
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                {visibleHistoryLoadStatus === "loading" ? (
-                  <path d="M8 3a5 5 0 1 1-4.2 2.3" />
-                ) : (
-                  <path d="M4 10l4-4 4 4" />
-                )}
-              </svg>
+              {visibleHistoryLoadStatus === "loading" ? (
+                <HistoryLoadingIcon />
+              ) : (
+                <ChevronUpIcon />
+              )}
             </button>
           )}
           {showScrollDown && (
@@ -1873,19 +1849,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               onClick={() => xtermRef.current?.scrollToBottom()}
               className="absolute bottom-3 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-bg-secondary/95 text-text-primary shadow-md transition-opacity hover:bg-bg-secondary active:bg-bg-tertiary"
             >
-              <svg
-                aria-hidden
-                viewBox="0 0 16 16"
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 6l4 4 4-4" />
-              </svg>
+              <ChevronDownIcon />
             </button>
           )}
         </div>

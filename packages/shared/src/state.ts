@@ -2,6 +2,13 @@ import type { IdeCommandConfig } from "./ide-commands.js";
 import type { PaneCommandConfig } from "./pane-commands.js";
 import type { WorktreePanes } from "./pane-model.js";
 import type { PaneNode } from "./panes.js";
+import type {
+  WorktreeCreationSource,
+  WorktreeLineageCaptureSource,
+  WorktreeLineageConfidence,
+  WorktreeLineageMetadata,
+} from "./runtime.js";
+import type { SessionLaunchPreset } from "./shell-presets.js";
 import type { WorktreeLocalFileCandidate } from "./worktree-local-files.js";
 
 export interface AppState {
@@ -18,9 +25,9 @@ export interface AppState {
   sessionRecords: SessionRecord[];
   serviceConfig: ServiceConfig;
   /**
-   * User-defined commands shown by the Open Container terminal launcher.
-   * The built-in empty-shell Terminal entry is client-owned UI behavior and
-   * is intentionally not persisted here.
+   * Terminal launcher command configuration. User-defined command entries use
+   * custom ids; built-in preset ids store only user overrides such as
+   * enabled/disabled state or a custom command line.
    */
   paneCommands: PaneCommandConfig[];
   /**
@@ -110,7 +117,271 @@ export interface ProjectState {
   lastFocusedPaneId: string | null;
   /** New focus pointer into `worktrees[].panes[].id`. */
   focusedPaneId: string | null;
+  /**
+   * Server-owned sidebar preferences shared across browser clients.
+   * Optional in the type so old fixtures / persisted state remain readable;
+   * state migration and project creation backfill it for runtime data.
+   */
+  sidebar?: ProjectSidebarState;
+  /**
+   * Server-owned product metadata keyed by absolute worktree path. The git
+   * worktree list remains authoritative for existence; this map only records
+   * lineage/provenance for display and context.
+   */
+  worktreeMetadata?: Record<string, WorktreeLineageMetadata>;
   lastAccessedAt: number;
+}
+
+export interface ProjectSidebarState {
+  /**
+   * User-defined child ordering by worktree path. Values are pane ids in
+   * desired sidebar order; children not listed by the client are appended by
+   * the renderer's default ordering.
+   */
+  paneOrder: Record<string, string[]>;
+  /** Disclosure state by worktree path. Missing = open. */
+  worktreeOpen: Record<string, boolean>;
+}
+
+export interface ProjectSidebarStatePatch {
+  /**
+   * Worktree path -> ordered pane ids. `null` deletes the path override.
+   */
+  paneOrder?: Record<string, string[] | null>;
+  /** Worktree path -> open/closed. `null` deletes the path override. */
+  worktreeOpen?: Record<string, boolean | null>;
+}
+
+export function createEmptyProjectSidebarState(): ProjectSidebarState {
+  return { paneOrder: {}, worktreeOpen: {} };
+}
+
+export function normalizeProjectSidebarState(
+  value: unknown,
+): ProjectSidebarState {
+  if (!isPlainObject(value)) return createEmptyProjectSidebarState();
+  return {
+    paneOrder: normalizePaneOrderMap(value.paneOrder),
+    worktreeOpen: normalizeWorktreeOpenMap(value.worktreeOpen),
+  };
+}
+
+const WORKTREE_CREATION_SOURCES: WorktreeCreationSource[] = [
+  "ui",
+  "cli",
+  "runtime",
+  "agent",
+  "unknown",
+];
+const WORKTREE_LINEAGE_CAPTURE_SOURCES: WorktreeLineageCaptureSource[] = [
+  "create-worktree-request",
+  "path-prefix",
+  "manual",
+];
+const WORKTREE_LINEAGE_CONFIDENCES: WorktreeLineageConfidence[] = [
+  "explicit",
+  "inferred",
+];
+
+export function normalizeWorktreeMetadataMap(
+  value: unknown,
+): Record<string, WorktreeLineageMetadata> {
+  if (!isPlainObject(value)) return {};
+  const out: Record<string, WorktreeLineageMetadata> = {};
+  for (const [path, raw] of Object.entries(value)) {
+    const metadata = normalizeWorktreeLineageMetadata(raw);
+    if (path && metadata) out[path] = metadata;
+  }
+  return out;
+}
+
+function normalizeWorktreeLineageMetadata(
+  value: unknown,
+): WorktreeLineageMetadata | null {
+  if (!isPlainObject(value)) return null;
+  if (typeof value.instanceId !== "string" || value.instanceId.length === 0) {
+    return null;
+  }
+  if (
+    typeof value.createdAt !== "number" ||
+    !Number.isFinite(value.createdAt) ||
+    value.createdAt < 0
+  ) {
+    return null;
+  }
+  if (
+    typeof value.creationSource !== "string" ||
+    !WORKTREE_CREATION_SOURCES.includes(
+      value.creationSource as WorktreeCreationSource,
+    )
+  ) {
+    return null;
+  }
+  if (!isPlainObject(value.lineageCapture)) return null;
+  if (
+    typeof value.lineageCapture.source !== "string" ||
+    !WORKTREE_LINEAGE_CAPTURE_SOURCES.includes(
+      value.lineageCapture.source as WorktreeLineageCaptureSource,
+    )
+  ) {
+    return null;
+  }
+  if (
+    typeof value.lineageCapture.confidence !== "string" ||
+    !WORKTREE_LINEAGE_CONFIDENCES.includes(
+      value.lineageCapture.confidence as WorktreeLineageConfidence,
+    )
+  ) {
+    return null;
+  }
+
+  const metadata: WorktreeLineageMetadata = {
+    instanceId: value.instanceId,
+    creationSource: value.creationSource as WorktreeCreationSource,
+    createdAt: value.createdAt,
+    lineageCapture: {
+      source: value.lineageCapture.source as WorktreeLineageCaptureSource,
+      confidence: value.lineageCapture.confidence as WorktreeLineageConfidence,
+    },
+  };
+  const createdWithAgent = optionalString(value, "createdWithAgent");
+  if (createdWithAgent) metadata.createdWithAgent = createdWithAgent;
+  const createdBySessionId = optionalString(value, "createdBySessionId");
+  if (createdBySessionId) metadata.createdBySessionId = createdBySessionId;
+  const createdByPaneCommandId = optionalString(
+    value,
+    "createdByPaneCommandId",
+  );
+  if (createdByPaneCommandId) {
+    metadata.createdByPaneCommandId = createdByPaneCommandId;
+  }
+  const createdByPaneCommandLabel = optionalString(
+    value,
+    "createdByPaneCommandLabel",
+  );
+  if (createdByPaneCommandLabel) {
+    metadata.createdByPaneCommandLabel = createdByPaneCommandLabel;
+  }
+  const parentWorktreePath = optionalString(value, "parentWorktreePath");
+  if (parentWorktreePath) metadata.parentWorktreePath = parentWorktreePath;
+  const parentWorktreeInstanceId = optionalString(
+    value,
+    "parentWorktreeInstanceId",
+  );
+  if (parentWorktreeInstanceId) {
+    metadata.parentWorktreeInstanceId = parentWorktreeInstanceId;
+  }
+  return metadata;
+}
+
+function optionalString(
+  source: Record<string, unknown>,
+  key: keyof WorktreeLineageMetadata & string,
+): string | undefined {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export function normalizeProjectSidebarStatePatch(
+  value: unknown,
+): ProjectSidebarStatePatch | null {
+  if (!isPlainObject(value)) return null;
+  const patch: ProjectSidebarStatePatch = {};
+  if ("paneOrder" in value) {
+    const paneOrder = normalizePaneOrderPatchMap(value.paneOrder);
+    if (paneOrder === null) return null;
+    patch.paneOrder = paneOrder;
+  }
+  if ("worktreeOpen" in value) {
+    const worktreeOpen = normalizeWorktreeOpenPatchMap(value.worktreeOpen);
+    if (worktreeOpen === null) return null;
+    patch.worktreeOpen = worktreeOpen;
+  }
+  return patch.paneOrder || patch.worktreeOpen ? patch : null;
+}
+
+export function applyProjectSidebarStatePatch(
+  state: ProjectSidebarState | undefined,
+  patch: ProjectSidebarStatePatch,
+): ProjectSidebarState {
+  const current = normalizeProjectSidebarState(state);
+  const next: ProjectSidebarState = {
+    paneOrder: { ...current.paneOrder },
+    worktreeOpen: { ...current.worktreeOpen },
+  };
+
+  for (const [path, ids] of Object.entries(patch.paneOrder ?? {})) {
+    if (ids === null) {
+      delete next.paneOrder[path];
+    } else {
+      next.paneOrder[path] = ids;
+    }
+  }
+
+  for (const [path, open] of Object.entries(patch.worktreeOpen ?? {})) {
+    if (open === null) {
+      delete next.worktreeOpen[path];
+    } else {
+      next.worktreeOpen[path] = open;
+    }
+  }
+
+  return next;
+}
+
+function normalizePaneOrderMap(value: unknown): Record<string, string[]> {
+  if (!isPlainObject(value)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [path, ids] of Object.entries(value)) {
+    if (!Array.isArray(ids)) continue;
+    const validIds = ids.filter((id): id is string => typeof id === "string");
+    if (validIds.length > 0) out[path] = validIds;
+  }
+  return out;
+}
+
+function normalizeWorktreeOpenMap(value: unknown): Record<string, boolean> {
+  if (!isPlainObject(value)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [path, open] of Object.entries(value)) {
+    if (typeof open === "boolean") out[path] = open;
+  }
+  return out;
+}
+
+function normalizePaneOrderPatchMap(
+  value: unknown,
+): Record<string, string[] | null> | null {
+  if (!isPlainObject(value)) return null;
+  const out: Record<string, string[] | null> = {};
+  for (const [path, ids] of Object.entries(value)) {
+    if (ids === null) {
+      out[path] = null;
+      continue;
+    }
+    if (!Array.isArray(ids)) return null;
+    out[path] = ids.filter((id): id is string => typeof id === "string");
+  }
+  return out;
+}
+
+function normalizeWorktreeOpenPatchMap(
+  value: unknown,
+): Record<string, boolean | null> | null {
+  if (!isPlainObject(value)) return null;
+  const out: Record<string, boolean | null> = {};
+  for (const [path, open] of Object.entries(value)) {
+    if (open === null || typeof open === "boolean") {
+      out[path] = open;
+      continue;
+    }
+    return null;
+  }
+  return out;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export type SessionCommand =
@@ -143,6 +414,7 @@ export interface Session {
   command: SessionCommand;
   cwd: string;
   shell: string;
+  launchPreset?: SessionLaunchPreset;
   createdAt: number;
   endedAt?: number;
   endReason?: SessionEndReason;

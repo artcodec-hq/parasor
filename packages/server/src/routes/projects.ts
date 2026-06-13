@@ -1,5 +1,10 @@
 import { getConnInfo } from "@hono/node-server/conninfo";
-import type { PaneNode, Worktree } from "@parasor/shared";
+import {
+  normalizeProjectSidebarStatePatch,
+  type PaneNode,
+  type Worktree,
+  type WorktreeCreationSource,
+} from "@parasor/shared";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import {
@@ -9,6 +14,7 @@ import {
 } from "../application/workspace/errors.js";
 import { createProjectCommands } from "../application/workspace/project-commands.js";
 import { createProjectQueries } from "../application/workspace/project-queries.js";
+import { createSidebarStateCommands } from "../application/workspace/sidebar-state-commands.js";
 import { createWorktreeCommands } from "../application/workspace/worktree-commands.js";
 import {
   ideEditorLabel,
@@ -24,6 +30,61 @@ import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
 import { resolveWorktreeOrError } from "./lib/resolve-worktree.js";
+
+const WORKTREE_CREATION_SOURCES = new Set<WorktreeCreationSource>([
+  "ui",
+  "cli",
+  "runtime",
+  "agent",
+  "unknown",
+]);
+
+function normalizeCreateWorktreeLineage(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const lineage: {
+    creationSource?: WorktreeCreationSource;
+    parentWorktreePath?: string;
+    createdWithAgent?: string;
+    createdBySessionId?: string;
+    createdByPaneCommandId?: string;
+    createdByPaneCommandLabel?: string;
+  } = {};
+  if (
+    typeof raw.creationSource === "string" &&
+    WORKTREE_CREATION_SOURCES.has(raw.creationSource as WorktreeCreationSource)
+  ) {
+    lineage.creationSource = raw.creationSource as WorktreeCreationSource;
+  }
+  const parentWorktreePath = optionalString(raw, "parentWorktreePath");
+  if (parentWorktreePath) lineage.parentWorktreePath = parentWorktreePath;
+  const createdWithAgent = optionalString(raw, "createdWithAgent");
+  if (createdWithAgent) lineage.createdWithAgent = createdWithAgent;
+  const createdBySessionId = optionalString(raw, "createdBySessionId");
+  if (createdBySessionId) lineage.createdBySessionId = createdBySessionId;
+  const createdByPaneCommandId = optionalString(raw, "createdByPaneCommandId");
+  if (createdByPaneCommandId) {
+    lineage.createdByPaneCommandId = createdByPaneCommandId;
+  }
+  const createdByPaneCommandLabel = optionalString(
+    raw,
+    "createdByPaneCommandLabel",
+  );
+  if (createdByPaneCommandLabel) {
+    lineage.createdByPaneCommandLabel = createdByPaneCommandLabel;
+  }
+  return Object.keys(lineage).length > 0 ? lineage : undefined;
+}
+
+function optionalString(
+  source: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
 
 export function createProjectRoutes(
   pm: ProjectManager,
@@ -50,11 +111,39 @@ export function createProjectRoutes(
   });
   const projectQueries = createProjectQueries({
     projectManager: pm,
+    getWorktreeMetadata: (projectId) =>
+      store.get().projectStates[projectId]?.worktreeMetadata ?? {},
   });
   const worktreeCommands = createWorktreeCommands({
     projectManager: pm,
     eventBus,
     getProjectWorktrees: (projectId) => worktreeCache.get()[projectId] ?? [],
+    getWorktreeMetadata: (projectId, worktreePath) =>
+      store.get().projectStates[projectId]?.worktreeMetadata?.[worktreePath],
+    setWorktreeMetadata: (projectId, worktreePath, metadata) => {
+      store.mutateProjectStates((state) => {
+        const projectState = state.projectStates[projectId];
+        if (!projectState) return;
+        projectState.worktreeMetadata = {
+          ...(projectState.worktreeMetadata ?? {}),
+          [worktreePath]: metadata,
+        };
+      });
+    },
+    removeWorktreeMetadata: (projectId, worktreePath) => {
+      store.mutateProjectStates((state) => {
+        const projectState = state.projectStates[projectId];
+        if (!projectState?.worktreeMetadata) return;
+        const { [worktreePath]: _drop, ...rest } =
+          projectState.worktreeMetadata;
+        projectState.worktreeMetadata = rest;
+      });
+    },
+  });
+  const sidebarStateCommands = createSidebarStateCommands({
+    appStateStore: store,
+    eventBus,
+    projectManager: pm,
   });
   const launchIde = opts.openInIde ?? openInIde;
   const canOpenLocalIdeFromAddress =
@@ -95,6 +184,28 @@ export function createProjectRoutes(
       return c.json({ error: "ids must match the current project set" }, 400);
     }
     return c.json({ ok: true });
+  });
+
+  routes.patch("/:id/sidebar-state", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<unknown>().catch(() => null);
+    const patch = normalizeProjectSidebarStatePatch(body);
+    if (!patch) {
+      return c.json(
+        { error: "paneOrder or worktreeOpen patch is required" },
+        400,
+      );
+    }
+
+    try {
+      const sidebar = sidebarStateCommands.updateSidebarState(id, patch);
+      return c.json({ sidebar });
+    } catch (error) {
+      if (error instanceof WorkspaceNotFoundError) {
+        return c.json({ error: "Not found" }, 404);
+      }
+      throw error;
+    }
   });
 
   routes.post("/", async (c) => {
@@ -242,6 +353,14 @@ export function createProjectRoutes(
         base?: string;
         copyLocalFiles?: unknown;
         rememberLocalFiles?: unknown;
+        lineage?: {
+          creationSource?: unknown;
+          parentWorktreePath?: unknown;
+          createdWithAgent?: unknown;
+          createdBySessionId?: unknown;
+          createdByPaneCommandId?: unknown;
+          createdByPaneCommandLabel?: unknown;
+        };
       }>()
       .catch(
         () =>
@@ -250,6 +369,7 @@ export function createProjectRoutes(
             base?: string;
             copyLocalFiles?: unknown;
             rememberLocalFiles?: unknown;
+            lineage?: unknown;
           },
       );
     if (!body.branch) {
@@ -261,6 +381,9 @@ export function createProjectRoutes(
         ...(body.base !== undefined && { base: body.base }),
         ...(body.copyLocalFiles !== undefined && {
           copyLocalFiles: body.copyLocalFiles,
+        }),
+        ...(body.lineage !== undefined && {
+          lineage: normalizeCreateWorktreeLineage(body.lineage),
         }),
       });
       if (body.rememberLocalFiles === true) {

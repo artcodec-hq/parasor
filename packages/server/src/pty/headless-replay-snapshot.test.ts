@@ -59,6 +59,22 @@ function cellAttrs(
   };
 }
 
+function mouseEncoding(
+  term: import("@xterm/headless").Terminal,
+): string | null {
+  return (
+    (
+      term as unknown as {
+        _core?: {
+          mouseStateService?: {
+            activeEncoding?: unknown;
+          };
+        };
+      }
+    )._core?.mouseStateService?.activeEncoding?.toString() ?? null
+  );
+}
+
 describe("buildHeadlessReplaySnapshot", () => {
   it("renders terminal output into a bounded text snapshot", async () => {
     const snapshot = await buildHeadlessReplaySnapshot(
@@ -235,6 +251,39 @@ describe("buildHeadlessReplaySnapshot", () => {
     expect(snapshot.text).toContain("status footer\x1b[2;7H");
     expect(replayed.buffer.active.cursorY).toBe(original.buffer.active.cursorY);
     expect(replayed.buffer.active.cursorX).toBe(original.buffer.active.cursorX);
+  });
+
+  it("preserves SGR mouse tracking mode in the replay prologue", async () => {
+    const snapshot = await buildHeadlessReplaySnapshot(
+      "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006hOpenCode",
+      { cols: 80, rows: 24, scrollbackLines: 10, maxBytes: 1024 },
+    );
+    const replayed = await replayIntoTerminal(snapshot.text, {
+      cols: 80,
+      rows: 24,
+    });
+
+    expect(snapshot.text).toContain("\x1b[?1003h\x1b[?1006hOpenCode");
+    expect(replayed.modes.mouseTrackingMode).toBe("any");
+    expect(mouseEncoding(replayed)).toBe("SGR");
+  });
+
+  it("accounts for the mouse mode prologue when applying the byte cap", async () => {
+    const prologue = "\x1b[?1003h\x1b[?1006h";
+    const snapshot = await buildHeadlessReplaySnapshot(
+      "\x1b[?1003h\x1b[?1006hOpenCode",
+      {
+        cols: 80,
+        rows: 24,
+        scrollbackLines: 10,
+        maxBytes: Buffer.byteLength(prologue, "utf8") + 4,
+      },
+    );
+
+    expect(Buffer.byteLength(snapshot.text, "utf8")).toBeLessThanOrEqual(
+      Buffer.byteLength(prologue, "utf8") + 4,
+    );
+    expect(snapshot.text).toBe(`${prologue}Code`);
   });
 
   it("keeps the bottom viewport anchor when scrollback exists", async () => {

@@ -270,6 +270,7 @@ function eventStore(overrides: Record<string, unknown> = {}) {
     seedProject: vi.fn(),
     seedPaneCommands: vi.fn(),
     seedIdeCommands: vi.fn(),
+    seedSidebarState: vi.fn(),
     ...overrides,
   };
 }
@@ -364,7 +365,7 @@ describe("App session creation routes", () => {
     );
 
     expect(screen.getByTestId("launcher-commands").textContent).toBe(
-      "Terminal,Dev",
+      "Terminal,Claude,Codex,OpenCode,Gemini,Dev",
     );
   });
 

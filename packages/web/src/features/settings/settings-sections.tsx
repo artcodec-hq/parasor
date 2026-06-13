@@ -5,6 +5,7 @@ import {
   type ServiceConfig,
 } from "@parasor/shared";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { PaGlyph } from "../../components/icons/index.js";
 import { PaButton } from "../../components/primitives/index.js";
 import { DEFAULT_UI_FONT_STACK, resolveFontStack } from "../../lib/fonts.js";
 import { ThemeValidationError } from "../../lib/theme/loader.js";
@@ -783,16 +784,7 @@ function ThemeRadio({
           aria-label={`Remove ${theme.name}`}
           className="rounded-control p-1 text-text-secondary hover:bg-danger/20 hover:text-danger"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path d="M5.7 4.3a1 1 0 0 0-1.4 1.4L8.6 10l-4.3 4.3a1 1 0 1 0 1.4 1.4L10 11.4l4.3 4.3a1 1 0 0 0 1.4-1.4L11.4 10l4.3-4.3a1 1 0 0 0-1.4-1.4L10 8.6 5.7 4.3Z" />
-          </svg>
+          <PaGlyph.close />
         </button>
       )}
     </div>

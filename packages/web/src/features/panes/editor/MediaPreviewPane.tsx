@@ -228,16 +228,30 @@ function MediaSurface({ kind, src, alt }: MediaSurfaceProps) {
       </div>
     );
   }
-  // pdf
-  // `sandbox=""` (empty token list) is the strictest setting: no scripts,
-  // no same-origin, no forms, no popups. Defense-in-depth on top of the
-  // CSP `sandbox` directive on the raw response -- JavaScript actions in a
-  // hostile PDF can't escape even if the renderer ignores the response CSP.
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.pdfViewerEnabled === false
+  ) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <div className="text-text-secondary">
+          PDF preview is unavailable in this browser.
+        </div>
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-control bg-accent px-3 py-1.5 text-text-primary hover:bg-accent/90"
+        >
+          Open PDF
+        </a>
+      </div>
+    );
+  }
   return (
     <iframe
       src={src}
       title={alt}
-      sandbox=""
       className="h-full w-full border-0 bg-bg-primary"
     />
   );

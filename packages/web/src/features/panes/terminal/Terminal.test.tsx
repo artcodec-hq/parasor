@@ -574,9 +574,8 @@ function dispatchClipboardImagePaste(): void {
 
 describe("Terminal", () => {
   afterEach(() => {
-    // Required: BottomSheet uses createPortal into document.body, and
-    // without cleanup, leftover portals from a prior test pollute the
-    // global DOM and contaminate `document.querySelectorAll` lookups.
+    // Required so portal/dialog DOM from prior tests does not contaminate
+    // `document.querySelectorAll` lookups.
     cleanup();
     vi.useRealTimers();
   });
@@ -1954,6 +1953,7 @@ describe("Terminal", () => {
         new Response(JSON.stringify({ ok: true }), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
+    enableTerminalTrace();
     render(<Terminal sessionId="s-input-diagnostic" />, { wrapper });
     mockSend.mockClear();
 
@@ -1990,7 +1990,7 @@ describe("Terminal", () => {
         expect.objectContaining({
           diagnostic: "terminal-input-background",
           sessionId: "s-input-diagnostic",
-          events: [
+          events: expect.arrayContaining([
             expect.objectContaining({
               type: "terminal-input-diagnostic",
               sessionId: "s-input-diagnostic",
@@ -2003,7 +2003,7 @@ describe("Terminal", () => {
               viewportY: 5,
               baseY: 5,
             }),
-          ],
+          ]),
         }),
       ]),
     );
@@ -2894,6 +2894,7 @@ describe("Terminal", () => {
         '[role="toolbar"][aria-label="Terminal selection actions"]',
       ),
     ).toBeNull();
+    expect(mockTermSelect).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -3026,7 +3027,65 @@ describe("Terminal", () => {
     expect(xtermTouchMoveHandler).toHaveBeenCalledTimes(1);
   });
 
-  it("adds non-passive selection drag listeners only after long press", () => {
+  it("routes mouse-tracking vertical touch swipes through wheel events", () => {
+    mockModes.mouseTrackingMode = "vt200";
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+    const xtermTouchMoveHandler = vi.fn();
+    const wheelHandler = vi.fn();
+    screen.addEventListener("touchmove", xtermTouchMoveHandler);
+    screen.addEventListener("wheel", wheelHandler);
+
+    const startEvent = makeTouchEvent("touchstart", [
+      { identifier: 1, clientX: 80, clientY: 80 },
+    ]);
+    const moveEvent = makeTouchEvent("touchmove", [
+      { identifier: 1, clientX: 80, clientY: 20 },
+    ]);
+    act(() => {
+      screen.dispatchEvent(startEvent);
+      screen.dispatchEvent(moveEvent);
+    });
+
+    expect(moveEvent.defaultPrevented).toBe(true);
+    expect(xtermTouchMoveHandler).not.toHaveBeenCalled();
+    expect(wheelHandler).toHaveBeenCalledTimes(1);
+    expect(wheelHandler.mock.calls[0]?.[0]).toMatchObject({
+      clientX: 80,
+      clientY: 20,
+      deltaX: 0,
+      deltaY: 60,
+    });
+  });
+
+  it("does not route horizontal mouse-tracking swipes through wheel events", () => {
+    mockModes.mouseTrackingMode = "vt200";
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+    const xtermTouchMoveHandler = vi.fn();
+    const wheelHandler = vi.fn();
+    screen.addEventListener("touchmove", xtermTouchMoveHandler);
+    screen.addEventListener("wheel", wheelHandler);
+
+    const startEvent = makeTouchEvent("touchstart", [
+      { identifier: 1, clientX: 80, clientY: 80 },
+    ]);
+    const moveEvent = makeTouchEvent("touchmove", [
+      { identifier: 1, clientX: 130, clientY: 84 },
+    ]);
+    act(() => {
+      screen.dispatchEvent(startEvent);
+      screen.dispatchEvent(moveEvent);
+    });
+
+    expect(moveEvent.defaultPrevented).toBe(false);
+    expect(xtermTouchMoveHandler).toHaveBeenCalledTimes(1);
+    expect(wheelHandler).not.toHaveBeenCalled();
+  });
+
+  it("adds selection drag listeners only after long press", () => {
     vi.useFakeTimers();
     const addSpy = vi.spyOn(HTMLElement.prototype, "addEventListener");
     try {
@@ -3034,21 +3093,26 @@ describe("Terminal", () => {
       const screen = must(document.querySelector(".xterm-screen"));
       mockScreenRect(screen);
 
-      const initialTouchCalls = addSpy.mock.calls.filter(
+      const touchMoveCalls = () =>
+        addSpy.mock.calls.filter(
+          (call, index) =>
+            addSpy.mock.contexts[index] === screen && call[0] === "touchmove",
+        );
+      const initialTouchMoveCalls = touchMoveCalls();
+      const initialActiveTouchMoveCount = initialTouchMoveCalls.filter(
+        (call) => (call[2] as AddEventListenerOptions).passive === false,
+      ).length;
+
+      const initialSelectionTouchCalls = addSpy.mock.calls.filter(
         (call, index) =>
           addSpy.mock.contexts[index] === screen &&
           ["touchmove", "touchend", "touchcancel"].includes(call[0] as string),
       );
       expect(
-        initialTouchCalls.some(
+        initialSelectionTouchCalls.some(
           (call) => (call[2] as AddEventListenerOptions).passive === true,
         ),
       ).toBe(true);
-      expect(
-        initialTouchCalls.some(
-          (call) => (call[2] as AddEventListenerOptions).passive === false,
-        ),
-      ).toBe(false);
 
       act(() => {
         screen.dispatchEvent(
@@ -3059,10 +3123,11 @@ describe("Terminal", () => {
         vi.advanceTimersByTime(451);
       });
 
-      const activeTouchMoveCalls = addSpy.mock.calls.filter(
-        (call, index) =>
-          addSpy.mock.contexts[index] === screen && call[0] === "touchmove",
-      );
+      const activeTouchMoveCalls = touchMoveCalls();
+      const activeTouchMoveCount = activeTouchMoveCalls.filter(
+        (call) => (call[2] as AddEventListenerOptions).passive === false,
+      ).length;
+      expect(activeTouchMoveCount).toBeGreaterThan(initialActiveTouchMoveCount);
       expect(
         activeTouchMoveCalls.some(
           (call) => (call[2] as AddEventListenerOptions).passive === false,
@@ -3174,22 +3239,46 @@ describe("Terminal", () => {
     expect(mockTermFocus).not.toHaveBeenCalled();
   });
 
-  it("focuses xterm on tap when the TUI is capturing mouse events", () => {
-    mockModes.showCursor = false;
+  it("focuses xterm on input-row tap when the TUI is capturing mouse events", () => {
+    mockModes.showCursor = true;
     mockModes.mouseTrackingMode = "vt200";
     render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
 
-    const container = mockTermOpen.mock.calls[0]?.[0] as HTMLElement;
     act(() => {
-      container.dispatchEvent(
+      screen.dispatchEvent(
         makeTouchEvent("touchstart", [
           { identifier: 1, clientX: 80, clientY: 20 },
         ]),
       );
-      container.dispatchEvent(makeTouchEvent("touchend", []));
+      screen.dispatchEvent(
+        makeTouchEndEvent([{ identifier: 1, clientX: 80, clientY: 20 }]),
+      );
     });
 
     expect(mockTermFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not focus xterm on output tap when the TUI is capturing mouse events", () => {
+    mockModes.showCursor = true;
+    mockModes.mouseTrackingMode = "vt200";
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 0 },
+        ]),
+      );
+      screen.dispatchEvent(
+        makeTouchEndEvent([{ identifier: 1, clientX: 80, clientY: 0 }]),
+      );
+    });
+
+    expect(mockTermFocus).not.toHaveBeenCalled();
   });
 
   it("does not focus xterm when a touch scrolls past the slop threshold", () => {
@@ -3523,24 +3612,23 @@ describe("Terminal", () => {
     expect(endEvent.defaultPrevented).toBe(false);
   });
 
-  it("opens the bottom sheet via the + button on the key bar", () => {
+  it("opens the OS file picker via the + button on the key bar", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn().mockReturnValue({ matches: true }),
     });
+    const clickSpy = vi
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => undefined);
     const { container } = render(<Terminal sessionId="s1" />, { wrapper });
 
-    const more = buttonByLabel(container, "More actions");
-    expect(more.getAttribute("aria-expanded")).toBe("false");
+    const attach = buttonByLabel(container, "Attach files");
+    expect(attach.disabled).toBe(false);
     act(() => {
-      more.click();
+      attach.click();
     });
-    expect(more.getAttribute("aria-expanded")).toBe("true");
-    // Sheet is rendered into document.body via portal.
-    const sheet = document.querySelector(
-      '[role="dialog"][aria-label="Mobile actions"]',
-    );
-    expect(sheet).not.toBeNull();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
   });
 
   it("dismisses the keyboard via the keyboard toggle on the bar", async () => {

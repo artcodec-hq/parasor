@@ -137,7 +137,10 @@ export function createAppServer({
   app.use("/api/*", async (c, next) => {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("X-Frame-Options", "DENY");
+    const contentType = c.res.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("application/pdf")) {
+      c.header("X-Frame-Options", "DENY");
+    }
   });
 
   app.route(
@@ -226,7 +229,23 @@ export function createAppServer({
   app.route("/api/notices", createServerNoticesRoutes(serverNoticesStore));
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
-  app.get("/api/auth/verify", (c) => c.json({ ok: true }));
+  app.get("/api/auth/verify", (c) => {
+    const startedAt = performance.now();
+    const traceId = c.req.header("x-parasor-auth-trace-id");
+    terminalTraceRecorder.record("auth-verify", {
+      phase: "server-received",
+      ...(traceId ? { traceId } : {}),
+      path: c.req.path,
+    });
+    const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+    terminalTraceRecorder.record("auth-verify", {
+      phase: "server-complete",
+      ...(traceId ? { traceId } : {}),
+      status: 200,
+      durationMs,
+    });
+    return c.json({ ok: true });
+  });
 
   app.get(
     "/ws/terminal/:id",

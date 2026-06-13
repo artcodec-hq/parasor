@@ -9,6 +9,12 @@ export interface CreateWorktreeInput {
   base: string;
   copyLocalFiles: string[];
   rememberLocalFiles: boolean;
+  lineage?: {
+    creationSource: "ui";
+    parentWorktreePath?: string;
+    createdByPaneCommandId?: string;
+    createdByPaneCommandLabel?: string;
+  };
 }
 
 export interface CreateWorktreeResult {
@@ -30,6 +36,7 @@ export async function createWorktree(
         copyLocalFiles: input.copyLocalFiles,
       }),
       ...(input.rememberLocalFiles && { rememberLocalFiles: true }),
+      ...(input.lineage && { lineage: input.lineage }),
     }),
   });
   if (!res.ok) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SpinnerIcon } from "../icons/index.js";
 
 export const DEFAULT_RECONNECTING_OVERLAY_DELAY_MS = 750;
 
@@ -31,24 +32,9 @@ export function ReconnectingOverlay({
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80 backdrop-blur-[2px]">
       <div className="flex min-w-surface-sm flex-col items-center gap-2 rounded-window border border-border bg-bg-secondary px-7 py-5 text-center shadow-xl">
-        <svg
-          viewBox="0 0 24 24"
-          width="20"
-          height="20"
-          aria-hidden="true"
-          className="animate-spin motion-reduce:animate-none"
-        >
-          <circle
-            cx="12"
-            cy="12"
-            r="8"
-            fill="none"
-            stroke="var(--color-accent)"
-            strokeWidth="2"
-            strokeDasharray="20 30"
-            strokeLinecap="round"
-          />
-        </svg>
+        <span className="text-accent animate-spin motion-reduce:animate-none">
+          <SpinnerIcon />
+        </span>
         <div className="text-base text-text-primary">{title}</div>
         <div className="cm-mono text-xs text-text-secondary">{detail}</div>
       </div>

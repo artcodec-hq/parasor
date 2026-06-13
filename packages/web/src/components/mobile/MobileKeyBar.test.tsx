@@ -32,14 +32,6 @@ function buttonByLabel(
   return button;
 }
 
-function sheetButton(label: string): HTMLButtonElement {
-  const button = Array.from(
-    document.querySelectorAll<HTMLButtonElement>("button"),
-  ).find((b) => b.textContent?.includes(label));
-  if (!button) throw new Error(`missing sheet button: ${label}`);
-  return button;
-}
-
 describe("MobileKeyBar", () => {
   afterEach(() => cleanup());
 
@@ -60,40 +52,29 @@ describe("MobileKeyBar", () => {
       "Down",
       "Left",
       "Right",
-      "More actions",
+      "Attach files",
       "Show keyboard",
     ]);
   });
 
-  it("uses lucide SVG icons for Return, arrows, attach, and keyboard controls", () => {
+  it("uses shared SVG icons at the keybar's original 20px size", () => {
     const { container } = renderBar();
-    expect(
-      buttonByLabel(container, "Return").querySelector(
-        ".lucide-corner-down-left",
-      ),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Left").querySelector(".lucide-arrow-left"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Up").querySelector(".lucide-arrow-up"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Down").querySelector(".lucide-arrow-down"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Right").querySelector(".lucide-arrow-right"),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "More actions").querySelector(
-        ".lucide-circle-plus",
-      ),
-    ).not.toBeNull();
-    expect(
-      buttonByLabel(container, "Show keyboard").querySelector(
-        ".lucide-keyboard",
-      ),
-    ).not.toBeNull();
+    const labels = [
+      "Return",
+      "Left",
+      "Up",
+      "Down",
+      "Right",
+      "Attach files",
+      "Show keyboard",
+    ];
+    for (const label of labels) {
+      const svg = buttonByLabel(container, label).querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg?.getAttribute("width")).toBe("20");
+      expect(svg?.getAttribute("height")).toBe("20");
+      expect(svg?.getAttribute("stroke-width")).toBe("1");
+    }
   });
 
   it("renders text keys as supplied SVG glyphs", () => {
@@ -104,9 +85,12 @@ describe("MobileKeyBar", () => {
     expect(escapeKey.textContent).toBe("");
     expect(tab.textContent).toBe("");
     expect(ctrl.textContent).toBe("");
-    expect(escapeKey.querySelector(".key-glyph-esc")).not.toBeNull();
-    expect(tab.querySelector(".key-glyph-tab")).not.toBeNull();
-    expect(ctrl.querySelector(".key-glyph-ctrl")).not.toBeNull();
+    for (const button of [escapeKey, tab, ctrl]) {
+      const svg = button.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg?.getAttribute("width")).toBe("20");
+      expect(svg?.getAttribute("height")).toBe("20");
+    }
   });
 
   it("keeps safe-area padding outside the fixed-height key row", () => {
@@ -143,42 +127,26 @@ describe("MobileKeyBar", () => {
     expect(onKeyboardToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the bottom sheet when + is tapped", () => {
-    const { container } = renderBar();
-    const more = buttonByLabel(container, "More actions");
-    expect(more.getAttribute("aria-expanded")).toBe("false");
-    act(() => {
-      fireEvent.pointerDown(more);
-      more.click();
-    });
-    expect(more.getAttribute("aria-expanded")).toBe("true");
-    const sheet = document.querySelector(
-      '[role="dialog"][aria-label="Mobile actions"]',
-    );
-    expect(sheet).not.toBeNull();
-  });
-
-  it("keeps focus outside the More sheet so terminal selection is preserved", async () => {
+  it("opens the OS file picker from the attach button without stealing focus", () => {
     const anchor = document.createElement("button");
     anchor.type = "button";
     anchor.textContent = "Terminal focus sentinel";
     document.body.appendChild(anchor);
     anchor.focus();
-    const { container } = renderBar();
-    const more = buttonByLabel(container, "More actions");
+    const clickSpy = vi
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const { container } = renderBar({ onAttachFiles: vi.fn() });
+    const attach = buttonByLabel(container, "Attach files");
 
     act(() => {
-      expect(fireEvent.pointerDown(more)).toBe(false);
-      more.click();
-    });
-    await act(async () => {
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      expect(fireEvent.pointerDown(attach)).toBe(false);
+      attach.click();
     });
 
     expect(document.activeElement).toBe(anchor);
-    const camera = sheetButton("Take Photo");
-    expect(fireEvent.pointerDown(camera)).toBe(false);
-    expect(document.activeElement).toBe(anchor);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
     anchor.remove();
   });
 
@@ -191,52 +159,40 @@ describe("MobileKeyBar", () => {
     expect(onSend).toHaveBeenCalledWith("\n");
   });
 
-  it("limits the More sheet to attachment actions", () => {
-    const { container } = renderBar();
-    act(() => {
-      buttonByLabel(container, "More actions").click();
-    });
-    const sheetButtons = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        '[role="dialog"][aria-label="Mobile actions"] button',
-      ),
-    ).map((button) => button.textContent?.trim() ?? "");
-    expect(sheetButtons).toEqual(["Take Photo", "Photo Library", "Close"]);
-  });
-
-  it("disables attach rows when onAttachFiles is undefined", () => {
+  it("disables attach when onAttachFiles is undefined", () => {
     const { container } = renderBar({ onAttachFiles: undefined });
-    act(() => {
-      buttonByLabel(container, "More actions").click();
-    });
-    const labels = ["Take Photo", "Photo Library"];
-    for (const label of labels) {
-      const btn = Array.from(
-        document.querySelectorAll<HTMLButtonElement>("button"),
-      ).find((b) => b.textContent?.trim() === label);
-      expect(btn?.disabled).toBe(true);
-    }
+    expect(buttonByLabel(container, "Attach files").disabled).toBe(true);
   });
 
-  it("forwards picked images to onAttachFiles when the photo library row is used", () => {
+  it("uses a single unrestricted multi-file input for attachments", () => {
+    const { container } = renderBar({ onAttachFiles: vi.fn() });
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    expect(input?.multiple).toBe(true);
+    expect(input?.hasAttribute("accept")).toBe(false);
+    expect(input?.hasAttribute("capture")).toBe(false);
+  });
+
+  it("forwards picked files to onAttachFiles", () => {
     const onAttachFiles = vi.fn();
-    const { container } = renderBar({ onAttachFiles });
-    act(() => {
-      buttonByLabel(container, "More actions").click();
-    });
-    const libraryInput = container.querySelector<HTMLInputElement>(
-      'input[type="file"][accept="image/*"]:not([capture])',
-    );
-    if (!libraryInput) throw new Error("missing library input");
-    const file = new File(["x"], "x.png", { type: "image/png" });
-    Object.defineProperty(libraryInput, "files", {
+    const onAfterSend = vi.fn();
+    const { container } = renderBar({ onAttachFiles, onAfterSend });
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error("missing file input");
+    const image = new File(["x"], "x.png", { type: "image/png" });
+    const text = new File(["hello"], "notes.txt", { type: "text/plain" });
+    Object.defineProperty(fileInput, "files", {
       configurable: true,
-      value: [file],
+      value: [image, text],
     });
     act(() => {
-      libraryInput.dispatchEvent(new Event("change", { bubbles: true }));
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(onAttachFiles).toHaveBeenCalledWith([file]);
+    expect(onAttachFiles).toHaveBeenCalledWith([image, text]);
+    expect(onAfterSend).toHaveBeenCalledTimes(1);
+    expect(fileInput.value).toBe("");
   });
 
   it("calls onCtrlToggle when Ctrl tapped, and emits Ctrl-arrow combo on next arrow", () => {

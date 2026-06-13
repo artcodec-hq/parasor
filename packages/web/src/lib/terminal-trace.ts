@@ -5,6 +5,7 @@ import {
 } from "./terminal-trace-kpi.js";
 
 const TRACE_STORAGE_KEY = "parasor:terminal-trace";
+const TRACE_ENABLED_EVENT = "parasor:terminal-trace-enabled-change";
 const TRACE_LIMIT = 2000;
 const MAIN_THREAD_INTERVAL_MS = 250;
 const MAIN_THREAD_DRIFT_THRESHOLD_MS = 50;
@@ -43,6 +44,10 @@ export type TerminalTraceEvent = {
   queueLength?: number;
   readyState?: number;
   status?: string;
+  httpStatus?: number;
+  traceId?: string;
+  phase?: string;
+  source?: string;
   routeKind?: string;
   surface?: string;
   paneId?: string | null;
@@ -70,6 +75,20 @@ export type TerminalTraceEvent = {
   generation?: number;
   driftMs?: number;
   durationMs?: number;
+  wallMs?: number;
+  visibilityState?: string;
+  hidden?: boolean;
+  online?: boolean;
+  visibilityChanges?: number;
+  pageHideCount?: number;
+  pageShowCount?: number;
+  focusCount?: number;
+  onlineCount?: number;
+  offlineCount?: number;
+  errorName?: string;
+  errorMessage?: string;
+  startedAtWallMs?: number;
+  endedAtWallMs?: number;
   sinceReplayStartMs?: number;
   proposeDurationMs?: number;
   resizeDurationMs?: number;
@@ -162,6 +181,7 @@ let eventCount = 0;
 let seq = 0;
 let installed = false;
 let enabledCache: boolean | null = null;
+const terminalTraceEnabledListeners = new Set<() => void>();
 
 interface OutputSampleState {
   firstAt: number;
@@ -182,29 +202,44 @@ function now(): number {
   return performance.now();
 }
 
-function queryEnablesTrace(): boolean {
+function queryTraceSetting(): boolean | null {
   try {
     const params = new URLSearchParams(window.location.search);
     const value = params.get("terminalTrace");
-    return value === "1" || value === "true";
+    if (value === "1" || value === "true") return true;
+    if (value === "0" || value === "false") return false;
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 function readInitialEnabled(): boolean {
   try {
-    if (queryEnablesTrace()) {
+    const querySetting = queryTraceSetting();
+    if (querySetting === true) {
       window.localStorage.setItem(TRACE_STORAGE_KEY, "1");
       return true;
     }
+    if (querySetting === false) {
+      window.localStorage.removeItem(TRACE_STORAGE_KEY);
+      return false;
+    }
     return window.localStorage.getItem(TRACE_STORAGE_KEY) === "1";
   } catch {
-    return queryEnablesTrace();
+    return queryTraceSetting() ?? false;
+  }
+}
+
+function notifyTerminalTraceEnabledChange(): void {
+  for (const listener of terminalTraceEnabledListeners) listener();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TRACE_ENABLED_EVENT));
   }
 }
 
 function setTerminalTraceEnabled(enabled: boolean): void {
+  const changed = enabledCache !== enabled;
   enabledCache = enabled;
   try {
     if (enabled) {
@@ -216,6 +251,7 @@ function setTerminalTraceEnabled(enabled: boolean): void {
     // Storage can be unavailable in private/opaque contexts. The in-memory
     // flag still lets the current tab trace.
   }
+  if (changed) notifyTerminalTraceEnabledChange();
 }
 
 export function enableTerminalTrace(): void {
@@ -234,6 +270,13 @@ export function isTerminalTraceEnabled(): boolean {
     enabledCache = readInitialEnabled();
   }
   return enabledCache;
+}
+
+export function subscribeTerminalTraceEnabled(
+  listener: () => void,
+): () => void {
+  terminalTraceEnabledListeners.add(listener);
+  return () => terminalTraceEnabledListeners.delete(listener);
 }
 
 function summarize(): Record<string, unknown> {
@@ -467,6 +510,9 @@ async function captureTerminalInputDiagnostics(
   reason = "manual",
   target?: TerminalDiagnosticTarget,
 ): Promise<unknown> {
+  if (!isTerminalTraceEnabled()) {
+    return { ok: false, enabled: false, skipped: "terminal-trace-disabled" };
+  }
   const payload = buildTerminalInputPayload(reason, [], target);
   const response = await postDiagnosticPayload(payload);
   return response.json().catch(() => ({ ok: response.ok }));
@@ -604,6 +650,7 @@ export function scheduleTerminalInputDiagnosticCapture(
   event: Omit<TerminalTraceEvent, "seq" | "t">,
 ): void {
   if (typeof window === "undefined") return;
+  if (!isTerminalTraceEnabled()) return;
   if (terminalInputAutoCaptureCount >= TERMINAL_INPUT_AUTO_CAPTURE_LIMIT)
     return;
   const payload = buildTerminalInputPayload(reason, [
@@ -627,6 +674,7 @@ export function scheduleClientStartupDiagnosticCapture(
   event: Omit<TerminalTraceEvent, "seq" | "t">,
 ): void {
   if (typeof window === "undefined") return;
+  if (!isTerminalTraceEnabled()) return;
   if (clientStartupAutoCaptureCount >= CLIENT_STARTUP_AUTO_CAPTURE_LIMIT)
     return;
   const payload = buildClientStartupPayload(reason, [
@@ -710,9 +758,9 @@ export function traceTerminalEvent(
   type: string,
   fields: Omit<TerminalTraceEvent, "seq" | "t" | "type"> = {},
 ): void {
+  if (!isTerminalTraceEnabled()) return;
   const event = { t: now(), type, ...fields };
   const warning = warningForEvent(event);
-  if (!isTerminalTraceEnabled() && !warning) return;
   const sampled = sampleOutputEvent({ ...event, ...warning });
   if (!sampled) return;
   pushEvent({ seq: ++seq, ...sampled });

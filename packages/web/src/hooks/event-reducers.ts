@@ -14,6 +14,7 @@ import type {
   WsEventMessage,
 } from "@parasor/shared";
 import {
+  createEmptyProjectSidebarState,
   DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
   DEFAULT_DROP_SIZE_MAX_BYTES,
 } from "@parasor/shared";
@@ -25,12 +26,13 @@ import {
 const NOTIFICATION_RETENTION_LIMIT = 200;
 
 const STORE_CACHE_KEY = "parasor:store-cache";
+// v7: ProjectState.sidebar added to cached server-store subset.
 // v6: ideCommands added to the cached server-store subset.
 // v5: paneCommands added to the cached server-store subset.
 // v4: gitStates reshaped from `Record<projectId, GitState>` to per-worktree
 // `Record<projectId, Record<worktreePath, GitState>>`. Bump rather than
 // migrate -- caches are ephemeral and the next snapshot rehydrates fresh.
-const STORE_CACHE_VERSION = 6;
+const STORE_CACHE_VERSION = 7;
 
 /*
  * Snapshot of the store fields that the sidebar's two-line project rows
@@ -184,6 +186,7 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
                 openFiles: [],
                 lastFocusedPaneId: null,
                 focusedPaneId: null,
+                sidebar: createEmptyProjectSidebarState(),
                 lastAccessedAt: msg.project.createdAt,
               },
             };
@@ -290,6 +293,18 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
 
     case "service-config-changed":
       return { ...store, serviceConfig: msg.config };
+
+    case "sidebar-state-changed": {
+      const existing = store.projectStates[msg.projectId];
+      if (!existing) return store;
+      return {
+        ...store,
+        projectStates: {
+          ...store.projectStates,
+          [msg.projectId]: { ...existing, sidebar: msg.sidebar },
+        },
+      };
+    }
 
     case "pane-commands-changed":
       return { ...store, paneCommands: msg.commands };

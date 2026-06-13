@@ -357,7 +357,11 @@ agentStateStore.replace(agentDetector.getStates());
 // created after priming.
 const worktreeCache = new WorktreeCache();
 worktreeCache.setAll(
-  await createProjectQueries({ projectManager }).listAllWorktrees(),
+  await createProjectQueries({
+    projectManager,
+    getWorktreeMetadata: (projectId) =>
+      appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
+  }).listAllWorktrees(),
 );
 const projectRuntime = createProjectRuntime({
   projectManager,
@@ -380,7 +384,11 @@ wireRuntime({
   worktreeCache,
   uploadStaging,
 });
-const projectQueriesForReconcile = createProjectQueries({ projectManager });
+const projectQueriesForReconcile = createProjectQueries({
+  projectManager,
+  getWorktreeMetadata: (projectId) =>
+    appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
+});
 const worktreeReconciler = createWorktreeReconciler({
   projectManager,
   worktreeCache,

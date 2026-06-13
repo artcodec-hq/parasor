@@ -7,9 +7,13 @@ import {
   DEFAULT_DROP_SIZE_MAX_BYTES,
   normalizeIdeCommands,
   normalizePaneCommands,
+  normalizeProjectSidebarState,
+  normalizeSessionLaunchPreset,
   normalizeWorktreeLocalFileAllowlist,
+  normalizeWorktreeMetadataMap,
   type PortDetectionMode,
   type Project,
+  type ProjectState,
   type ServiceConfig,
   type Session,
 } from "@parasor/shared";
@@ -88,6 +92,8 @@ function migrate(raw: Partial<AppState>): AppState {
           };
         })
       : [],
+    projectStates: normalizeProjectStates(raw.projectStates),
+    sessions: normalizeSessions(raw.sessions),
     sessionRecords: Array.isArray(raw.sessionRecords) ? raw.sessionRecords : [],
     ideCommands: normalizeIdeCommands(raw.ideCommands),
     paneCommands: normalizePaneCommands(raw.paneCommands),
@@ -98,6 +104,53 @@ function migrate(raw: Partial<AppState>): AppState {
       dropSizeHardMaxBytes: hardMax,
     },
   };
+}
+
+function normalizeSessions(value: unknown): Session[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((session): session is Session => {
+      return (
+        typeof session === "object" &&
+        session !== null &&
+        !Array.isArray(session) &&
+        typeof (session as Session).id === "string"
+      );
+    })
+    .map((session) => {
+      const raw = session as Session & { launchPreset?: unknown };
+      const launchPreset = normalizeSessionLaunchPreset(raw.launchPreset);
+      const next: Session = { ...raw };
+      if (launchPreset) {
+        next.launchPreset = launchPreset;
+      } else {
+        delete next.launchPreset;
+      }
+      return next;
+    });
+}
+
+function normalizeProjectStates(value: unknown): Record<string, ProjectState> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, ProjectState> = {};
+  for (const [id, state] of Object.entries(value)) {
+    if (!state || typeof state !== "object" || Array.isArray(state)) continue;
+    const raw = state as Partial<ProjectState>;
+    out[id] = {
+      ...raw,
+      projectId: typeof raw.projectId === "string" ? raw.projectId : id,
+      layout: raw.layout ?? null,
+      worktrees: Array.isArray(raw.worktrees) ? raw.worktrees : [],
+      openFiles: Array.isArray(raw.openFiles) ? raw.openFiles : [],
+      lastFocusedPaneId: raw.lastFocusedPaneId ?? null,
+      focusedPaneId: raw.focusedPaneId ?? null,
+      sidebar: normalizeProjectSidebarState(raw.sidebar),
+      worktreeMetadata: normalizeWorktreeMetadataMap(raw.worktreeMetadata),
+      lastAccessedAt:
+        typeof raw.lastAccessedAt === "number" ? raw.lastAccessedAt : 0,
+    };
+  }
+  return out;
 }
 
 export interface AppStateStoreOpts {

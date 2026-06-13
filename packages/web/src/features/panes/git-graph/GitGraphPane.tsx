@@ -795,7 +795,7 @@ export function GitGraphPane({
               data-testid="git-graph-toggle-remotes"
               tone={includeRemotes ? "active" : "normal"}
             >
-              {includeRemotes ? <PaGlyph.eye /> : <PaGlyph.eyeOff />}
+              <PaGlyph.plug />
             </PaneIconButton>
             <PaneIconButton onClick={() => void reload()} label="Refresh">
               <PaGlyph.refresh />

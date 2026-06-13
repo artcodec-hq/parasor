@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import {
+  createEmptyProjectSidebarState,
   normalizeWorktreeLocalFileAllowlist,
   type Project,
   type Session,
@@ -46,6 +47,8 @@ export class ProjectManager {
         openFiles: [],
         lastFocusedPaneId: null,
         focusedPaneId: null,
+        sidebar: createEmptyProjectSidebarState(),
+        worktreeMetadata: {},
         lastAccessedAt: now,
       };
     });

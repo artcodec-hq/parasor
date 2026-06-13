@@ -200,6 +200,42 @@ describe("applyEvent: pane-commands-changed", () => {
   });
 });
 
+describe("applyEvent: sidebar-state-changed", () => {
+  it("replaces sidebar state for the matching project state", () => {
+    const store = storeWith({
+      projectStates: {
+        p1: {
+          projectId: "p1",
+          layout: null,
+          worktrees: [],
+          openFiles: [],
+          lastFocusedPaneId: null,
+          focusedPaneId: null,
+          sidebar: {
+            paneOrder: { "/old": ["terminal:old"] },
+            worktreeOpen: {},
+          },
+          lastAccessedAt: 1,
+        },
+      },
+    });
+
+    const next = applyEvent(store, {
+      type: "sidebar-state-changed",
+      projectId: "p1",
+      sidebar: {
+        paneOrder: { "/repo": ["terminal:s1"] },
+        worktreeOpen: { "/repo": false },
+      },
+    });
+
+    expect(next.projectStates.p1?.sidebar).toEqual({
+      paneOrder: { "/repo": ["terminal:s1"] },
+      worktreeOpen: { "/repo": false },
+    });
+  });
+});
+
 describe("applyEvent: worktree-created", () => {
   const worktree = { path: "/tmp/wt-a", head: "abc", branch: "feat/a" };
   const project = {
@@ -244,6 +280,33 @@ describe("applyEvent: worktree-created", () => {
       worktree: fresh,
     });
     expect(next.worktrees.p1).toEqual([fresh]);
+  });
+
+  it("keeps an existing worktree in place when a refresh upserts it", () => {
+    const siblingBefore = {
+      path: "/tmp/wt-z",
+      head: "def",
+      branch: "feat/z",
+    };
+    const stale = { ...worktree, ahead: 0, behind: 0, dirtyCount: 0 };
+    const siblingAfter = {
+      path: "/tmp/wt-a",
+      head: "ghi",
+      branch: "feat/a",
+    };
+    const fresh = { ...worktree, ahead: 3, behind: 1, dirtyCount: 5 };
+    const store = storeWith({
+      projects: [project],
+      worktrees: { p1: [siblingBefore, stale, siblingAfter] },
+    });
+
+    const next = applyEvent(store, {
+      type: "worktree-created",
+      projectId: "p1",
+      worktree: fresh,
+    });
+
+    expect(next.worktrees.p1).toEqual([siblingBefore, fresh, siblingAfter]);
   });
 
   it("does not mutate the previous map (referential change on update)", () => {

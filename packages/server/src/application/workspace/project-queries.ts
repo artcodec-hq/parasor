@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import type { Worktree } from "@parasor/shared";
+import type { Worktree, WorktreeLineageMetadata } from "@parasor/shared";
 import { parseGitStatusV2 } from "../../fs/git-watcher.js";
 import type { ProjectManager } from "../../state/project-manager.js";
 import { WorkspaceNotFoundError } from "./errors.js";
@@ -63,6 +63,9 @@ export function parseWorktreeList(porcelain: string): Worktree[] {
 interface CreateProjectQueriesDeps {
   projectManager: ProjectManager;
   runGit?: (projectPath: string, args: string[]) => Promise<string>;
+  getWorktreeMetadata?: (
+    projectId: string,
+  ) => Record<string, WorktreeLineageMetadata>;
 }
 
 export async function defaultRunGit(
@@ -155,6 +158,7 @@ async function enrichWithCounters(
 export function createProjectQueries({
   projectManager,
   runGit = defaultRunGit,
+  getWorktreeMetadata = () => ({}),
 }: CreateProjectQueriesDeps) {
   function getProjectOrThrow(id: string) {
     const project = projectManager.get(id);
@@ -213,7 +217,8 @@ export function createProjectQueries({
           "--porcelain",
         ]);
         const list = parseWorktreeList(porcelain);
-        return enrichWithCounters(list, runGit);
+        const enriched = await enrichWithCounters(list, runGit);
+        return mergeWorktreeMetadata(enriched, getWorktreeMetadata(id));
       } catch {
         return [];
       }
@@ -233,7 +238,10 @@ export function createProjectQueries({
             ]);
             const list = parseWorktreeList(porcelain);
             const enriched = await enrichWithCounters(list, runGit);
-            return [project.id, enriched] as const;
+            return [
+              project.id,
+              mergeWorktreeMetadata(enriched, getWorktreeMetadata(project.id)),
+            ] as const;
           } catch {
             return [project.id, []] as const;
           }
@@ -242,4 +250,14 @@ export function createProjectQueries({
       return Object.fromEntries(entries);
     },
   };
+}
+
+function mergeWorktreeMetadata(
+  worktrees: Worktree[],
+  metadataByPath: Record<string, WorktreeLineageMetadata>,
+): Worktree[] {
+  return worktrees.map((worktree) => {
+    const lineage = metadataByPath[worktree.path];
+    return lineage ? { ...worktree, lineage } : worktree;
+  });
 }

@@ -32,6 +32,12 @@ interface SidebarProps {
   ) => void;
   onOpenContainer?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
+  worktreeOpenByProject?: Record<string, Record<string, boolean>>;
+  onWorktreeOpenChange?: (
+    projectId: string,
+    worktreePath: string,
+    open: boolean,
+  ) => void;
   onNewProject?: () => void;
   onOpenSettings?: () => void;
   /** Count of pinned terminals (sidebar Monitor placeholder row). */
@@ -90,6 +96,8 @@ export function Sidebar({
   onSelectChild,
   onOpenContainer,
   onToggleChildPin,
+  worktreeOpenByProject,
+  onWorktreeOpenChange,
   onNewProject,
   onOpenSettings,
   searchOpen = false,
@@ -158,6 +166,8 @@ export function Sidebar({
                   onSelectChild={onSelectChild}
                   onOpenContainer={onOpenContainer}
                   onToggleChildPin={onToggleChildPin}
+                  worktreeOpen={worktreeOpenByProject?.[project.id]}
+                  onWorktreeOpenChange={onWorktreeOpenChange}
                 />
               ))}
             </div>
@@ -173,6 +183,8 @@ export function Sidebar({
             onSelectChild={onSelectChild}
             onOpenContainer={onOpenContainer}
             onToggleChildPin={onToggleChildPin}
+            worktreeOpenByProject={worktreeOpenByProject}
+            onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
           />
         )}

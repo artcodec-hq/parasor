@@ -1,6 +1,6 @@
 import { sanitizeTerminalOutput } from "./detector.js";
+import { detectAgentCommandLine } from "./runtime-registry.js";
 
-const COMMAND_PATTERN = /^(claude|codex|opencode|gemini(?:-cli)?)(?:\s|$)/i;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: alternate-screen enter is detected from raw terminal ESC sequences.
 const ALT_SCREEN_ENTER = /\x1b\[\?1049h|\x1b\[\?47h/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: alternate-screen exit is detected from raw terminal ESC sequences.
@@ -15,21 +15,7 @@ interface ManualAgentTrackerOptions {
   onDebug?: (sessionId: string, message: string) => void;
 }
 
-type TrackedAgent = "claude" | "codex" | "opencode" | "gemini" | "gemini-cli";
-
-function normalizeTrackedAgent(value: string): TrackedAgent | null {
-  const normalized = value.trim().toLowerCase();
-  switch (normalized) {
-    case "claude":
-    case "codex":
-    case "opencode":
-    case "gemini":
-    case "gemini-cli":
-      return normalized;
-    default:
-      return null;
-  }
-}
+type TrackedAgent = string;
 
 function shouldActivateWithoutAltScreen(agent: TrackedAgent | null): boolean {
   return agent !== null && agent !== "claude";
@@ -68,8 +54,7 @@ export class ManualAgentTracker {
             this.engagedSessions.add(sessionId);
             this.debug(sessionId, `prompt submit ${line.slice(0, 32)}`);
           } else {
-            const match = COMMAND_PATTERN.exec(line);
-            const hinted = match ? normalizeTrackedAgent(match[1] ?? "") : null;
+            const hinted = detectAgentCommandLine(line);
             if (hinted) {
               this.hintedSessions.set(sessionId, hinted);
               this.debug(sessionId, `hint ${line}`);

@@ -31,6 +31,12 @@ interface WorktreeRowProps {
   ) => void;
   onOpenContainer?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
+  worktreeOpen?: Record<string, boolean>;
+  onWorktreeOpenChange?: (
+    projectId: string,
+    worktreePath: string,
+    open: boolean,
+  ) => void;
   onReorderPanes?: (
     projectId: string,
     worktreePath: string,
@@ -50,19 +56,21 @@ export function WorktreeRow({
   onSelectChild,
   onOpenContainer,
   onToggleChildPin,
+  worktreeOpen,
+  onWorktreeOpenChange,
   onReorderPanes,
 }: WorktreeRowProps) {
   const { open: isOpen, toggle: toggleOpen } = useWorktreeDisclosure(
-    project.id,
     worktree.path,
     forceOpen,
+    worktreeOpen,
+    (path, open) => onWorktreeOpenChange?.(project.id, path, open),
   );
   const worktreeFocused =
     selection.selectedWorktreeId === worktree.id &&
     selection.selectedChildId === null;
-  // When the project root isn't a git repo, git-flavored glyphs
-  // (worktreeActive/Inactive) misrepresent the row. Render a plain
-  // folder so the sidebar matches the `root` label.
+  // When the project root isn't a git repo, a git glyph misrepresents
+  // the row. Render a plain folder so the sidebar matches the `root` label.
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
   const dirtyTitle =
@@ -71,6 +79,9 @@ export function WorktreeRow({
       : undefined;
   const dirtyDotClass =
     worktree.dirty > 0 ? "bg-[var(--theme-git-modified)]" : "";
+  const lineageTitle = worktree.lineage
+    ? formatLineageTitle(worktree.lineage)
+    : null;
 
   return (
     <div className="border-t border-border">
@@ -103,13 +114,7 @@ export function WorktreeRow({
             tone={worktreeFocused ? "accent" : "secondary"}
             className="relative"
           >
-            {nonRepo ? (
-              <PaGlyph.folder />
-            ) : worktree.active ? (
-              <PaGlyph.worktreeActive />
-            ) : (
-              <PaGlyph.worktreeInactive />
-            )}
+            {nonRepo ? <PaGlyph.folder /> : <PaGlyph.git />}
           </SidebarRowIcon>
         )}
         <button
@@ -122,9 +127,7 @@ export function WorktreeRow({
             title={dirtyTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
-            className={
-              isProjectRoot ? "text-text-primary" : "text-text-secondary"
-            }
+            className="text-text-secondary"
           >
             {label}
           </SidebarRowLabel>
@@ -141,6 +144,16 @@ export function WorktreeRow({
               className="shrink-0 rounded-tag border border-accent/40 bg-accent/10 px-1 text-[10px] font-medium leading-tight text-accent"
             >
               agent
+            </span>
+          )}
+          {lineageTitle && (
+            <span
+              role="img"
+              aria-label="Linked worktree"
+              title={lineageTitle}
+              className="shrink-0 rounded-tag border border-text-secondary/30 bg-bg-primary px-1 text-[10px] font-medium leading-tight text-text-secondary"
+            >
+              linked
             </span>
           )}
           {worktree.orphan && (
@@ -183,4 +196,22 @@ export function WorktreeRow({
       )}
     </div>
   );
+}
+
+function formatLineageTitle(
+  lineage: NonNullable<SidebarWorktree["lineage"]>,
+): string {
+  const parts = ["Created from workspace context"];
+  if (lineage.parentWorktreePath) {
+    parts.push(`parent: ${lastPathSegment(lineage.parentWorktreePath)}`);
+  }
+  if (lineage.createdByPaneCommandLabel) {
+    parts.push(`command: ${lineage.createdByPaneCommandLabel}`);
+  }
+  return parts.join(" | ");
+}
+
+function lastPathSegment(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.split("/").pop() || path;
 }

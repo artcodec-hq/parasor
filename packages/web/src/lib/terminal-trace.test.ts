@@ -7,6 +7,7 @@ import {
   scheduleClientStartupDiagnosticCapture,
   scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
+  subscribeTerminalTraceEnabled,
   traceTerminalEvent,
 } from "./terminal-trace.js";
 
@@ -33,6 +34,7 @@ function installStorage(name: "localStorage" | "sessionStorage"): Storage {
 describe("terminal-trace", () => {
   beforeEach(() => {
     installStorage("localStorage");
+    window.history.replaceState(null, "", "/");
     vi.restoreAllMocks();
     window.parasorTerminalTrace?.clear();
     disableTerminalTrace();
@@ -69,6 +71,19 @@ describe("terminal-trace", () => {
     expect(JSON.stringify(window.parasorTerminalTrace?.dump())).not.toContain(
       "secret",
     );
+  });
+
+  it("notifies subscribers when terminal trace is enabled or disabled", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeTerminalTraceEnabled(listener);
+
+    enableTerminalTrace();
+    enableTerminalTrace();
+    disableTerminalTrace();
+    unsubscribe();
+    enableTerminalTrace();
+
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 
   it("returns a no-op main-thread sampler when disabled", () => {
@@ -122,7 +137,7 @@ describe("terminal-trace", () => {
     ]);
   });
 
-  it("records only long-delay warnings while verbose trace is disabled", () => {
+  it("does not retain warning events while verbose trace is disabled", () => {
     traceTerminalEvent("terminal-mount", { sessionId: "s1" });
     traceTerminalEvent("terminal-resize-apply", {
       sessionId: "s1",
@@ -137,26 +152,10 @@ describe("terminal-trace", () => {
       timeoutMs: 10_000,
     });
 
-    expect(window.parasorTerminalTrace?.dump()).toEqual([
-      expect.objectContaining({
-        type: "xterm-replay-paint",
-        sessionId: "s1",
-        sinceReplayStartMs: 1500,
-        warning: true,
-        warningMetric: "sinceReplayStartMs",
-        warningThresholdMs: 1500,
-      }),
-      expect.objectContaining({
-        type: "socket-init-timeout",
-        sessionId: "s1",
-        timeoutMs: 10_000,
-        warning: true,
-        warningMetric: "timeoutMs",
-      }),
-    ]);
+    expect(window.parasorTerminalTrace?.dump()).toEqual([]);
   });
 
-  it("does not call trace APIs for local enable, disable, or warnings", () => {
+  it("does not call trace APIs for local enable, disable, or disabled warnings", () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -169,6 +168,7 @@ describe("terminal-trace", () => {
     window.parasorTerminalTrace?.flush();
     disableTerminalTrace();
 
+    expect(window.parasorTerminalTrace?.dump()).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -326,12 +326,13 @@ describe("terminal-trace", () => {
     unregister();
   });
 
-  it("uploads bounded terminal diagnostics by default for high-signal transitions without duplicate snapshots", async () => {
+  it("uploads bounded terminal diagnostics while tracing is enabled without duplicate snapshots", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true, accepted: 1 }), {
         status: 200,
       }),
     );
+    enableTerminalTrace();
     let contextLossCount = 0;
     const unregister = registerTerminalBottomRowsSnapshotProvider(
       () => ({
@@ -439,6 +440,7 @@ describe("terminal-trace", () => {
         status: 200,
       }),
     );
+    enableTerminalTrace();
     const unregister = registerTerminalBottomRowsSnapshotProvider(
       () => ({
         cols: 80,
@@ -472,12 +474,13 @@ describe("terminal-trace", () => {
     unregister();
   });
 
-  it("uploads bounded startup diagnostics without terminal bottom rows", async () => {
+  it("uploads bounded startup diagnostics without terminal bottom rows while tracing is enabled", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true, accepted: 1 }), {
         status: 200,
       }),
     );
+    enableTerminalTrace();
 
     scheduleClientStartupDiagnosticCapture("event-socket-snapshot-timeout", {
       type: "event-socket-snapshot-timeout",
@@ -512,7 +515,7 @@ describe("terminal-trace", () => {
     ]);
   });
 
-  it("does not upload client trace events while disabled", async () => {
+  it("does not upload client trace or diagnostic events while disabled", async () => {
     vi.useFakeTimers();
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -524,8 +527,26 @@ describe("terminal-trace", () => {
       sessionId: "s1",
       height: 300,
     });
+    scheduleTerminalInputDiagnosticCapture("terminal-resize-apply", {
+      type: "terminal-resize-apply",
+      sessionId: "s1",
+      durationMs: 1500,
+    });
+    scheduleClientStartupDiagnosticCapture("event-socket-snapshot-timeout", {
+      type: "event-socket-snapshot-timeout",
+      durationMs: 10_000,
+      timeoutMs: 10_000,
+    });
+    await expect(
+      window.parasorTerminalTrace?.captureTerminalInput("manual"),
+    ).resolves.toEqual({
+      ok: false,
+      enabled: false,
+      skipped: "terminal-trace-disabled",
+    });
 
     await vi.advanceTimersByTimeAsync(300);
+    expect(window.parasorTerminalTrace?.dump()).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

@@ -155,7 +155,6 @@ export function WorkspacePaneRouter({
   ideCommands = [],
   canOpenLocalIde = false,
   onCopyWorktreePath,
-  onRenameWorktree,
   onRemoveWorktree,
   onDeleteProject,
 }: WorkspacePaneRouterProps) {
@@ -253,12 +252,21 @@ export function WorkspacePaneRouter({
   const moreMenuItems = useMemo<PaMenuItem[]>(() => {
     if (!focusedPane || !activeProjectId) return [];
     const worktreePath = focusedPane.worktreePath;
-    const branch = focusedWorktreeDirName ?? "main";
+    const isProjectRootPane =
+      !!activeProjectPath && worktreePath === activeProjectPath;
     const items: PaMenuItem[] = [];
+    if (onCopyWorktreePath) {
+      items.push({
+        id: "copy-path",
+        label: "Copy path",
+        onSelect: () => onCopyWorktreePath(worktreePath),
+      });
+    }
     if (onOpenWorktreeInFinder) {
       items.push({
         id: "open-finder",
         label: "Open in Finder",
+        separatorBefore: items.length > 0,
         onSelect: () => onOpenWorktreeInFinder(activeProjectId, worktreePath),
       });
     }
@@ -267,12 +275,14 @@ export function WorkspacePaneRouter({
       const title = disabled
         ? "Available when parasor is opened from localhost on the server machine"
         : undefined;
+      const separatorBefore = items.length > 0 && !onOpenWorktreeInFinder;
       items.push(
         {
           id: "open-cursor",
           label: "Open in Cursor",
           disabled,
           title,
+          separatorBefore,
           onSelect: () =>
             onOpenWorktreeInIde(activeProjectId, worktreePath, "cursor"),
         },
@@ -296,33 +306,25 @@ export function WorkspacePaneRouter({
         });
       }
     }
-    if (onCopyWorktreePath) {
-      items.push({
-        id: "copy-path",
-        label: "Copy path",
-        onSelect: () => onCopyWorktreePath(worktreePath),
-      });
-    }
-    // Rename / Remove operate on git refs (`git branch -m`, `git worktree
-    // remove`); a non-repo project root has neither, so hide both entries.
-    if (activeProjectIsRepo && onRenameWorktree) {
-      items.push({
-        id: "rename",
-        label: "Rename branch…",
-        onSelect: () => onRenameWorktree(activeProjectId, worktreePath, branch),
-      });
-    }
-    if (activeProjectIsRepo && onRemoveWorktree) {
+    if (!isProjectRootPane && activeProjectIsRepo && onRemoveWorktree) {
       items.push({
         id: "remove",
         label: "Remove worktree…",
-        onSelect: () => onRemoveWorktree(activeProjectId, worktreePath, branch),
+        separatorBefore: items.length > 0,
+        tone: "danger",
+        onSelect: () =>
+          onRemoveWorktree(
+            activeProjectId,
+            worktreePath,
+            focusedWorktreeDirName ?? "main",
+          ),
       });
     }
-    if (onDeleteProject) {
+    if (isProjectRootPane && onDeleteProject) {
       items.push({
         id: "close-project",
         label: "Close project…",
+        separatorBefore: items.length > 0,
         onSelect: () => onDeleteProject(activeProjectId),
       });
     }
@@ -330,6 +332,7 @@ export function WorkspacePaneRouter({
   }, [
     focusedPane,
     activeProjectId,
+    activeProjectPath,
     activeProjectIsRepo,
     focusedWorktreeDirName,
     onOpenWorktreeInFinder,
@@ -337,7 +340,6 @@ export function WorkspacePaneRouter({
     ideCommands,
     canOpenLocalIde,
     onCopyWorktreePath,
-    onRenameWorktree,
     onRemoveWorktree,
     onDeleteProject,
   ]);
@@ -723,8 +725,7 @@ function buildChildTitle(pane: PaneEntry, sessions: Session[]): string | null {
  *
  * Glyph selection mirrors the sidebar's WorktreeRow:
  *   - non-repo project root -> folder
- *   - repo, focused on the active worktree -> worktreeActive
- *   - repo, focused on an inactive worktree -> worktreeInactive
+ *   - repo worktree -> git
  *
  * `branchName` surfaces only when the git poll has produced a non-empty
  * branch (caller passes `null` otherwise).
@@ -732,21 +733,19 @@ function buildChildTitle(pane: PaneEntry, sessions: Session[]): string | null {
 export function buildSessionCrumbs(
   projectName: string | null,
   worktreeDirName: string | null,
-  worktreeIsActive: boolean,
+  _worktreeIsActive: boolean,
   worktreeIsRepo: boolean,
   branchName: string | null,
 ): SessionCrumb[] {
   const crumbs: SessionCrumb[] = [];
   if (projectName) {
-    crumbs.push({ label: projectName, maxWidth: 96 });
+    crumbs.push({ label: projectName, dim: true, maxWidth: 96 });
   }
   if (worktreeDirName) {
     const worktreeGlyph = !worktreeIsRepo ? (
       <PaGlyph.folder />
-    ) : worktreeIsActive ? (
-      <PaGlyph.worktreeActive />
     ) : (
-      <PaGlyph.worktreeInactive />
+      <PaGlyph.git />
     );
     crumbs.push({
       label: worktreeDirName,

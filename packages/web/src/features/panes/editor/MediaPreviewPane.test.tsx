@@ -26,10 +26,31 @@ function must<T>(value: T | null | undefined): T {
 }
 
 const originalFetch = global.fetch;
+const originalPdfViewerEnabled = Object.getOwnPropertyDescriptor(
+  Navigator.prototype,
+  "pdfViewerEnabled",
+);
+
+function setPdfViewerEnabled(value: boolean | undefined) {
+  Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", {
+    configurable: true,
+    get: () => value,
+  });
+}
 
 afterEach(() => {
   cleanup();
   global.fetch = originalFetch;
+  if (originalPdfViewerEnabled) {
+    Object.defineProperty(
+      Navigator.prototype,
+      "pdfViewerEnabled",
+      originalPdfViewerEnabled,
+    );
+  } else {
+    delete (Navigator.prototype as { pdfViewerEnabled?: boolean })
+      .pdfViewerEnabled;
+  }
   vi.restoreAllMocks();
 });
 
@@ -114,7 +135,7 @@ describe("MediaPreviewPane (media preview behavior)", () => {
     expect(img.src).toContain("worktreePath=%2Ftmp%2Fwt");
   });
 
-  it("locks the PDF iframe with a strict empty sandbox attribute", async () => {
+  it("renders a PDF iframe without a strict empty sandbox", async () => {
     const { container } = render(
       <MediaPreviewPane
         paneId="p1"
@@ -127,9 +148,41 @@ describe("MediaPreviewPane (media preview behavior)", () => {
       expect(container.querySelector("iframe")).not.toBeNull();
     });
     const iframe = must(container.querySelector("iframe"));
-    // `sandbox=""` (empty token list) -- no scripts, no same-origin, no forms.
-    // Defense-in-depth on top of the response CSP for hostile PDF actions.
-    expect(iframe.hasAttribute("sandbox")).toBe(true);
-    expect(iframe.getAttribute("sandbox")).toBe("");
+    expect(iframe.getAttribute("src")).toContain("/api/files/raw");
+    expect(iframe.hasAttribute("sandbox")).toBe(false);
+  });
+
+  it("threads worktreePath into the PDF raw URL", async () => {
+    const { container } = render(
+      <MediaPreviewPane
+        paneId="p1"
+        projectId="proj-1"
+        worktreePath="/tmp/wt"
+        filePath="docs/spec.pdf"
+        kind="pdf"
+      />,
+    );
+    await waitFor(() => {
+      expect(container.querySelector("iframe")).not.toBeNull();
+    });
+    const iframe = must(container.querySelector("iframe"));
+    expect(iframe.getAttribute("src")).toContain("worktreePath=%2Ftmp%2Fwt");
+  });
+
+  it("shows a fallback when inline PDF viewing is unavailable", async () => {
+    setPdfViewerEnabled(false);
+    const { container, findByText } = render(
+      <MediaPreviewPane
+        paneId="p1"
+        projectId="proj-1"
+        filePath="docs/spec.pdf"
+        kind="pdf"
+      />,
+    );
+    expect(
+      await findByText("PDF preview is unavailable in this browser."),
+    ).toBeTruthy();
+    expect(await findByText("Open PDF")).toBeTruthy();
+    expect(container.querySelector("iframe")).toBeNull();
   });
 });

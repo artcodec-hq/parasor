@@ -53,6 +53,50 @@ describe("shouldObserveAgentOutput", () => {
     ).toBe(false);
   });
 
+  it("observes built-in shell preset agents when the foreground process matches", () => {
+    expect(
+      shouldObserveAgentOutput(
+        makeSession({
+          command: { type: "shell" },
+          launchPreset: {
+            presetId: "builtin:codex",
+            source: "builtin",
+            label: "Codex",
+            commandLine: "codex",
+            runtimeHint: {
+              runtimeId: "codex",
+              tier: "native-managed",
+              expectedProcesses: ["codex"],
+            },
+          },
+        }),
+        "codex",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not trust user-authored launch preset runtime hints", () => {
+    expect(
+      shouldObserveAgentOutput(
+        makeSession({
+          command: { type: "shell" },
+          launchPreset: {
+            presetId: "cmd:codex",
+            source: "user",
+            label: "Codex",
+            commandLine: "codex",
+            runtimeHint: {
+              runtimeId: "codex",
+              tier: "native-managed",
+              expectedProcesses: ["codex"],
+            },
+          },
+        }),
+        "codex",
+      ),
+    ).toBe(false);
+  });
+
   it("observes custom sessions when a known agent process is foreground", () => {
     expect(
       shouldObserveAgentOutput(

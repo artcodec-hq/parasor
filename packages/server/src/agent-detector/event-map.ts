@@ -12,7 +12,7 @@ import type { AgentObservation } from "./detector.js";
  * agent enum are independent.
  */
 
-const AGENT_NAME_LIST = ["claude", "codex", "manual"] as const;
+const AGENT_NAME_LIST = ["claude", "codex", "opencode", "manual"] as const;
 export type AgentName = (typeof AGENT_NAME_LIST)[number];
 const AGENT_NAMES: ReadonlySet<AgentName> = new Set(AGENT_NAME_LIST);
 
@@ -118,6 +118,29 @@ const CODEX_EVENTS: Record<string, EventMapResult> = {
   request_user_input: hookState("waiting"),
 };
 
+const OPENCODE_EVENTS: Record<string, EventMapResult> = {
+  "session.created": NOOP,
+  "session.updated": NOOP,
+  "session.diff": NOOP,
+  "session.status:active": hookState("running"),
+  "session.status:busy": hookState("running"),
+  "session.status:idle": hookState("completed"),
+  "session.status:error": hookState("completed"),
+  "session.status:retry": hookState("running"),
+  "session.idle": hookState("completed"),
+  "session.error": hookState("completed"),
+  "permission.asked": hookState("waiting"),
+  "permission.replied": hookState("running"),
+  "question.asked": hookState("waiting"),
+  "question.replied": hookState("running"),
+  "question.rejected": hookState("running"),
+  "tool.execute.before": hookState("running"),
+  "tool.execute.after": hookState("running"),
+  "message.updated": NOOP,
+  "message.part.updated": NOOP,
+  "message.part.delta": NOOP,
+};
+
 // Manual agent: used by `parasor notify` CLI and shell wrappers that want
 // to push state directly without a per-event vocabulary. The "event" here
 // is the desired status name, so the table is a 1:1 passthrough.
@@ -131,6 +154,7 @@ const MANUAL_EVENTS: Record<string, EventMapResult> = {
 const AGENT_TABLES: Record<AgentName, Record<string, EventMapResult>> = {
   claude: CLAUDE_EVENTS,
   codex: CODEX_EVENTS,
+  opencode: OPENCODE_EVENTS,
   manual: MANUAL_EVENTS,
 };
 
