@@ -223,4 +223,28 @@ describe("terminal file path links", () => {
       length: 12,
     });
   });
+
+  it("does not join ordinary short adjacent path-looking lines", () => {
+    const lines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("see dist/assets/               "))],
+      [2, makeBufferLine(cellsFromText("parasor-campaign-demo.png       "))],
+    ]);
+    const provider = createTerminalFileLinkProvider(
+      (lineNumber) => lines.get(lineNumber) as never,
+      () => "/repo",
+      () => undefined,
+    );
+
+    let firstLineLinks: unknown[] | undefined;
+    provider.provideLinks(1, (links) => {
+      firstLineLinks = links as unknown[] | undefined;
+    });
+    let secondLineLinks: unknown[] | undefined;
+    provider.provideLinks(2, (links) => {
+      secondLineLinks = links as unknown[] | undefined;
+    });
+
+    expect(firstLineLinks).toBeUndefined();
+    expect(secondLineLinks).toBeUndefined();
+  });
 });

@@ -177,6 +177,9 @@ function canSoftContinue(previous: LineScan, next: LineScan): boolean {
   const previousText = previous.text.trimEnd();
   const nextText = next.text.trimStart();
   if (!previousText || !nextText) return false;
+  if (lastNonWhitespaceOffset(previous.text) !== previous.text.length) {
+    return false;
+  }
   return (
     FILE_PATH_CHAR_REGEX.test(previousText.at(-1) ?? "") &&
     FILE_PATH_CHAR_REGEX.test(nextText[0] ?? "")
