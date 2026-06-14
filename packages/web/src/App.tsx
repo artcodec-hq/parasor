@@ -1271,7 +1271,10 @@ export function App() {
   return (
     <ProjectsProvider projects={store.projects}>
       <div className="flex h-full flex-col">
-        <OfflineBanner connected={store.eventSocketConnected} />
+        <OfflineBanner
+          connected={store.eventSocketConnected}
+          status={store.eventSocketStatus}
+        />
         <ServerNoticesBanner />
         <div className="flex flex-1 overflow-hidden">
           {isMobile ? (

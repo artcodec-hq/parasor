@@ -40,6 +40,18 @@ const SNAPSHOT_TIMEOUT_MS = 10_000;
 const PING_INTERVAL_MS = 20_000;
 const PONG_TIMEOUT_MS = 10_000;
 
+export type EventSocketStatus =
+  | { phase: "connecting"; since: number }
+  | { phase: "hydrating"; since: number }
+  | { phase: "open"; since: number }
+  | {
+      phase: "recovering";
+      disconnectedAt: number;
+      lastProgressAt: number;
+      nextRetryAt: number | null;
+      attempt: number;
+    };
+
 async function readWebSocketText(data: unknown): Promise<string | null> {
   if (typeof data === "string") return data;
   if (data instanceof Blob) return data.text();
@@ -55,6 +67,12 @@ export function useEventSocket() {
     () => loadCachedStore() ?? EMPTY_STORE,
   );
   const [eventSocketConnected, setEventSocketConnected] = useState(false);
+  const [eventSocketStatus, setEventSocketStatus] = useState<EventSocketStatus>(
+    () => ({
+      phase: "connecting",
+      since: Date.now(),
+    }),
+  );
   const phaseRef = useRef<HydrationPhase>({
     state: "awaiting-snapshot",
     buffer: [],
@@ -64,6 +82,7 @@ export function useEventSocket() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const recoveryStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -75,9 +94,24 @@ export function useEventSocket() {
       setEventSocketConnected(false);
       setStore((prev) => ({ ...prev, connected: false }));
       active?.close();
+      const now = Date.now();
+      const disconnectedAt = recoveryStartedAtRef.current ?? now;
+      recoveryStartedAtRef.current = disconnectedAt;
+      setEventSocketStatus({
+        phase: "recovering",
+        disconnectedAt,
+        lastProgressAt: now,
+        nextRetryAt: now + delayMs,
+        attempt: attemptRef.current,
+      });
 
       timerRef.current = setTimeout(() => {
         if (!mountedRef.current) return;
+        setEventSocketStatus((prev) =>
+          prev.phase === "recovering"
+            ? { ...prev, lastProgressAt: Date.now(), nextRetryAt: null }
+            : prev,
+        );
         void connect();
       }, delayMs);
     };
@@ -228,6 +262,8 @@ export function useEventSocket() {
         }
         attemptRef.current = 0;
         setEventSocketConnected(true);
+        recoveryStartedAtRef.current = null;
+        setEventSocketStatus({ phase: "hydrating", since: Date.now() });
         snapshotDeadline = setTimeout(() => {
           snapshotDeadline = null;
           scheduleClientStartupDiagnosticCapture(
@@ -316,6 +352,7 @@ export function useEventSocket() {
           establishedAt = Date.now();
           phaseRef.current = { state: "live", lastAppliedSeq: lastSeq };
           setStore(newStore);
+          setEventSocketStatus({ phase: "open", since: Date.now() });
           return;
         }
 
@@ -480,6 +517,7 @@ export function useEventSocket() {
   return {
     ...store,
     eventSocketConnected,
+    eventSocketStatus,
     unreadCount,
     markRead,
     clearPendingUrl,

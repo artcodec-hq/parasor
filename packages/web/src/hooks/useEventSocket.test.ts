@@ -105,6 +105,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   ensureAuthenticatedMock.mockReset();
 });
@@ -165,11 +166,13 @@ describe("useEventSocket heartbeat", () => {
 
     expect(result.current.connected).toBe(false);
     expect(result.current.eventSocketConnected).toBe(false);
+    expect(result.current.eventSocketStatus.phase).toBe("connecting");
 
     act(() => ws.fireOpen());
 
     expect(result.current.connected).toBe(false);
     expect(result.current.eventSocketConnected).toBe(true);
+    expect(result.current.eventSocketStatus.phase).toBe("hydrating");
   });
 
   it("closes and reconnects when the snapshot never arrives after open", async () => {
@@ -209,12 +212,14 @@ describe("useEventSocket heartbeat", () => {
   });
 
   it("keeps the socket open when the initial snapshot arrives", async () => {
-    renderHook(() => useEventSocket());
+    const { result } = renderHook(() => useEventSocket());
     await settleAuth();
     const ws = latestSocket();
     act(() => ws.fireOpen());
 
     act(() => sendSnapshot(ws));
+
+    expect(result.current.eventSocketStatus.phase).toBe("open");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
@@ -412,14 +417,24 @@ describe("useEventSocket heartbeat", () => {
   });
 
   it("backs off instead of reconnecting at 0ms when an established socket flaps", async () => {
-    renderHook(() => useEventSocket());
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const { result } = renderHook(() => useEventSocket());
     await settleAuth();
     const first = latestSocket();
     act(() => first.fireOpen());
     act(() => sendSnapshot(first));
 
     // Drop almost immediately -- below the stability window = a flap.
+    const closedAt = Date.now();
     act(() => first.fireClose(1006));
+
+    expect(result.current.eventSocketStatus).toMatchObject({
+      phase: "recovering",
+      disconnectedAt: closedAt,
+      lastProgressAt: closedAt,
+      nextRetryAt: closedAt + 2000,
+      attempt: 1,
+    });
 
     // A 0ms advance must NOT create the second socket: backoff applies.
     await act(async () => {
@@ -430,7 +445,14 @@ describe("useEventSocket heartbeat", () => {
 
     // Once the backoff window elapses, it reconnects.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(35_000);
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(result.current.eventSocketStatus).toMatchObject({
+      phase: "recovering",
+      disconnectedAt: closedAt,
+      lastProgressAt: closedAt + 2000,
+      nextRetryAt: null,
+      attempt: 1,
     });
     await settleAuth();
     expect(FakeWebSocket.instances).toHaveLength(2);

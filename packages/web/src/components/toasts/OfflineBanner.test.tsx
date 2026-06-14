@@ -37,6 +37,78 @@ describe("OfflineBanner", () => {
     expect(container.querySelector("button")?.textContent).toMatch(/reload/i);
   });
 
+  it("waits for the recovery hard deadline when event socket status is available", () => {
+    const now = Date.now();
+    const { container } = render(
+      <OfflineBanner
+        connected={false}
+        status={{
+          phase: "recovering",
+          disconnectedAt: now,
+          lastProgressAt: now,
+          nextRetryAt: now + 2000,
+          attempt: 1,
+        }}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(container.firstChild).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+  });
+
+  it("waits for a scheduled retry to settle before showing the reload prompt", () => {
+    const now = Date.now();
+    const { container } = render(
+      <OfflineBanner
+        connected={false}
+        status={{
+          phase: "recovering",
+          disconnectedAt: now - 25_000,
+          lastProgressAt: now,
+          nextRetryAt: now + 5000,
+          attempt: 3,
+        }}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(5999);
+    });
+    expect(container.firstChild).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+  });
+
+  it("uses the longer startup deadline while the event socket is initially connecting", () => {
+    const now = Date.now();
+    const { container } = render(
+      <OfflineBanner
+        connected={false}
+        status={{ phase: "connecting", since: now }}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(container.firstChild).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+  });
+
   it("hides banner if reconnects before delay elapses", () => {
     const { rerender, container } = render(<OfflineBanner connected={false} />);
     act(() => {

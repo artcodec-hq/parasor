@@ -264,6 +264,7 @@ function eventStore(overrides: Record<string, unknown> = {}) {
     hydrated: true,
     snapshotApplied: true,
     eventSocketConnected: true,
+    eventSocketStatus: { phase: "open", since: Date.now() },
     unreadCount: 0,
     markRead: vi.fn(),
     clearPendingUrl: vi.fn(),

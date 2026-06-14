@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import type { EventSocketStatus } from "../../hooks/useEventSocket.js";
 import { DialogButton, DialogFooter, DialogRoot } from "../primitives/index.js";
 
 const SHOW_DELAY_MS = 5000;
+const RECOVERY_RELOAD_PROMPT_DELAY_MS = 20_000;
+const RETRY_SETTLE_GRACE_MS = 1000;
+
+function reloadPromptAt(status: EventSocketStatus | undefined): number {
+  if (!status) return Date.now() + SHOW_DELAY_MS;
+  if (status.phase === "recovering") {
+    return Math.max(
+      status.disconnectedAt + RECOVERY_RELOAD_PROMPT_DELAY_MS,
+      (status.nextRetryAt ?? status.lastProgressAt) + RETRY_SETTLE_GRACE_MS,
+    );
+  }
+  return status.since + RECOVERY_RELOAD_PROMPT_DELAY_MS;
+}
 
 /*
  * When the WebSocket stays disconnected past the grace window, render a
@@ -12,7 +26,13 @@ const SHOW_DELAY_MS = 5000;
  * have moved port, crashed, or restarted into a fresh state.
  * 4px err-tone bar + uppercase tag + title + body + primary action.
  */
-export function OfflineBanner({ connected }: { connected: boolean }) {
+export function OfflineBanner({
+  connected,
+  status,
+}: {
+  connected: boolean;
+  status?: EventSocketStatus;
+}) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -20,9 +40,11 @@ export function OfflineBanner({ connected }: { connected: boolean }) {
       setVisible(false);
       return;
     }
-    const timer = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
+    setVisible(false);
+    const delayMs = Math.max(0, reloadPromptAt(status) - Date.now());
+    const timer = setTimeout(() => setVisible(true), delayMs);
     return () => clearTimeout(timer);
-  }, [connected]);
+  }, [connected, status]);
 
   if (!visible) return null;
 
