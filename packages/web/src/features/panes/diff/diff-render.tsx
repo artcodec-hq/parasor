@@ -133,15 +133,32 @@ export function parseDiff(raw: string): DiffFile[] {
  * Per-file diff block: status label + path + summary header + body.
  * Used at the top level in DiffPane.
  */
-export function DiffFileBlock({ file }: { file: DiffFile }) {
+export function DiffFileBlock({
+  file,
+  onOpenFilePath,
+}: {
+  file: DiffFile;
+  onOpenFilePath?: (filePath: string) => void;
+}) {
+  const openPath = file.status === "Removed" ? null : file.path;
   return (
     <div className="border-b border-border last:border-b-0">
       <div className="px-3 pt-3">
         <div className="flex items-baseline gap-2 text-sm">
           <span className={statusColor(file.status)}>{file.status}</span>
-          <span className="cm-mono min-w-0 break-all text-text-primary">
-            {file.oldPath ? `${file.oldPath} -> ${file.path}` : file.path}
-          </span>
+          {onOpenFilePath && openPath ? (
+            <button
+              type="button"
+              onClick={() => onOpenFilePath(openPath)}
+              className="cm-mono min-w-0 break-all text-left text-text-primary underline decoration-transparent underline-offset-2 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              {file.oldPath ? `${file.oldPath} -> ${file.path}` : file.path}
+            </button>
+          ) : (
+            <span className="cm-mono min-w-0 break-all text-text-primary">
+              {file.oldPath ? `${file.oldPath} -> ${file.path}` : file.path}
+            </span>
+          )}
         </div>
         <div className="mt-1 text-xs text-text-secondary">
           Added <span className="font-semibold text-success">{file.added}</span>{" "}

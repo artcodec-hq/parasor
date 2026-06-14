@@ -4,8 +4,16 @@ import type {
   PaneEntry,
   Session,
 } from "@parasor/shared";
-import { useEffect, useMemo, useRef } from "react";
-import { PaGlyph } from "../../components/primitives/index.js";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { DialogRoot, PaGlyph } from "../../components/primitives/index.js";
 import type { PaMenuItem } from "../../components/primitives/PaMenu.js";
 import { useEdgeSwipeBack } from "../../hooks/use-edge-swipe-back.js";
 import type { IdeEditor } from "../../lib/git-api.js";
@@ -34,6 +42,12 @@ import {
 } from "./views/WorktreeView.js";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState.js";
 
+const LazyEditorPane = lazy(() =>
+  import("../panes/editor/EditorPane.js").then(({ EditorPane }) => ({
+    default: EditorPane,
+  })),
+);
+
 function basename(filePath: string): string {
   const trimmed = filePath.replace(/\/+$/, "");
   const parts = trimmed.split("/");
@@ -42,6 +56,12 @@ function basename(filePath: string): string {
 
 function worktreeFilesPaneId(worktreePath: string): string {
   return `files:${worktreePath}`;
+}
+
+interface WorkspaceFileDisplayTarget {
+  worktreePath: string;
+  filePath: string;
+  openerPaneId: string;
 }
 
 interface WorkspacePaneRouterProps {
@@ -170,21 +190,18 @@ export function WorkspacePaneRouter({
   const filesPane = focusedPane?.state.kind === "files" ? focusedPane : null;
   const gitPane = focusedPane?.state.kind === "git" ? focusedPane : null;
   const worktreePane = filesPane ?? gitPane;
-  const isFilesPane = filesPane !== null;
   const isGitPane = gitPane !== null;
   const isWorktreePane = worktreePane !== null;
   const filesPaneId = filesPane?.id ?? null;
-  const [filesSelection, setFilesSelection] =
-    useFilesPaneSelection(filesPaneId);
-  const isFilesChild = isFilesPane && filesSelection !== null;
+  const [filesSelection] = useFilesPaneSelection(filesPaneId);
+  const [fileDisplayTarget, setFileDisplayTarget] =
+    useState<WorkspaceFileDisplayTarget | null>(null);
   const isGitChild = isGitPane && gitGraphSelection !== null;
-  const childTitle = isFilesChild
-    ? basename(filesSelection)
-    : isGitChild
-      ? buildGitChildTitle(gitGraphSelection)
-      : focusedPane
-        ? buildChildTitle(focusedPane, sessions)
-        : null;
+  const childTitle = isGitChild
+    ? buildGitChildTitle(gitGraphSelection)
+    : focusedPane
+      ? buildChildTitle(focusedPane, sessions)
+      : null;
   const focusedWorktreeIsActive =
     !!focusedPane &&
     !!activeProjectPath &&
@@ -197,19 +214,15 @@ export function WorkspacePaneRouter({
     gitBranchName,
   );
   const view: SessionPaneView | undefined =
-    worktreePane && !isFilesChild && !isGitChild
+    worktreePane && !isGitChild
       ? (worktreePane.state.kind as SessionPaneView)
       : undefined;
   const onChangeView =
-    worktreePane && !isFilesChild && !isGitChild
+    worktreePane && !isGitChild
       ? (next: SessionPaneView) =>
           onSelectWorktreeTab(worktreePane.worktreePath, next)
       : undefined;
-  const onBack = isFilesChild
-    ? () => setFilesSelection(null)
-    : isGitChild
-      ? () => onGitGraphSelectionChange(null)
-      : null;
+  const onBack = isGitChild ? () => onGitGraphSelectionChange(null) : null;
   const closableKind =
     focusedPane?.state.kind === "terminal" ||
     focusedPane?.state.kind === "browser"
@@ -240,13 +253,37 @@ export function WorkspacePaneRouter({
   const outerOnClose = hasInnerPaneChrome ? undefined : onClose;
   const terminalLayerPanes =
     allPanes.length > 0 ? allPanes : focusedPane ? [focusedPane] : [];
-  const handleOpenTerminalFilePath = (
-    worktreePath: string,
-    filePath: string,
-  ) => {
-    setFilesPaneSelection(worktreeFilesPaneId(worktreePath), filePath);
-    onSelectWorktreeTab(worktreePath, "files");
-  };
+  const handleOpenFilePath = useCallback(
+    (worktreePath: string, filePath: string) => {
+      const openerPaneId = focusedPane?.id ?? worktreeFilesPaneId(worktreePath);
+      setFilesPaneSelection(worktreeFilesPaneId(worktreePath), filePath);
+      setFileDisplayTarget({ worktreePath, filePath, openerPaneId });
+    },
+    [focusedPane?.id],
+  );
+
+  const handleCloseFileDisplay = useCallback(() => {
+    setFileDisplayTarget(null);
+  }, []);
+
+  const handleOpenTerminalFilePath = useCallback(
+    (worktreePath: string, filePath: string) => {
+      handleOpenFilePath(worktreePath, filePath);
+    },
+    [handleOpenFilePath],
+  );
+  useEffect(() => {
+    if (!fileDisplayTarget) return;
+    if (!activeProjectId) {
+      setFileDisplayTarget(null);
+      return;
+    }
+    const worktreeStillVisible = terminalLayerPanes.some(
+      (pane) => pane.worktreePath === fileDisplayTarget.worktreePath,
+    );
+    if (!worktreeStillVisible) setFileDisplayTarget(null);
+  }, [activeProjectId, fileDisplayTarget, terminalLayerPanes]);
+
   useEdgeSwipeBack(isMobile ? onBack : null);
 
   const moreMenuItems = useMemo<PaMenuItem[]>(() => {
@@ -362,51 +399,83 @@ export function WorkspacePaneRouter({
       <div className="relative flex-1 overflow-hidden">
         {focusedPane && activeProjectId ? (
           <>
-            {focusedPane.state.kind !== "terminal" && (
-              <div className="absolute inset-0 min-h-0 min-w-0">
-                <PaneBody
-                  activeProjectId={activeProjectId}
-                  activeProjectPath={activeProjectPath}
-                  focusedPane={focusedPane}
-                  focusedWorktreeDirName={focusedWorktreeDirName}
-                  fileChangeSeq={fileChangeSeq}
-                  gitState={gitState}
-                  gitFileStatuses={gitFileStatuses}
-                  gitBranchName={gitBranchName}
-                  counters={counters}
-                  gitMenuActions={gitMenuActions}
-                  gitGraphSelection={gitGraphSelection}
-                  onGitGraphSelectionChange={onGitGraphSelectionChange}
-                  commitBusy={commitBusy}
-                  commitError={commitError}
-                  onClearCommitError={onClearCommitError}
-                  onSubmitInlineCommit={onSubmitInlineCommit}
-                  isMobile={isMobile}
+            <div className="absolute inset-0 flex min-h-0 min-w-0">
+              <div className="relative min-h-0 min-w-0 flex-1">
+                {focusedPane.state.kind !== "terminal" && (
+                  <div className="absolute inset-0 min-h-0 min-w-0">
+                    <PaneBody
+                      activeProjectId={activeProjectId}
+                      activeProjectPath={activeProjectPath}
+                      focusedPane={focusedPane}
+                      focusedWorktreeDirName={focusedWorktreeDirName}
+                      fileChangeSeq={fileChangeSeq}
+                      gitState={gitState}
+                      gitFileStatuses={gitFileStatuses}
+                      filesSelection={filesSelection}
+                      gitBranchName={gitBranchName}
+                      counters={counters}
+                      gitMenuActions={gitMenuActions}
+                      gitGraphSelection={gitGraphSelection}
+                      onGitGraphSelectionChange={onGitGraphSelectionChange}
+                      commitBusy={commitBusy}
+                      commitError={commitError}
+                      onClearCommitError={onClearCommitError}
+                      onSubmitInlineCommit={onSubmitInlineCommit}
+                      isMobile={isMobile}
+                      sessions={sessions}
+                      terminalPin={pin}
+                      terminalOnClose={onClose}
+                      browserOnClose={onClose}
+                      onClosePane={onClosePane}
+                      onOpenUrl={onOpenUrl}
+                      onBrowserUrlChange={onBrowserUrlChange}
+                      onRestartSession={onRestartSession}
+                      onRenameSession={onRenameSession}
+                      onSelectWorktreeTab={onSelectWorktreeTab}
+                      onOpenFilePath={handleOpenFilePath}
+                    />
+                  </div>
+                )}
+                <TerminalPaneLayer
+                  panes={terminalLayerPanes}
+                  focusedPaneId={focusedPane.id}
                   sessions={sessions}
-                  terminalPin={pin}
-                  terminalOnClose={onClose}
-                  browserOnClose={onClose}
+                  pin={pin}
+                  onClose={onClose}
                   onClosePane={onClosePane}
                   onOpenUrl={onOpenUrl}
-                  onBrowserUrlChange={onBrowserUrlChange}
+                  onOpenFilePath={handleOpenTerminalFilePath}
                   onRestartSession={onRestartSession}
                   onRenameSession={onRenameSession}
-                  onSelectWorktreeTab={onSelectWorktreeTab}
                 />
               </div>
+              {fileDisplayTarget && !isMobile && (
+                <div className="h-full w-[42vw] min-w-80 max-w-[720px] shrink-0 border-l border-border bg-bg-primary">
+                  <WorkspaceFileDisplay
+                    projectId={activeProjectId}
+                    target={fileDisplayTarget}
+                    fileChangeSeq={fileChangeSeq}
+                    onClose={handleCloseFileDisplay}
+                  />
+                </div>
+              )}
+            </div>
+            {fileDisplayTarget && isMobile && (
+              <DialogRoot
+                open
+                presentation="fullscreen"
+                ariaLabel={`File preview: ${basename(fileDisplayTarget.filePath)}`}
+                onClose={handleCloseFileDisplay}
+                panelClassName="flex-col"
+              >
+                <WorkspaceFileDisplay
+                  projectId={activeProjectId}
+                  target={fileDisplayTarget}
+                  fileChangeSeq={fileChangeSeq}
+                  onClose={handleCloseFileDisplay}
+                />
+              </DialogRoot>
             )}
-            <TerminalPaneLayer
-              panes={terminalLayerPanes}
-              focusedPaneId={focusedPane.id}
-              sessions={sessions}
-              pin={pin}
-              onClose={onClose}
-              onClosePane={onClosePane}
-              onOpenUrl={onOpenUrl}
-              onOpenFilePath={handleOpenTerminalFilePath}
-              onRestartSession={onRestartSession}
-              onRenameSession={onRenameSession}
-            />
           </>
         ) : (
           <WorkspaceEmptyState
@@ -417,6 +486,40 @@ export function WorkspacePaneRouter({
         )}
       </div>
     </main>
+  );
+}
+
+interface WorkspaceFileDisplayProps {
+  projectId: string;
+  target: WorkspaceFileDisplayTarget;
+  fileChangeSeq: number;
+  onClose: () => void;
+}
+
+function WorkspaceFileDisplay({
+  projectId,
+  target,
+  fileChangeSeq,
+  onClose,
+}: WorkspaceFileDisplayProps) {
+  const paneId = `file-display:${target.openerPaneId}`;
+  return (
+    <div className="h-full min-h-0 min-w-0">
+      <Suspense
+        fallback={
+          <div className="h-full bg-bg-primary text-sm text-text-secondary" />
+        }
+      >
+        <LazyEditorPane
+          paneId={paneId}
+          projectId={projectId}
+          worktreePath={target.worktreePath}
+          filePath={target.filePath}
+          fileChangeSeq={fileChangeSeq}
+          onClose={onClose}
+        />
+      </Suspense>
+    </div>
   );
 }
 
@@ -552,6 +655,7 @@ interface PaneBodyProps {
   fileChangeSeq: number;
   gitState: GitState | null;
   gitFileStatuses?: Record<string, string>;
+  filesSelection: string | null;
   gitBranchName: string | null;
   counters?: WorktreeCounters;
   gitMenuActions?: WorktreeGitMenuActions;
@@ -578,6 +682,7 @@ interface PaneBodyProps {
   onRestartSession: (sessionId: string) => Promise<void> | void;
   onRenameSession: (sessionId: string, title: string) => Promise<void> | void;
   onSelectWorktreeTab: (worktreePath: string, tab: WorktreeTab) => void;
+  onOpenFilePath: (worktreePath: string, filePath: string) => void;
 }
 
 function PaneBody({
@@ -588,6 +693,7 @@ function PaneBody({
   fileChangeSeq,
   gitState,
   gitFileStatuses,
+  filesSelection,
   counters,
   gitMenuActions,
   gitGraphSelection,
@@ -607,6 +713,7 @@ function PaneBody({
   onRestartSession,
   onRenameSession,
   onSelectWorktreeTab,
+  onOpenFilePath,
 }: PaneBodyProps) {
   const { state } = focusedPane;
   switch (state.kind) {
@@ -624,9 +731,12 @@ function PaneBody({
             worktreePath={focusedPane.worktreePath}
             fileChangeSeq={fileChangeSeq}
             gitFileStatuses={gitFileStatuses}
-            isMobile={isMobile}
             onChangeTab={(tab) =>
               onSelectWorktreeTab(focusedPane.worktreePath, tab)
+            }
+            selectedFilePath={filesSelection}
+            onOpenFilePath={(filePath) =>
+              onOpenFilePath(focusedPane.worktreePath, filePath)
             }
           />
         </WorktreeView>
@@ -643,13 +753,9 @@ function PaneBody({
           onClose={terminalOnClose}
           onClosePane={onClosePane}
           onOpenUrl={onOpenUrl}
-          onOpenFilePath={(filePath) => {
-            setFilesPaneSelection(
-              worktreeFilesPaneId(focusedPane.worktreePath),
-              filePath,
-            );
-            onSelectWorktreeTab(focusedPane.worktreePath, "files");
-          }}
+          onOpenFilePath={(filePath) =>
+            onOpenFilePath(focusedPane.worktreePath, filePath)
+          }
           onRestartSession={onRestartSession}
           onRenameSession={onRenameSession}
         />
@@ -691,6 +797,9 @@ function PaneBody({
             onSubmitInlineCommit={onSubmitInlineCommit}
             onChangeTab={(tab) =>
               onSelectWorktreeTab(focusedPane.worktreePath, tab)
+            }
+            onOpenFilePath={(filePath) =>
+              onOpenFilePath(focusedPane.worktreePath, filePath)
             }
             {...(gitMenuActions && { gitActions: gitMenuActions })}
           />

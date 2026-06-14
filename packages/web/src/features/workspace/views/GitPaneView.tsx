@@ -30,6 +30,7 @@ interface GitPaneViewProps {
     paths: string[];
   }) => Promise<void> | void;
   onChangeTab: (tab: WorktreeTab) => void;
+  onOpenFilePath: (filePath: string) => void;
   gitActions?: GitGraphActions;
 }
 
@@ -68,6 +69,7 @@ export function GitPaneView({
   onClearCommitError,
   onSubmitInlineCommit,
   onChangeTab,
+  onOpenFilePath,
   gitActions,
 }: GitPaneViewProps) {
   const uncommittedFiles = useMemo(() => {
@@ -125,6 +127,7 @@ export function GitPaneView({
             error={commitError}
             onClearError={onClearCommitError}
             onSubmit={(input) => void onSubmitInlineCommit(input)}
+            onOpenFilePath={onOpenFilePath}
           />
         ) : (
           <DiffPane
@@ -132,6 +135,7 @@ export function GitPaneView({
             worktreePath={worktreePath}
             fileChangeSeq={fileChangeSeq}
             commit={selection?.kind === "commit" ? selection.commit : null}
+            onOpenFilePath={onOpenFilePath}
           />
         )
       }
