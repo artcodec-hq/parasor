@@ -22,6 +22,10 @@ interface WrappedLineScan {
   cellWidths: number[];
 }
 
+interface LineFilePathHit extends TerminalFilePathHit {
+  lineNumber: number;
+}
+
 interface CachedLineLinks {
   line: IBufferLine;
   lineLength: number;
@@ -160,36 +164,17 @@ export function findFilePathHitsInLine(
 ): TerminalFilePathHit[] {
   const scan = scanLine(line);
   if (!scan) return [];
-  const hits: TerminalFilePathHit[] = [];
-  FILE_PATH_REGEX.lastIndex = 0;
-  for (
-    let match = FILE_PATH_REGEX.exec(scan.text);
-    match;
-    match = FILE_PATH_REGEX.exec(scan.text)
-  ) {
-    const text = trimTrailingPunctuation(match[0]);
-    const filePath = resolveTerminalFilePath(text, worktreePath);
-    if (!filePath) continue;
-    const startOffset = match.index;
-    const endOffset = startOffset + text.length;
-    let startCol = -1;
-    let endCol = -1;
-    for (let c = 0; c < scan.cellOffsets.length; c++) {
-      if (scan.cellWidths[c] === 0) continue;
-      if (startCol === -1 && scan.cellOffsets[c] >= startOffset) {
-        startCol = c;
-      }
-      if (scan.cellOffsets[c] < endOffset) endCol = c;
-    }
-    if (startCol === -1 || endCol < startCol) continue;
-    hits.push({
-      text,
-      filePath,
-      startCol,
-      length: endCol - startCol + 1,
-    });
-  }
-  return hits;
+  return findFilePathHitsInScans(
+    [
+      {
+        ...scan,
+        lineNumber: 1,
+        startOffset: 0,
+        length: scan.text.length,
+      },
+    ],
+    worktreePath,
+  ).map(({ lineNumber: _lineNumber, ...hit }) => hit);
 }
 
 export function findFilePathHitAtCell(
@@ -202,6 +187,25 @@ export function findFilePathHitAtCell(
       (hit) => col >= hit.startCol && col < hit.startCol + hit.length,
     ) ?? null
   );
+}
+
+export function findFilePathHitAtBufferCell(
+  getLine: (bufferLineNumber: number) => IBufferLine | undefined,
+  worktreePath: string,
+  bufferLineNumber: number,
+  col: number,
+): TerminalFilePathHit | null {
+  const scans = scanWrappedLine(getLine, bufferLineNumber);
+  const hit =
+    findFilePathHitsInScans(scans, worktreePath).find(
+      (candidate) =>
+        candidate.lineNumber === bufferLineNumber &&
+        col >= candidate.startCol &&
+        col < candidate.startCol + candidate.length,
+    ) ?? null;
+  if (!hit) return null;
+  const { lineNumber: _lineNumber, ...publicHit } = hit;
+  return publicHit;
 }
 
 export function createTerminalFileLinkProvider(
@@ -249,46 +253,18 @@ export function createTerminalFileLinkProvider(
         callback(undefined);
         return;
       }
-      const text = scans.map((candidate) => candidate.text).join("");
       const linksByLine = new Map<number, ILink[]>();
       for (const candidate of scans) linksByLine.set(candidate.lineNumber, []);
-      FILE_PATH_REGEX.lastIndex = 0;
-      for (
-        let match = FILE_PATH_REGEX.exec(text);
-        match;
-        match = FILE_PATH_REGEX.exec(text)
-      ) {
-        const matchedText = trimTrailingPunctuation(match[0]);
-        const filePath = resolveTerminalFilePath(matchedText, worktreePath);
-        if (!filePath) continue;
-        const startOffset = match.index;
-        const endOffset = startOffset + matchedText.length;
-        for (const candidate of scans) {
-          const lineStart = candidate.startOffset;
-          const lineEnd = lineStart + candidate.length;
-          if (endOffset <= lineStart || startOffset >= lineEnd) continue;
-
-          const startCol = findColForOffset(
-            candidate,
-            Math.max(startOffset - lineStart, 0),
-          );
-          const endCol = findEndColForOffset(
-            candidate,
-            Math.min(endOffset - lineStart, candidate.length),
-          );
-          if (startCol === null || endCol === null || endCol < startCol) {
-            continue;
-          }
-          linksByLine.get(candidate.lineNumber)?.push({
-            range: {
-              start: { x: startCol + 1, y: candidate.lineNumber },
-              end: { x: endCol + 1, y: candidate.lineNumber },
-            },
-            text: matchedText,
-            decorations: { pointerCursor: true, underline: true },
-            activate: () => openFilePath(filePath),
-          });
-        }
+      for (const hit of findFilePathHitsInScans(scans, worktreePath)) {
+        linksByLine.get(hit.lineNumber)?.push({
+          range: {
+            start: { x: hit.startCol + 1, y: hit.lineNumber },
+            end: { x: hit.startCol + hit.length, y: hit.lineNumber },
+          },
+          text: hit.text,
+          decorations: { pointerCursor: true, underline: true },
+          activate: () => openFilePath(hit.filePath),
+        });
       }
       for (const candidate of scans) {
         const scannedLine = getLine(candidate.lineNumber);
@@ -306,6 +282,49 @@ export function createTerminalFileLinkProvider(
       callback(links.length > 0 ? links : undefined);
     },
   };
+}
+
+function findFilePathHitsInScans(
+  scans: WrappedLineScan[],
+  worktreePath: string,
+): LineFilePathHit[] {
+  const text = scans.map((candidate) => candidate.text).join("");
+  const hits: LineFilePathHit[] = [];
+  FILE_PATH_REGEX.lastIndex = 0;
+  for (
+    let match = FILE_PATH_REGEX.exec(text);
+    match;
+    match = FILE_PATH_REGEX.exec(text)
+  ) {
+    const matchedText = trimTrailingPunctuation(match[0]);
+    const filePath = resolveTerminalFilePath(matchedText, worktreePath);
+    if (!filePath) continue;
+    const startOffset = match.index;
+    const endOffset = startOffset + matchedText.length;
+    for (const candidate of scans) {
+      const lineStart = candidate.startOffset;
+      const lineEnd = lineStart + candidate.length;
+      if (endOffset <= lineStart || startOffset >= lineEnd) continue;
+
+      const startCol = findColForOffset(
+        candidate,
+        Math.max(startOffset - lineStart, 0),
+      );
+      const endCol = findEndColForOffset(
+        candidate,
+        Math.min(endOffset - lineStart, candidate.length),
+      );
+      if (startCol === null || endCol === null || endCol < startCol) continue;
+      hits.push({
+        text: matchedText,
+        filePath,
+        lineNumber: candidate.lineNumber,
+        startCol,
+        length: endCol - startCol + 1,
+      });
+    }
+  }
+  return hits;
 }
 
 function findColForOffset(

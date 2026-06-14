@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createTerminalFileLinkProvider,
+  findFilePathHitAtBufferCell,
   findFilePathHitsInLine,
   resolveTerminalFilePath,
 } from "./terminal-file-links.js";
@@ -116,5 +117,26 @@ describe("terminal file path links", () => {
 
     second.activate();
     expect(opened).toEqual(["packages/web/src/features/App.tsx"]);
+  });
+
+  it("hit-tests cells in paths that wrap across terminal buffer lines", () => {
+    const lines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("packages/web/src/"))],
+      [2, makeBufferLine(cellsFromText("features/App.tsx:12"), true)],
+    ]);
+
+    const hit = findFilePathHitAtBufferCell(
+      (lineNumber) => lines.get(lineNumber) as never,
+      "/repo",
+      2,
+      4,
+    );
+
+    expect(hit).toEqual({
+      text: "packages/web/src/features/App.tsx:12",
+      filePath: "packages/web/src/features/App.tsx",
+      startCol: 0,
+      length: 19,
+    });
   });
 });
