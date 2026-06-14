@@ -58,6 +58,12 @@ function worktreeFilesPaneId(worktreePath: string): string {
   return `files:${worktreePath}`;
 }
 
+function blurActiveEditableElement(): void {
+  const active = document.activeElement;
+  if (!active || !("blur" in active)) return;
+  (active as { blur: () => void }).blur();
+}
+
 interface WorkspaceFileDisplayTarget {
   worktreePath: string;
   filePath: string;
@@ -256,10 +262,11 @@ export function WorkspacePaneRouter({
   const handleOpenFilePath = useCallback(
     (worktreePath: string, filePath: string) => {
       const openerPaneId = focusedPane?.id ?? worktreeFilesPaneId(worktreePath);
+      if (isMobile) blurActiveEditableElement();
       setFilesPaneSelection(worktreeFilesPaneId(worktreePath), filePath);
       setFileDisplayTarget({ worktreePath, filePath, openerPaneId });
     },
-    [focusedPane?.id],
+    [focusedPane?.id, isMobile],
   );
 
   const handleCloseFileDisplay = useCallback(() => {

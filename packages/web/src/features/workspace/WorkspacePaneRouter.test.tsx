@@ -534,6 +534,32 @@ describe("WorkspacePaneRouter terminal retention", () => {
     ).toBe("packages/web/src/App.tsx");
   });
 
+  it("blurs the focused mobile input before opening a terminal file link", async () => {
+    const terminalPane = makeTerminalPane("terminal:s1", "/repo", "s1");
+    render(
+      <WorkspacePaneRouter
+        {...makeRouterProps({
+          allPanes: [terminalPane],
+          focusedPane: terminalPane,
+          isMobile: true,
+          sessions: [makeSession({ id: "s1" })],
+        })}
+      />,
+    );
+
+    const input = screen.getByLabelText("terminal input s1");
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.click(screen.getByRole("button", { name: "open file" }));
+
+    expect(document.activeElement).not.toBe(input);
+    expect(
+      (await screen.findByRole("dialog", { name: "File preview: App.tsx" }))
+        .textContent,
+    ).toContain("packages/web/src/App.tsx");
+  });
+
   it("mounts a terminal pane only while it is focused", () => {
     const browserPane = makeBrowserPane(
       "browser:p1-main",
