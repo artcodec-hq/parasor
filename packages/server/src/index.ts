@@ -502,6 +502,9 @@ const { app, injectWebSocket } = createAppServer({
   serverNoticesStore,
   worktreeCache,
   projectRuntime,
+  portScanner,
+  portForwarder,
+  serverVersion: process.env.npm_package_version,
   uploadStaging,
   reconcileWorktrees: (projectId, prefetched) =>
     worktreeReconciler.reconcile(projectId, prefetched),
