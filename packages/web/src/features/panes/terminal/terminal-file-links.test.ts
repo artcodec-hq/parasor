@@ -139,4 +139,88 @@ describe("terminal file path links", () => {
       length: 19,
     });
   });
+
+  it("links paths that a TUI splits across non-wrapped terminal lines", () => {
+    const opened: string[] = [];
+    const lines = new Map<number, unknown>([
+      [
+        1,
+        makeBufferLine(cellsFromText("  dist/assets/parasor-campaign-demo-")),
+      ],
+      [
+        2,
+        makeBufferLine(cellsFromText("  BAEvbAkV.png                      ")),
+      ],
+    ]);
+    const provider = createTerminalFileLinkProvider(
+      (lineNumber) => lines.get(lineNumber) as never,
+      () => "/repo",
+      (filePath) => opened.push(filePath),
+    );
+
+    let firstLineLinks: unknown[] | undefined;
+    provider.provideLinks(1, (links) => {
+      firstLineLinks = links as unknown[] | undefined;
+    });
+    let secondLineLinks: unknown[] | undefined;
+    provider.provideLinks(2, (links) => {
+      secondLineLinks = links as unknown[] | undefined;
+    });
+
+    expect(firstLineLinks).toHaveLength(1);
+    expect(secondLineLinks).toHaveLength(1);
+    const first = firstLineLinks?.[0] as {
+      range: {
+        start: { x: number; y: number };
+        end: { x: number; y: number };
+      };
+      activate: () => void;
+    };
+    const second = secondLineLinks?.[0] as {
+      range: {
+        start: { x: number; y: number };
+        end: { x: number; y: number };
+      };
+      activate: () => void;
+    };
+
+    expect(first.range).toEqual({
+      start: { x: 3, y: 1 },
+      end: { x: 36, y: 1 },
+    });
+    expect(second.range).toEqual({
+      start: { x: 3, y: 2 },
+      end: { x: 14, y: 2 },
+    });
+
+    second.activate();
+    expect(opened).toEqual(["dist/assets/parasor-campaign-demo-BAEvbAkV.png"]);
+  });
+
+  it("hit-tests cells in paths that a TUI splits across non-wrapped lines", () => {
+    const lines = new Map<number, unknown>([
+      [
+        1,
+        makeBufferLine(cellsFromText("  dist/assets/parasor-campaign-demo-")),
+      ],
+      [
+        2,
+        makeBufferLine(cellsFromText("  BAEvbAkV.png                      ")),
+      ],
+    ]);
+
+    const hit = findFilePathHitAtBufferCell(
+      (lineNumber) => lines.get(lineNumber) as never,
+      "/repo",
+      2,
+      4,
+    );
+
+    expect(hit).toEqual({
+      text: "dist/assets/parasor-campaign-demo-BAEvbAkV.png",
+      filePath: "dist/assets/parasor-campaign-demo-BAEvbAkV.png",
+      startCol: 2,
+      length: 12,
+    });
+  });
 });

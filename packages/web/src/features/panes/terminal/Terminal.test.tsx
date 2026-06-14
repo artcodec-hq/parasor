@@ -3508,6 +3508,41 @@ describe("Terminal", () => {
     expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
   });
 
+  it("opens tapped TUI-split file paths in the terminal on touch devices", () => {
+    const onOpenFilePath = vi.fn();
+    const lines = new Map<number, unknown>([
+      [
+        5,
+        makeBufferLine(cellsFromText("  dist/assets/parasor-campaign-demo-")),
+      ],
+      [
+        6,
+        makeBufferLine(cellsFromText("  BAEvbAkV.png                      ")),
+      ],
+    ]);
+    mockTermGetLine.mockImplementation((lineNumber: number) =>
+      lines.get(lineNumber),
+    );
+    render(
+      <Terminal
+        sessionId="s1"
+        worktreePath="/repo"
+        onOpenFilePath={onOpenFilePath}
+      />,
+      { wrapper },
+    );
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    plainTapOnScreen(screen, 45, 15);
+
+    expect(mockTermSelect).toHaveBeenCalledWith(2, 6, 12);
+    expect(onOpenFilePath).toHaveBeenCalledWith(
+      "dist/assets/parasor-campaign-demo-BAEvbAkV.png",
+    );
+    expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
+  });
+
   it("maps the tapped cell through wide CJK glyphs before matching the URL", () => {
     mockTermGetLine.mockReturnValue(
       makeBufferLine([

@@ -18,6 +18,7 @@ interface WrappedLineScan {
   lineNumber: number;
   startOffset: number;
   length: number;
+  sourceStartOffset: number;
   cellOffsets: number[];
   cellWidths: number[];
 }
@@ -36,6 +37,7 @@ interface CachedLineLinks {
 
 const FILE_PATH_REGEX =
   /(?:\/[A-Za-z0-9._@%+=:,~-]+(?:\/[A-Za-z0-9._@%+=:,~-]+)+|(?:\.\/|[A-Za-z0-9._@%+=,~-]+\/)[A-Za-z0-9._@%+=:,~/-]+)(?::\d+(?::\d+)?)?/g;
+const FILE_PATH_CHAR_REGEX = /[A-Za-z0-9._@%+=:,~/-]/;
 const MAX_WRAPPED_LINK_LINES = 8;
 const LINK_CACHE_TTL_MS = 250;
 
@@ -98,12 +100,104 @@ function scanWrappedLine(
       lineNumber,
       startOffset: offset,
       length: scan.text.length,
+      sourceStartOffset: 0,
       cellOffsets: scan.cellOffsets,
       cellWidths: scan.cellWidths,
     });
     offset += scan.text.length;
   }
   return scans;
+}
+
+function scanSoftSplitLine(
+  getLine: (bufferLineNumber: number) => IBufferLine | undefined,
+  bufferLineNumber: number,
+): WrappedLineScan[] {
+  const getScan = (lineNumber: number): LineScan | null => {
+    const line = getLine(lineNumber);
+    if (!line) return null;
+    return scanLine(line);
+  };
+
+  let firstLineNumber = bufferLineNumber;
+  let currentScan = getScan(firstLineNumber);
+  if (!currentScan) return [];
+
+  let linesBefore = 0;
+  while (firstLineNumber > 1 && linesBefore < MAX_WRAPPED_LINK_LINES - 1) {
+    const previousScan = getScan(firstLineNumber - 1);
+    if (!previousScan || !canSoftContinue(previousScan, currentScan)) break;
+    firstLineNumber -= 1;
+    currentScan = previousScan;
+    linesBefore += 1;
+  }
+
+  const scans: WrappedLineScan[] = [];
+  let offset = 0;
+  for (let lineNumber = firstLineNumber; ; lineNumber++) {
+    const scan = getScan(lineNumber);
+    if (!scan) break;
+    const isFirst = lineNumber === firstLineNumber;
+    const sourceStartOffset = isFirst ? 0 : firstNonWhitespaceOffset(scan.text);
+    const sourceEndOffset = lastNonWhitespaceOffset(scan.text);
+    const text =
+      sourceEndOffset > sourceStartOffset
+        ? scan.text.slice(sourceStartOffset, sourceEndOffset)
+        : "";
+    scans.push({
+      text,
+      lineNumber,
+      startOffset: offset,
+      length: text.length,
+      sourceStartOffset,
+      cellOffsets: scan.cellOffsets,
+      cellWidths: scan.cellWidths,
+    });
+    offset += text.length;
+    if (scans.length >= MAX_WRAPPED_LINK_LINES) break;
+    const nextScan = getScan(lineNumber + 1);
+    if (!nextScan || !canSoftContinue(scan, nextScan)) break;
+  }
+  return scans;
+}
+
+function scanFilePathGroups(
+  getLine: (bufferLineNumber: number) => IBufferLine | undefined,
+  bufferLineNumber: number,
+): WrappedLineScan[][] {
+  const groups = [scanWrappedLine(getLine, bufferLineNumber)];
+  const softScans = scanSoftSplitLine(getLine, bufferLineNumber);
+  if (!sameLineNumbers(groups[0], softScans)) groups.push(softScans);
+  return groups.filter((group) =>
+    group.some((candidate) => candidate.lineNumber === bufferLineNumber),
+  );
+}
+
+function canSoftContinue(previous: LineScan, next: LineScan): boolean {
+  const previousText = previous.text.trimEnd();
+  const nextText = next.text.trimStart();
+  if (!previousText || !nextText) return false;
+  return (
+    FILE_PATH_CHAR_REGEX.test(previousText.at(-1) ?? "") &&
+    FILE_PATH_CHAR_REGEX.test(nextText[0] ?? "")
+  );
+}
+
+function firstNonWhitespaceOffset(text: string): number {
+  const offset = text.search(/\S/);
+  return offset === -1 ? 0 : offset;
+}
+
+function lastNonWhitespaceOffset(text: string): number {
+  const match = /\S\s*$/.exec(text);
+  return match ? match.index + 1 : 0;
+}
+
+function sameLineNumbers(a: WrappedLineScan[], b: WrappedLineScan[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((candidate, index) => candidate.lineNumber === b[index]?.lineNumber)
+  );
 }
 
 function normalizeWorktreePath(path: string): string {
@@ -171,6 +265,7 @@ export function findFilePathHitsInLine(
         lineNumber: 1,
         startOffset: 0,
         length: scan.text.length,
+        sourceStartOffset: 0,
       },
     ],
     worktreePath,
@@ -195,14 +290,15 @@ export function findFilePathHitAtBufferCell(
   bufferLineNumber: number,
   col: number,
 ): TerminalFilePathHit | null {
-  const scans = scanWrappedLine(getLine, bufferLineNumber);
   const hit =
-    findFilePathHitsInScans(scans, worktreePath).find(
-      (candidate) =>
-        candidate.lineNumber === bufferLineNumber &&
-        col >= candidate.startCol &&
-        col < candidate.startCol + candidate.length,
-    ) ?? null;
+    scanFilePathGroups(getLine, bufferLineNumber)
+      .flatMap((scans) => findFilePathHitsInScans(scans, worktreePath))
+      .find(
+        (candidate) =>
+          candidate.lineNumber === bufferLineNumber &&
+          col >= candidate.startCol &&
+          col < candidate.startCol + candidate.length,
+      ) ?? null;
   if (!hit) return null;
   const { lineNumber: _lineNumber, ...publicHit } = hit;
   return publicHit;
@@ -245,17 +341,21 @@ export function createTerminalFileLinkProvider(
         return;
       }
 
-      const scans = scanWrappedLine(getLine, bufferLineNumber);
-      const scan = scans.find((candidate) => {
-        return candidate.lineNumber === bufferLineNumber;
-      });
-      if (!scan) {
+      const scanGroups = scanFilePathGroups(getLine, bufferLineNumber);
+      if (scanGroups.length === 0) {
         callback(undefined);
         return;
       }
+      const scans = uniqueScansByLineNumber(scanGroups.flat());
       const linksByLine = new Map<number, ILink[]>();
       for (const candidate of scans) linksByLine.set(candidate.lineNumber, []);
-      for (const hit of findFilePathHitsInScans(scans, worktreePath)) {
+      const seenLinks = new Set<string>();
+      for (const hit of scanGroups.flatMap((group) =>
+        findFilePathHitsInScans(group, worktreePath),
+      )) {
+        const key = `${hit.lineNumber}:${hit.startCol}:${hit.length}:${hit.filePath}`;
+        if (seenLinks.has(key)) continue;
+        seenLinks.add(key);
         linksByLine.get(hit.lineNumber)?.push({
           range: {
             start: { x: hit.startCol + 1, y: hit.lineNumber },
@@ -282,6 +382,17 @@ export function createTerminalFileLinkProvider(
       callback(links.length > 0 ? links : undefined);
     },
   };
+}
+
+function uniqueScansByLineNumber(scans: WrappedLineScan[]): WrappedLineScan[] {
+  const result: WrappedLineScan[] = [];
+  const seen = new Set<number>();
+  for (const scan of scans) {
+    if (seen.has(scan.lineNumber)) continue;
+    seen.add(scan.lineNumber);
+    result.push(scan);
+  }
+  return result;
 }
 
 function findFilePathHitsInScans(
@@ -331,9 +442,10 @@ function findColForOffset(
   scan: WrappedLineScan,
   offset: number,
 ): number | null {
+  const sourceOffset = scan.sourceStartOffset + offset;
   for (let c = 0; c < scan.cellOffsets.length; c++) {
     if (scan.cellWidths[c] === 0) continue;
-    if (scan.cellOffsets[c] >= offset) return c;
+    if (scan.cellOffsets[c] >= sourceOffset) return c;
   }
   return null;
 }
@@ -342,10 +454,11 @@ function findEndColForOffset(
   scan: WrappedLineScan,
   offset: number,
 ): number | null {
+  const sourceOffset = scan.sourceStartOffset + offset;
   let endCol: number | null = null;
   for (let c = 0; c < scan.cellOffsets.length; c++) {
     if (scan.cellWidths[c] === 0) continue;
-    if (scan.cellOffsets[c] < offset) endCol = c;
+    if (scan.cellOffsets[c] < sourceOffset) endCol = c;
   }
   return endCol;
 }
