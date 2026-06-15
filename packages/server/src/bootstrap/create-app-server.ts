@@ -16,6 +16,8 @@ import { FontInstaller } from "../fonts/installer.js";
 import { createFontRoutes } from "../fonts/routes.js";
 import type { FilesystemService } from "../fs/service.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
+import type { PortForwarder } from "../port-forwarder/forwarder.js";
+import type { PortScanner } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
 import { createDebugAgentStatusRoute } from "../routes/debug-agent-status.js";
 import { createDebugDiagnosticsRoute } from "../routes/debug-diagnostics.js";
@@ -31,6 +33,7 @@ import { createIdeCommandRoutes } from "../routes/ide-commands.js";
 import { createOpenRoute } from "../routes/open.js";
 import { createPaneCommandRoutes } from "../routes/pane-commands.js";
 import { createProjectRoutes } from "../routes/projects.js";
+import { createRuntimeRoutes } from "../routes/runtime.js";
 import { createServerNoticesRoutes } from "../routes/server-notices.js";
 import { createServiceConfigRoutes } from "../routes/service-config.js";
 import { createSessionRoutes } from "../routes/sessions.js";
@@ -46,6 +49,7 @@ import {
   setupTerminalRelay,
 } from "../ws/terminal.js";
 import type { ProjectRuntime } from "./project-runtime.js";
+import { enrichPorts } from "./runtime-loops.js";
 
 export type AuthMode = "token" | "allowlist" | "none";
 
@@ -69,6 +73,9 @@ export interface CreateAppServerDeps {
   serverNoticesStore: ServerNoticesStore;
   worktreeCache: WorktreeCache;
   projectRuntime: ProjectRuntime;
+  portScanner: PortScanner;
+  portForwarder: PortForwarder;
+  serverVersion?: string;
   uploadStaging: UploadStaging;
   reconcileWorktrees?: (
     projectId: string,
@@ -101,6 +108,9 @@ export function createAppServer({
   serverNoticesStore,
   worktreeCache,
   projectRuntime,
+  portScanner,
+  portForwarder,
+  serverVersion = "0.0.0",
   uploadStaging,
   reconcileWorktrees,
   getFilesystemService,
@@ -227,6 +237,28 @@ export function createAppServer({
   );
 
   app.route("/api/notices", createServerNoticesRoutes(serverNoticesStore));
+  app.route(
+    "/api/runtime",
+    createRuntimeRoutes({
+      appStateStore,
+      eventBus,
+      getAgentStates,
+      getPorts: () => {
+        const out: Record<string, import("@parasor/shared").PortInfo[]> = {};
+        for (const [projectId, ports] of Object.entries(
+          portScanner.getAllPorts(),
+        )) {
+          out[projectId] = enrichPorts(ports, projectId, portForwarder);
+        }
+        return out;
+      },
+      projectManager,
+      projectRuntime,
+      ptyManager,
+      serverVersion,
+      worktreeCache,
+    }),
+  );
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/auth/verify", (c) => {
