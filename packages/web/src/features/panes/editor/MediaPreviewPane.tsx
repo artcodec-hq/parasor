@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PaGlyph, PaneHeader } from "../../../components/primitives/index.js";
+import {
+  PaGlyph,
+  PaneHeader,
+  PaneIconButton,
+} from "../../../components/primitives/index.js";
 import { getFileIconComponent } from "../../../lib/file-icons.js";
 import { statFile } from "../../../lib/files-api.js";
 import type { MediaKind } from "../../../lib/media-types.js";
@@ -20,6 +24,7 @@ interface MediaPreviewPaneProps {
   filePath: string;
   kind: MediaKind;
   fileChangeSeq?: number;
+  onClose?: () => void;
 }
 
 interface StatResponse {
@@ -59,6 +64,7 @@ export function MediaPreviewPane({
   filePath,
   kind,
   fileChangeSeq,
+  onClose,
 }: MediaPreviewPaneProps) {
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [size, setSize] = useState<number | null>(null);
@@ -148,6 +154,13 @@ export function MediaPreviewPane({
         }
         subtitle={fileDir || undefined}
         subtitleAttr={filePath}
+        actions={
+          onClose ? (
+            <PaneIconButton onClick={onClose} label="Close file preview">
+              <PaGlyph.close />
+            </PaneIconButton>
+          ) : undefined
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-auto">

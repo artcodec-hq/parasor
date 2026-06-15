@@ -6,7 +6,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CommitDialog, type CommitFileEntry } from "./CommitDialog.js";
+import {
+  CommitBody,
+  CommitDialog,
+  type CommitFileEntry,
+} from "./CommitDialog.js";
 
 const files: CommitFileEntry[] = [
   { path: "src/App.tsx", status: "M" },
@@ -96,5 +100,27 @@ describe("CommitDialog", () => {
 
     expect(screen.getByRole("dialog", { name: "Commit · main" })).toBeTruthy();
     expect(document.body.querySelector(".rounded-t-xl")).toBeTruthy();
+  });
+});
+
+describe("CommitBody", () => {
+  it("invokes the file-open action from a changed file row", () => {
+    const onOpenFilePath = vi.fn();
+    render(
+      <CommitBody
+        files={files}
+        selected={new Set(files.map((file) => file.path))}
+        toggle={vi.fn()}
+        toggleAll={vi.fn()}
+        message=""
+        setMessage={vi.fn()}
+        layout="inline"
+        onOpenFilePath={onOpenFilePath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open src/App.tsx" }));
+
+    expect(onOpenFilePath).toHaveBeenCalledWith("src/App.tsx");
   });
 });

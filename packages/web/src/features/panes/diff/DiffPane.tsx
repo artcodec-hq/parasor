@@ -11,6 +11,7 @@ interface DiffPaneProps {
   fileChangeSeq?: number;
   /** When set, the pane shows that commit's diff and metadata header. */
   commit?: GitCommit | null;
+  onOpenFilePath?: (filePath: string) => void;
 }
 
 export function DiffPane({
@@ -18,6 +19,7 @@ export function DiffPane({
   worktreePath,
   fileChangeSeq,
   commit,
+  onOpenFilePath,
 }: DiffPaneProps) {
   const [diff, setDiff] = useState("");
   const [loading, setLoading] = useState(true);
@@ -89,6 +91,7 @@ export function DiffPane({
             <DiffFileBlock
               key={`${file.status}:${file.oldPath ?? ""}:${file.path}`}
               file={file}
+              onOpenFilePath={onOpenFilePath}
             />
           ))
         )}

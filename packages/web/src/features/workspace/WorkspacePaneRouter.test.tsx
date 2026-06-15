@@ -1,5 +1,7 @@
 import {
   makeBrowserPane,
+  makeFilesPane,
+  makeGitPane,
   makeTerminalPane,
   type Session,
 } from "@parasor/shared";
@@ -68,6 +70,65 @@ vi.mock("./views/TerminalPaneView.js", () => ({
         </button>
       )}
     </div>
+  ),
+}));
+
+vi.mock("./views/FilesPaneView.js", () => ({
+  FilesPaneView: ({
+    selectedFilePath,
+    onOpenFilePath,
+  }: {
+    selectedFilePath: string | null;
+    onOpenFilePath: (filePath: string) => void;
+  }) => (
+    <div data-testid="files-pane">
+      <span>{selectedFilePath ?? "no selection"}</span>
+      <button
+        type="button"
+        onClick={() => onOpenFilePath("packages/web/src/App.tsx")}
+      >
+        open files file
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./views/GitPaneView.js", () => ({
+  GitPaneView: ({
+    onOpenFilePath,
+  }: {
+    onOpenFilePath: (filePath: string) => void;
+  }) => (
+    <div data-testid="git-pane">
+      <button
+        type="button"
+        onClick={() => onOpenFilePath("packages/web/src/App.tsx")}
+      >
+        open git file
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../panes/editor/EditorPane.js", () => ({
+  EditorPane: ({
+    worktreePath,
+    filePath,
+    onClose,
+  }: {
+    worktreePath?: string;
+    filePath: string;
+    onClose?: () => void;
+  }) => (
+    <section aria-label="File preview">
+      <span>{worktreePath}</span>
+      <span>{filePath}</span>
+      {onClose && (
+        <button type="button" onClick={onClose}>
+          Close file preview
+        </button>
+      )}
+    </section>
   ),
 }));
 
@@ -448,7 +509,7 @@ describe("WorkspacePaneRouter open IDE menu", () => {
 });
 
 describe("WorkspacePaneRouter terminal retention", () => {
-  it("routes terminal file links to the worktree files pane", () => {
+  it("opens terminal file links in the shared file display without switching tabs", async () => {
     const terminalPane = makeTerminalPane("terminal:s1", "/repo", "s1");
     const onSelectWorktreeTab = vi.fn();
     render(
@@ -464,10 +525,39 @@ describe("WorkspacePaneRouter terminal retention", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "open file" }));
 
-    expect(onSelectWorktreeTab).toHaveBeenCalledWith("/repo", "files");
+    expect(onSelectWorktreeTab).not.toHaveBeenCalled();
+    expect(
+      (await screen.findByRole("region", { name: "File preview" })).textContent,
+    ).toContain("packages/web/src/App.tsx");
     expect(
       localStorage.getItem("parasor:files-pane-selection:files:/repo"),
     ).toBe("packages/web/src/App.tsx");
+  });
+
+  it("blurs the focused mobile input before opening a terminal file link", async () => {
+    const terminalPane = makeTerminalPane("terminal:s1", "/repo", "s1");
+    render(
+      <WorkspacePaneRouter
+        {...makeRouterProps({
+          allPanes: [terminalPane],
+          focusedPane: terminalPane,
+          isMobile: true,
+          sessions: [makeSession({ id: "s1" })],
+        })}
+      />,
+    );
+
+    const input = screen.getByLabelText("terminal input s1");
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.click(screen.getByRole("button", { name: "open file" }));
+
+    expect(document.activeElement).not.toBe(input);
+    expect(
+      (await screen.findByRole("dialog", { name: "File preview: App.tsx" }))
+        .textContent,
+    ).toContain("packages/web/src/App.tsx");
   });
 
   it("mounts a terminal pane only while it is focused", () => {
@@ -647,6 +737,82 @@ describe("WorkspacePaneRouter terminal retention", () => {
 
     expect(screen.queryByTestId("terminal-pane-s1")).toBeNull();
     expect(screen.getByTestId("terminal-pane-s2")).toBeTruthy();
+  });
+});
+
+describe("WorkspacePaneRouter file display", () => {
+  it("opens a file from the Files pane in the desktop right column", async () => {
+    const filesPane = makeFilesPane("/repo");
+    const onSelectWorktreeTab = vi.fn();
+    render(
+      <WorkspacePaneRouter
+        {...makeRouterProps({
+          allPanes: [filesPane],
+          focusedPane: filesPane,
+          onSelectWorktreeTab,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "open files file" }));
+
+    expect(onSelectWorktreeTab).not.toHaveBeenCalled();
+    expect(
+      (await screen.findByRole("region", { name: "File preview" })).textContent,
+    ).toContain("packages/web/src/App.tsx");
+    expect(
+      localStorage.getItem("parasor:files-pane-selection:files:/repo"),
+    ).toBe("packages/web/src/App.tsx");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("opens a file from the Git pane in the desktop right column", async () => {
+    const gitPane = makeGitPane("/repo");
+    render(
+      <WorkspacePaneRouter
+        {...makeRouterProps({
+          allPanes: [gitPane],
+          focusedPane: gitPane,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "open git file" }));
+
+    expect(
+      (await screen.findByRole("region", { name: "File preview" })).textContent,
+    ).toContain("packages/web/src/App.tsx");
+    expect(
+      localStorage.getItem("parasor:files-pane-selection:files:/repo"),
+    ).toBe("packages/web/src/App.tsx");
+  });
+
+  it("opens a file in a full-screen mobile dialog and closes it", async () => {
+    const filesPane = makeFilesPane("/repo");
+    render(
+      <WorkspacePaneRouter
+        {...makeRouterProps({
+          allPanes: [filesPane],
+          focusedPane: filesPane,
+          isMobile: true,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "open files file" }));
+
+    expect(
+      (
+        await screen.findByRole("dialog", {
+          name: "File preview: App.tsx",
+        })
+      ).textContent,
+    ).toContain("packages/web/src/App.tsx");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close file preview" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("files-pane")).toBeTruthy();
   });
 });
 

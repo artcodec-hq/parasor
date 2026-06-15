@@ -1,5 +1,5 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
-import { findFilePathHitAtCell } from "./terminal-file-links.js";
+import { findFilePathHitAtBufferCell } from "./terminal-file-links.js";
 import {
   shouldSuppressCoordinateLessGesture,
   XTERM_GESTURE_CHANGE_EVENT,
@@ -591,10 +591,14 @@ export function attachTerminalTouchSelection({
             return;
           }
           const worktreePath = getWorktreePath();
-          const fileHit =
-            worktreePath && line
-              ? findFilePathHitAtCell(line, worktreePath, point.col)
-              : null;
+          const fileHit = worktreePath
+            ? findFilePathHitAtBufferCell(
+                (lineNumber) => term.buffer.active.getLine(lineNumber - 1),
+                worktreePath,
+                point.row + 1,
+                point.col,
+              )
+            : null;
           if (fileHit) {
             event.stopImmediatePropagation();
             armTouchLinkClickSuppressor();
