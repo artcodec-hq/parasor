@@ -1,10 +1,11 @@
 import type {
-  AgentLifecycle,
   AgentState,
+  AgentStatusContext,
   GitState,
   Project,
   Session,
 } from "@parasor/shared";
+import { deriveAgentStatusContext } from "@parasor/shared";
 import {
   lazy,
   Suspense,
@@ -121,24 +122,36 @@ export function MonitorView({
     [projects, sessions, gitStates],
   );
 
-  const statuses = useMemo(() => {
+  const statusContexts = useMemo(() => {
     const dismissed = attentionDismissed ?? {};
-    const map = new Map<string, AgentDotState>();
+    const map = new Map<string, AgentStatusContext>();
     for (const entry of pinned) {
       const state = agentStates[entry.session.id];
-      const lifecycle = isAttentionDismissed(state, dismissed)
-        ? undefined
-        : state?.lifecycle;
+      const context = deriveAgentStatusContext({
+        session: entry.session,
+        agentState: state,
+      });
       map.set(
         entry.session.id,
-        lifecycleToStatus(
-          lifecycle,
+        normalizeDismissedContext(context, state, dismissed),
+      );
+    }
+    return map;
+  }, [pinned, agentStates, attentionDismissed]);
+
+  const statuses = useMemo(() => {
+    const map = new Map<string, AgentDotState>();
+    for (const entry of pinned) {
+      map.set(
+        entry.session.id,
+        livenessToStatus(
+          statusContexts.get(entry.session.id)?.state,
           reviewPendingSessions.has(entry.session.id),
         ),
       );
     }
     return map;
-  }, [pinned, agentStates, reviewPendingSessions, attentionDismissed]);
+  }, [pinned, reviewPendingSessions, statusContexts]);
 
   const rollup = useMemo(() => {
     let attention = 0;
@@ -179,6 +192,7 @@ export function MonitorView({
         <MonitorPaged
           entries={pinned}
           statuses={statuses}
+          statusContexts={statusContexts}
           focusedIndex={focusedIndex}
           onFocusSession={setFocusedSessionId}
           onRestartSession={onRestartSession}
@@ -189,6 +203,7 @@ export function MonitorView({
         <MonitorColumns
           entries={pinned}
           statuses={statuses}
+          statusContexts={statusContexts}
           focusedSessionId={
             focusedSessionId ?? pinned[focusedIndex]?.session.id ?? null
           }
@@ -318,6 +333,7 @@ function MonitorPager({
 interface ColumnsProps {
   entries: PinnedTerminalEntry[];
   statuses: Map<string, AgentDotState>;
+  statusContexts: Map<string, AgentStatusContext>;
   focusedSessionId: string | null;
   focusedIndex: number;
   onFocusSession: (sessionId: string | null) => void;
@@ -329,6 +345,7 @@ interface ColumnsProps {
 function MonitorColumns({
   entries,
   statuses,
+  statusContexts,
   focusedSessionId,
   focusedIndex,
   onFocusSession,
@@ -382,6 +399,7 @@ function MonitorColumns({
               }}
               entry={entry}
               status={statuses.get(entry.session.id) ?? "idle"}
+              statusContext={statusContexts.get(entry.session.id)}
               focused={focusedSessionId === entry.session.id}
               width={width}
               onFocus={() => onFocusSession(entry.session.id)}
@@ -418,6 +436,7 @@ function MonitorColumns({
 interface ColumnProps {
   entry: PinnedTerminalEntry;
   status: AgentDotState;
+  statusContext?: AgentStatusContext;
   focused: boolean;
   width: number;
   onFocus: () => void;
@@ -432,6 +451,7 @@ function MonitorColumn({
   ref,
   entry,
   status,
+  statusContext,
   focused,
   width,
   onFocus,
@@ -453,6 +473,7 @@ function MonitorColumn({
         <MonitorColumnHeader
           entry={entry}
           status={status}
+          statusContext={statusContext}
           onTogglePin={onTogglePin}
         />
         {/* touch-pan-y: xterm 6.1 attaches non-passive document touch listeners; iOS needs this to keep momentum scroll on the compositor. */}
@@ -570,6 +591,7 @@ function MonitorColumnResizer({ width, onResize, ariaLabel }: ResizerProps) {
 interface FullWidthColumnProps {
   entry: PinnedTerminalEntry;
   status: AgentDotState;
+  statusContext?: AgentStatusContext;
   onFocus: () => void;
   onRestartSession: (sessionId: string) => Promise<void> | void;
   onOpenUrl: (url: string, options?: OpenUrlOptions) => Promise<void> | void;
@@ -585,6 +607,7 @@ interface FullWidthColumnProps {
 function MonitorColumnFullWidth({
   entry,
   status,
+  statusContext,
   onFocus,
   onRestartSession,
   onOpenUrl,
@@ -608,6 +631,7 @@ function MonitorColumnFullWidth({
       <MonitorColumnHeader
         entry={entry}
         status={status}
+        statusContext={statusContext}
         onTogglePin={onTogglePin}
       />
       <div className="min-h-0 flex-1 touch-pan-y">
@@ -628,6 +652,7 @@ function MonitorColumnFullWidth({
 interface ColumnHeaderProps {
   entry: PinnedTerminalEntry;
   status: AgentDotState;
+  statusContext?: AgentStatusContext;
   onTogglePin: (sessionId: string) => Promise<void> | void;
 }
 
@@ -641,12 +666,15 @@ interface ColumnHeaderProps {
 function MonitorColumnHeader({
   entry,
   status,
+  statusContext,
   onTogglePin,
 }: ColumnHeaderProps) {
   return (
     <div className="flex h-bar shrink-0 items-center gap-2 border-b border-border bg-pane-header-bg px-3">
       <MonitorPath entry={entry} />
-      {status !== "idle" && <AgentDot state={status} />}
+      {status !== "idle" && (
+        <AgentDot state={status} title={statusContext?.reason} />
+      )}
       <PinToggleButton
         pinned={true}
         onToggle={() => void onTogglePin(entry.session.id)}
@@ -692,6 +720,7 @@ function MonitorPath({ entry }: { entry: PinnedTerminalEntry }) {
 interface PagedProps {
   entries: PinnedTerminalEntry[];
   statuses: Map<string, AgentDotState>;
+  statusContexts: Map<string, AgentStatusContext>;
   focusedIndex: number;
   onFocusSession: (sessionId: string | null) => void;
   onRestartSession: (sessionId: string) => Promise<void> | void;
@@ -706,6 +735,7 @@ interface PagedProps {
 function MonitorPaged({
   entries,
   statuses,
+  statusContexts,
   focusedIndex,
   onFocusSession,
   onRestartSession,
@@ -719,6 +749,7 @@ function MonitorPaged({
       <MonitorColumnFullWidth
         entry={entry}
         status={statuses.get(entry.session.id) ?? "idle"}
+        statusContext={statusContexts.get(entry.session.id)}
         onFocus={() => onFocusSession(entry.session.id)}
         onRestartSession={onRestartSession}
         onOpenUrl={onOpenUrl}
@@ -748,12 +779,30 @@ function MonitorEmpty() {
   );
 }
 
-function lifecycleToStatus(
-  lifecycle: AgentLifecycle | undefined,
+function livenessToStatus(
+  liveness: AgentStatusContext["state"] | undefined,
   inReview: boolean,
 ): AgentDotState {
   if (inReview) return "review";
-  if (lifecycle === "waiting") return "attention";
-  if (lifecycle === "running") return "working";
+  if (liveness === "waiting_for_user") return "attention";
+  if (liveness === "active") return "working";
   return "idle";
+}
+
+function normalizeDismissedContext(
+  context: AgentStatusContext,
+  agentState: AgentState | undefined,
+  dismissed: AttentionDismissals,
+): AgentStatusContext {
+  if (
+    context.state === "waiting_for_user" &&
+    isAttentionDismissed(agentState, dismissed)
+  ) {
+    return {
+      ...context,
+      state: "idle",
+      reason: "Waiting status already viewed",
+    };
+  }
+  return context;
 }

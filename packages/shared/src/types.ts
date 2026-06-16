@@ -1,3 +1,5 @@
+export * from "./agent-integrations.js";
+export * from "./agent-status-context.js";
 export * from "./builtin-shell-presets.js";
 export * from "./client.js";
 export * from "./drops.js";

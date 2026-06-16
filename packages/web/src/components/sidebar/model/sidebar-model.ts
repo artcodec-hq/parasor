@@ -1,6 +1,7 @@
 import {
   type AgentLifecycle,
   type AgentState,
+  deriveAgentStatusContext,
   type GitState,
   type Project,
   type Session,
@@ -302,9 +303,11 @@ function buildInactiveWorktrees({
     const children: SidebarChild[] = [];
     for (const session of wtSessions) {
       const state = agentStates[session.id];
-      const lifecycle = isAttentionDismissed(state, attentionDismissed)
-        ? undefined
-        : state?.lifecycle;
+      const statusContext = statusContextForSession(
+        session,
+        state,
+        attentionDismissed,
+      );
       const inReview = reviewPendingSessions.has(session.id);
       const baseLabel = labelForTerminal(session);
       const seen = labelCounts.get(baseLabel) ?? 0;
@@ -319,8 +322,11 @@ function buildInactiveWorktrees({
         id: terminalPaneId(session.id),
         kind: "terminal",
         label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
-        hint: session.state === "ended" ? "ended" : undefined,
-        status: lifecycleToStatus(lifecycle, inReview),
+        hint:
+          statusContext?.reason ??
+          (session.state === "ended" ? "ended" : undefined),
+        status: lifecycleToStatus(statusContext?.state, inReview),
+        ...(statusContext ? { statusContext } : {}),
         pinned: session.pinned === true,
         agentType: agentTypeForSession(session),
       });
@@ -425,16 +431,19 @@ function paneToChild(
   if (state.kind === "terminal") {
     const session = sessions.find((s) => s.id === state.sessionId);
     const agentState = session ? agentStates[session.id] : undefined;
-    const lifecycle = isAttentionDismissed(agentState, attentionDismissed)
-      ? undefined
-      : agentState?.lifecycle;
+    const statusContext = session
+      ? statusContextForSession(session, agentState, attentionDismissed)
+      : undefined;
     const inReview = session ? reviewPendingSessions.has(session.id) : false;
     return {
       id: pane.id,
       kind: "terminal",
       label: session ? labelForTerminal(session) : "terminal",
-      hint: session?.state === "ended" ? "ended" : undefined,
-      status: lifecycleToStatus(lifecycle, inReview),
+      hint:
+        statusContext?.reason ??
+        (session?.state === "ended" ? "ended" : undefined),
+      status: lifecycleToStatus(statusContext?.state, inReview),
+      ...(statusContext ? { statusContext } : {}),
       pinned: session?.pinned === true,
       agentType: session ? agentTypeForSession(session) : undefined,
     };
@@ -475,13 +484,36 @@ function browserLabel(url: string): string {
 }
 
 function lifecycleToStatus(
-  lifecycle: AgentLifecycle | undefined,
+  liveness:
+    | ReturnType<typeof deriveAgentStatusContext>["state"]
+    | AgentLifecycle
+    | undefined,
   inReview: boolean,
 ): AgentDotState {
   if (inReview) return "review";
-  if (lifecycle === "waiting") return "attention";
-  if (lifecycle === "running") return "working";
+  if (liveness === "waiting_for_user" || liveness === "waiting")
+    return "attention";
+  if (liveness === "active" || liveness === "running") return "working";
   return "idle";
+}
+
+function statusContextForSession(
+  session: Session,
+  agentState: AgentState | undefined,
+  attentionDismissed: AttentionDismissals,
+): ReturnType<typeof deriveAgentStatusContext> | undefined {
+  const context = deriveAgentStatusContext({ session, agentState });
+  if (
+    context.state === "waiting_for_user" &&
+    isAttentionDismissed(agentState, attentionDismissed)
+  ) {
+    return {
+      ...context,
+      state: "idle",
+      reason: "Waiting status already viewed",
+    };
+  }
+  return context;
 }
 
 function lastSegment(path: string): string {

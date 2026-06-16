@@ -366,7 +366,7 @@ describe("App session creation routes", () => {
     );
 
     expect(screen.getByTestId("launcher-commands").textContent).toBe(
-      "Terminal,Claude,Codex,OpenCode,Gemini,Dev",
+      "Terminal,Claude,Codex,OpenCode,Dev",
     );
   });
 

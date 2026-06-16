@@ -1,0 +1,46 @@
+import type { AgentIntegrationManifest } from "../agent-integrations.js";
+
+export const CLAUDE_AGENT_INTEGRATION = {
+  runtimeId: "claude",
+  hookAgent: "claude",
+  label: "Claude",
+  iconKey: "agent",
+  commandLine: "claude",
+  appendEnter: true,
+  tier: "native-managed",
+  expectedProcesses: ["claude"],
+  detectCommands: ["claude"],
+  installStrategies: [
+    {
+      kind: "shim-wrapper",
+      activation: "preset-launch",
+      writesUserConfig: false,
+      reversible: true,
+    },
+    {
+      kind: "hook-config",
+      activation: "preset-launch",
+      writesUserConfig: false,
+      reversible: true,
+    },
+  ],
+  events: {
+    sessionstart: "noop",
+    userpromptsubmit: { lifecycle: "running" },
+    pretooluse: { lifecycle: "running" },
+    "pretooluse:askuserquestion": { lifecycle: "waiting" },
+    "pretooluse:exitplanmode": { lifecycle: "waiting" },
+    permissionrequest: { lifecycle: "waiting" },
+    permissiondenied: { lifecycle: "running" },
+    posttooluse: { lifecycle: "running" },
+    stop: { lifecycle: "completed" },
+    notification: "noop",
+    "notification:auth_success": "noop",
+    "notification:permission_prompt": { lifecycle: "waiting" },
+    "notification:idle_prompt": { lifecycle: "waiting" },
+    "notification:elicitation_dialog": { lifecycle: "waiting" },
+    elicitation: { lifecycle: "waiting" },
+    elicitationresult: { lifecycle: "running" },
+    sessionend: { lifecycle: "idle" },
+  },
+} as const satisfies AgentIntegrationManifest;

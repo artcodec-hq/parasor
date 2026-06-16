@@ -322,7 +322,7 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(labels).toEqual(["zsh", "zsh (2)", "zsh (3)"]);
   });
 
-  it('flags ended sessions with hint="ended"', () => {
+  it("flags ended sessions with session-derived status context", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const sessions: Session[] = [session({ id: "s1", state: "ended" })];
     const result = buildSidebarProjects({
@@ -333,7 +333,18 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
     });
-    expect(result[0]?.worktrees[0]?.children[0]?.hint).toBe("ended");
+    expect(result[0]?.worktrees[0]?.children[0]).toMatchObject({
+      hint: "Terminal session ended",
+      status: "idle",
+      statusContext: {
+        sessionId: "s1",
+        state: "ended",
+        reason: "Terminal session ended",
+        source: "session",
+        confidence: "high",
+        stale: false,
+      },
+    });
   });
 
   it("ignores sessions belonging to other projects", () => {
@@ -852,7 +863,67 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates,
       reviewPendingSessions: new Set(),
     });
-    expect(result[0]?.worktrees[0]?.children[0]?.status).toBe("attention");
+    expect(result[0]?.worktrees[0]?.children[0]).toMatchObject({
+      status: "attention",
+      hint: "Agent hook reported waiting for user",
+      statusContext: {
+        sessionId: "s1",
+        state: "waiting_for_user",
+        reason: "Agent hook reported waiting for user",
+        source: "hook",
+        confidence: "high",
+        lastSignalAt: 0,
+        stale: false,
+      },
+    });
+  });
+
+  it("expires stale output-derived activity before rendering child status", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const sessions: Session[] = [session({ id: "s1", projectId: "p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      {
+        path: "/repos/p1",
+        panes: [
+          {
+            id: "pane-1",
+            kind: "terminal",
+            worktreePath: "/repos/p1",
+            state: { kind: "terminal", sessionId: "s1" },
+          },
+        ],
+      },
+    ];
+    const agentStates: Record<string, AgentState> = {
+      s1: {
+        sessionId: "s1",
+        lifecycle: "running",
+        source: "output",
+        confidence: "low",
+        detectedAt: 0,
+      },
+    };
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions,
+      agentStates,
+      reviewPendingSessions: new Set(),
+    });
+    expect(result[0]?.worktrees[0]?.children[0]).toMatchObject({
+      status: "idle",
+      hint: "Output-derived agent status expired",
+      statusContext: {
+        sessionId: "s1",
+        state: "idle",
+        reason: "Output-derived agent status expired",
+        source: "output",
+        confidence: "low",
+        lastSignalAt: 0,
+        stale: true,
+      },
+    });
   });
 
   it("suppresses attention when the same waiting event was dismissed", () => {
