@@ -12,7 +12,6 @@ export interface ShimPaths {
 }
 
 const CLAUDE_HOOK_SCRIPT_NAME = "parasor-claude-hook.sh";
-const CODEX_EVENT_SCRIPT_NAME = "parasor-codex-event.sh";
 const CODEX_NOTIFY_SCRIPT_NAME = "parasor-codex-notify.sh";
 const OPENCODE_PLUGIN_NAME = "parasor-status.js";
 
@@ -86,21 +85,15 @@ export function installShims(configDir: string): ShimPaths {
     );
   }
 
-  // Codex wrapper. Unlike Claude, Codex's native hooks currently require a
-  // hooks.json layer, which would either mutate the user's ~/.codex or force
-  // us to swap CODEX_HOME (and therefore auth/config) for the whole process.
-  // To stay app-contained, we follow a runtime-only path instead:
-  // inject a per-process notify command and record the TUI session log, then
-  // translate the explicit task/approval events into parasor hook-notify
-  // signals.
-  const codexEventPath = join(binDir, CODEX_EVENT_SCRIPT_NAME);
+  // Codex wrapper. Keep the integration app-contained by injecting
+  // per-process lifecycle hooks and a notify command. We do not read Codex
+  // TUI logs for status.
   const codexNotifyPath = join(binDir, CODEX_NOTIFY_SCRIPT_NAME);
   if (installCodexWrapper) {
-    writeFileSync(codexEventPath, buildCodexEventBridge(), { mode: 0o755 });
     writeFileSync(codexNotifyPath, buildCodexNotifyBridge(), { mode: 0o755 });
     writeFileSync(
       join(binDir, "codex"),
-      buildCodexWrapper(binDir, codexEventPath, codexNotifyPath),
+      buildCodexWrapper(binDir, codexNotifyPath),
       {
         mode: 0o755,
       },
@@ -209,53 +202,14 @@ export const ParasorStatusPlugin = async () => {
 `;
 }
 
-export function buildCodexEventBridge(): string {
-  return `#!/bin/sh
-# parasor Codex event bridge.
-#
-# Receives a normalized Codex event name as argv[1] and POSTs it directly
-# to parasor's loopback hook endpoint. Used by the Codex wrapper's session
-# log watcher for task_started / task_complete / *_approval_request events.
-
-set -u
-
-[ -z "\${PARASOR_PORT:-}" ] && exit 0
-[ -z "\${PARASOR_SESSION_ID:-}" ] && exit 0
-
-EVENT="\${1:-}"
-[ -z "$EVENT" ] && exit 0
-
-BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"agent\\":\\"codex\\",\\"event\\":\\"$EVENT\\"}"
-DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"codex-session-log\\",\\"detail\\":\\"$EVENT\\"}"
-
-curl -s -X POST "http://127.0.0.1:$PARASOR_PORT/hook/debug" \\
-  -H "Content-Type: application/json" \\
-  -d "$DEBUG_BODY" \\
-  --connect-timeout 1 \\
-  --max-time 2 \\
-  -o /dev/null \\
-  >/dev/null 2>&1 || true
-
-curl -s -X POST "http://127.0.0.1:$PARASOR_PORT/hook/notify" \\
-  -H "Content-Type: application/json" \\
-  -d "$BODY" \\
-  --connect-timeout 1 \\
-  --max-time 2 \\
-  -o /dev/null \\
-  >/dev/null 2>&1 || true
-
-exit 0
-`;
-}
-
 export function buildCodexNotifyBridge(): string {
   return `#!/bin/sh
-# parasor Codex notify bridge.
+# parasor Codex status bridge.
 #
-# Codex's runtime \`notify\` config appends a single JSON payload argument
-# after each completed turn. We extract the payload's event type (usually
-# agent-turn-complete) and forward it to parasor as a high-confidence Codex
-# lifecycle event.
+# Codex lifecycle hooks and runtime \`notify\` both provide a small JSON
+# payload. Current Codex builds pass notify payloads as argv[1]; hook payloads
+# may arrive as argv[1] or stdin depending on the hook path. Support both and
+# forward the event to parasor as a high-confidence Codex lifecycle signal.
 
 set -u
 
@@ -263,6 +217,7 @@ set -u
 [ -z "\${PARASOR_SESSION_ID:-}" ] && exit 0
 
 PAYLOAD="\${1:-}"
+[ -z "$PAYLOAD" ] && [ ! -t 0 ] && PAYLOAD=$(cat)
 [ -z "$PAYLOAD" ] && exit 0
 
 field() {
@@ -550,23 +505,23 @@ exec "$REAL_CLAUDE" --settings "$HOOKS_JSON" "\${EXTRA_ARGS[@]}" "$@"
 
 export function buildCodexWrapper(
   binDir: string,
-  eventScriptPath: string,
   notifyScriptPath: string,
 ): string {
   const notifyConfig = JSON.stringify(["bash", notifyScriptPath]);
+  const hookCommand = shellSingleQuote(notifyScriptPath);
+  const hookHandler = `[{hooks=[{type="command",command=${JSON.stringify(
+    hookCommand,
+  )},timeout=5}]}]`;
 
   return `#!/usr/bin/env bash
-# parasor codex wrapper -- injects a per-process notify command and records
-# the Codex TUI session log so task_started / task_complete /
-# *_approval_request can be mirrored into parasor without editing the
-# user's ~/.codex files. This follows the same runtime-only approach
-# the runtime-only wrapper uses when native hooks are unavailable or undesirable.
+# parasor codex wrapper -- injects per-process Codex lifecycle hooks and
+# notify behavior without editing the user's ~/.codex files.
 
 set -u
 
 SHIM_DIR='${binDir}'
-CODEX_EVENT_SCRIPT='${eventScriptPath}'
 NOTIFY_ARG='${notifyConfig.replace(/'/g, "'\\''")}'
+HOOK_HANDLER='${hookHandler.replace(/'/g, "'\\''")}'
 
 find_real_codex() {
   local IFS=:
@@ -605,122 +560,6 @@ emit_debug() {
     >/dev/null 2>&1 || true
 }
 
-start_session_log_watcher() {
-  export CODEX_TUI_RECORD_SESSION=1
-
-  if [ -z "\${CODEX_TUI_SESSION_LOG_PATH:-}" ]; then
-    local stamp
-    stamp="$(date +%s 2>/dev/null || printf '%s' "$$")"
-    export CODEX_TUI_SESSION_LOG_PATH="\${TMPDIR:-/tmp}/parasor-codex-session-$PARASOR_SESSION_ID-$stamp.jsonl"
-    emit_debug codex-wrapper-session-log-path created
-  else
-    emit_debug codex-wrapper-session-log-path provided
-  fi
-  emit_debug codex-wrapper-watcher-start
-
-  (
-    local log_path="$CODEX_TUI_SESSION_LOG_PATH"
-    local last_turn_id=""
-    local last_completion_id=""
-    local last_approval_id=""
-    local last_exec_call_id=""
-    local fallback_seq=0
-    local saw_line=0
-    local i=0
-
-    while [ ! -f "$log_path" ] && [ "$i" -lt 200 ]; do
-      i=$((i + 1))
-      sleep 0.05
-    done
-    if [ ! -f "$log_path" ]; then
-      emit_debug codex-wrapper-watcher-timeout
-      exit 0
-    fi
-    emit_debug codex-wrapper-watcher-ready "$i"
-
-    tail -n 0 -F "$log_path" 2>/dev/null | while IFS= read -r line; do
-      if [ "$saw_line" -eq 0 ]; then
-        saw_line=1
-        emit_debug codex-wrapper-session-log-line first
-      fi
-      case "$line" in
-        *'"dir":"from_tui"'*'"kind":"op"'*'"UserTurn"'*)
-          emit_debug codex-wrapper-session-log-event task_started_from_tui
-          "$CODEX_EVENT_SCRIPT" task_started >/dev/null 2>&1 || true
-          ;;
-        *'"dir":"to_tui"'*'"kind":"codex_event"'*'"msg":{"type":"task_started"'*)
-          turn_id=$(printf '%s\\n' "$line" | awk -F'"turn_id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$turn_id" ] || turn_id=$(printf '%s\\n' "$line" | awk -F'"id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$turn_id" ] || turn_id="task_started"
-          if [ "$turn_id" != "$last_turn_id" ]; then
-            last_turn_id="$turn_id"
-            emit_debug codex-wrapper-session-log-event task_started
-            "$CODEX_EVENT_SCRIPT" task_started >/dev/null 2>&1 || true
-          fi
-          ;;
-        *'"dir":"to_tui"'*'"kind":"codex_event"'*'"msg":{"type":"task_complete"'*)
-          completion_id=$(printf '%s\\n' "$line" | awk -F'"turn_id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$completion_id" ] || completion_id=$(printf '%s\\n' "$line" | awk -F'"id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$completion_id" ] || completion_id="task_complete"
-          if [ "$completion_id" != "$last_completion_id" ]; then
-            last_completion_id="$completion_id"
-            emit_debug codex-wrapper-session-log-event task_complete
-            "$CODEX_EVENT_SCRIPT" task_complete >/dev/null 2>&1 || true
-          fi
-          ;;
-        *'"dir":"to_tui"'*'"kind":"codex_event"'*'"msg":{"type":"'*'_approval_request"'*)
-          approval_event=$(printf '%s\\n' "$line" | awk -F'"type":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$approval_event" ] || approval_event="request_user_input"
-          approval_id=$(printf '%s\\n' "$line" | awk -F'"id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$approval_id" ] || approval_id=$(printf '%s\\n' "$line" | awk -F'"approval_id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$approval_id" ] || approval_id=$(printf '%s\\n' "$line" | awk -F'"call_id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          if [ -z "$approval_id" ]; then
-            fallback_seq=$((fallback_seq + 1))
-            approval_id="approval_request_$fallback_seq"
-          fi
-          if [ "$approval_id" != "$last_approval_id" ]; then
-            last_approval_id="$approval_id"
-            emit_debug codex-wrapper-session-log-event "$approval_event"
-            "$CODEX_EVENT_SCRIPT" "$approval_event" >/dev/null 2>&1 || true
-          fi
-          ;;
-        *'"dir":"to_tui"'*'"kind":"codex_event"'*'"msg":{"type":"request_user_input"'*)
-          approval_id=$(printf '%s\\n' "$line" | awk -F'"call_id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$approval_id" ] || approval_id=$(printf '%s\\n' "$line" | awk -F'"id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          [ -n "$approval_id" ] || approval_id="request_user_input"
-          if [ "$approval_id" != "$last_approval_id" ]; then
-            last_approval_id="$approval_id"
-            emit_debug codex-wrapper-session-log-event request_user_input
-            "$CODEX_EVENT_SCRIPT" request_user_input >/dev/null 2>&1 || true
-          fi
-          ;;
-        *'"dir":"to_tui"'*'"kind":"codex_event"'*'"msg":{"type":"exec_command_begin"'*)
-          exec_call_id=$(printf '%s\\n' "$line" | awk -F'"call_id":"' 'NF > 1 { sub(/".*/, "", $2); print $2; exit }')
-          if [ -n "$exec_call_id" ]; then
-            if [ "$exec_call_id" != "$last_exec_call_id" ]; then
-              last_exec_call_id="$exec_call_id"
-              emit_debug codex-wrapper-session-log-event exec_command_begin
-              "$CODEX_EVENT_SCRIPT" exec_command_begin >/dev/null 2>&1 || true
-            fi
-          else
-            emit_debug codex-wrapper-session-log-event exec_command_begin
-            "$CODEX_EVENT_SCRIPT" exec_command_begin >/dev/null 2>&1 || true
-          fi
-          ;;
-      esac
-    done
-  ) &
-
-  PARASOR_CODEX_WATCHER_PID=$!
-}
-
-stop_session_log_watcher() {
-  if [ -n "\${PARASOR_CODEX_WATCHER_PID:-}" ]; then
-    kill "$PARASOR_CODEX_WATCHER_PID" >/dev/null 2>&1 || true
-    wait "$PARASOR_CODEX_WATCHER_PID" 2>/dev/null || true
-  fi
-}
-
 if inside_parasor; then
   emit_debug codex-wrapper-entry "\${1:-}"
   emit_debug codex-wrapper-realpath-start
@@ -744,16 +583,25 @@ if ! inside_parasor; then
 fi
 
 emit_debug codex-wrapper-exec "\${1:-}"
-start_session_log_watcher
 
 emit_debug codex-wrapper-exec-start "\${1:-}"
-"$REAL_CODEX" -c "notify=$NOTIFY_ARG" "$@"
+"$REAL_CODEX" --enable hooks \\
+  --dangerously-bypass-hook-trust \\
+  -c "notify=$NOTIFY_ARG" \\
+  -c "hooks.UserPromptSubmit=$HOOK_HANDLER" \\
+  -c "hooks.PostToolUse=$HOOK_HANDLER" \\
+  -c "hooks.PermissionRequest=$HOOK_HANDLER" \\
+  -c "hooks.Stop=$HOOK_HANDLER" \\
+  "$@"
 PARASOR_CODEX_STATUS=$?
 emit_debug codex-wrapper-exit "$PARASOR_CODEX_STATUS"
 
-stop_session_log_watcher
 exit "$PARASOR_CODEX_STATUS"
 `;
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 export function buildOpenCodeWrapper(

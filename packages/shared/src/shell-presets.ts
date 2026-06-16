@@ -37,7 +37,6 @@ export type NativeIntegrationInstallKind =
   | "notify-command"
   | "hook-config"
   | "plugin-overlay"
-  | "session-log-watcher"
   | "none";
 
 export type NativeIntegrationActivation =

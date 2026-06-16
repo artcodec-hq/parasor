@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildClaudeHookBridge,
   buildClaudeWrapper,
-  buildCodexEventBridge,
   buildCodexNotifyBridge,
   buildCodexWrapper,
   buildOpenCodePlugin,
@@ -101,19 +100,16 @@ describe("buildClaudeWrapper", () => {
   });
 });
 
-describe("buildCodexEventBridge", () => {
-  const script = buildCodexEventBridge();
-
-  it("posts normalized codex events directly to /hook/notify", () => {
-    expect(script).toContain('\\"agent\\":\\"codex\\"');
-    expect(script).toContain("127.0.0.1:$PARASOR_PORT/hook/notify");
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting literal shell default expansion in generated script.
-    expect(script).toContain('EVENT="${1:-}"');
-  });
-});
-
 describe("buildCodexNotifyBridge", () => {
   const script = buildCodexNotifyBridge();
+
+  it("accepts Codex payloads from argv or stdin", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting literal shell default expansion in generated script.
+    expect(script).toContain('PAYLOAD="${1:-}"');
+    expect(script).toContain(
+      '[ -z "$PAYLOAD" ] && [ ! -t 0 ] && PAYLOAD=$(cat)',
+    );
+  });
 
   it("extracts type / event / hook_event_name from the notify payload", () => {
     expect(script).toContain("EVENT=$(field type)");
@@ -125,37 +121,36 @@ describe("buildCodexNotifyBridge", () => {
 describe("buildCodexWrapper", () => {
   const script = buildCodexWrapper(
     "/tmp/parasor/bin",
-    "/tmp/parasor/codex-event.sh",
     "/tmp/parasor/codex-notify.sh",
   );
 
-  it("records the Codex TUI session log and watches task/approval events", () => {
-    expect(script).toContain("CODEX_TUI_RECORD_SESSION=1");
-    expect(script).toContain("codex-wrapper-watcher-start");
-    expect(script).toContain("codex-wrapper-watcher-ready");
-    expect(script).toContain("codex-wrapper-watcher-timeout");
-    expect(script).toContain("codex-wrapper-session-log-line");
-    expect(script).toContain("codex-wrapper-session-log-event");
-    expect(script).toContain('"dir":"from_tui"');
-    expect(script).toContain('"UserTurn"');
-    expect(script).toContain("task_started");
-    expect(script).toContain("task_complete");
-    expect(script).toContain("_approval_request");
-    expect(script).toContain("exec_command_begin");
+  it("does not read Codex TUI session logs for lifecycle state", () => {
+    expect(script).not.toContain("CODEX_TUI_RECORD_SESSION");
+    expect(script).not.toContain("CODEX_TUI_SESSION_LOG_PATH");
+    expect(script).not.toContain("start_session_log_watcher");
+    expect(script).not.toContain("codex-wrapper-session-log-event");
   });
 
   it("injects a per-process notify command instead of editing ~/.codex", () => {
     expect(script).toContain(
       `NOTIFY_ARG='["bash","/tmp/parasor/codex-notify.sh"]'`,
     );
-    expect(script).toContain('"$REAL_CODEX" -c "notify=$NOTIFY_ARG" "$@"');
+    expect(script).toContain('-c "notify=$NOTIFY_ARG"');
+  });
+
+  it("injects per-process lifecycle hooks without persisted hook trust", () => {
+    expect(script).toContain("HOOK_HANDLER=");
+    expect(script).toContain("--dangerously-bypass-hook-trust");
+    expect(script).toContain('-c "hooks.UserPromptSubmit=$HOOK_HANDLER"');
+    expect(script).toContain('-c "hooks.PostToolUse=$HOOK_HANDLER"');
+    expect(script).toContain('-c "hooks.PermissionRequest=$HOOK_HANDLER"');
+    expect(script).toContain('-c "hooks.Stop=$HOOK_HANDLER"');
   });
 
   it("emits wrapper lifecycle breadcrumbs without raw session-log lines", () => {
     expect(script).toContain("codex-wrapper-entry");
     expect(script).toContain("codex-wrapper-realpath");
     expect(script).toContain("codex-wrapper-realpath-start");
-    expect(script).toContain("codex-wrapper-session-log-path");
     expect(script).toContain("codex-wrapper-exec-start");
     expect(script).toContain("codex-wrapper-exit");
     expect(script).toContain("--connect-timeout 1");

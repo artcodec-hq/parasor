@@ -17,9 +17,7 @@ describe("native status integrations", () => {
     expect(nativeIntegrationHasInstallKind("codex", "notify-command")).toBe(
       true,
     );
-    expect(
-      nativeIntegrationHasInstallKind("codex", "session-log-watcher"),
-    ).toBe(true);
+    expect(nativeIntegrationHasInstallKind("codex", "hook-config")).toBe(true);
     expect(nativeIntegrationHasInstallKind("opencode", "plugin-overlay")).toBe(
       true,
     );

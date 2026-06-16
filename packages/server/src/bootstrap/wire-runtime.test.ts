@@ -240,6 +240,55 @@ describe("wireRuntime agent state persistence", () => {
     expect(agentStateStore.getStates()).toEqual({ s1: agentState("s1") });
   });
 
+  it("does not let native-managed preset sessions fall back to output detection", () => {
+    let inputCallback:
+      | ((sessionId: string, data: string, generation: number) => void)
+      | undefined;
+    let dataCallback:
+      | ((sessionId: string, data: string, generation: number) => void)
+      | undefined;
+    const eventBus = new EventBus();
+    const agentDetector = new AgentDetector({ now: () => 456 });
+    const root = tempRoot();
+    const agentStateStore = new AgentStateStore({ dir: root });
+    const codexSession: Session = {
+      ...session("s1"),
+      state: "running",
+      launchPreset: {
+        presetId: "builtin:codex",
+        source: "builtin",
+        label: "Codex",
+        commandLine: "codex",
+        runtimeHint: {
+          runtimeId: "codex",
+          tier: "native-managed",
+          expectedProcesses: ["codex"],
+        },
+      },
+    };
+    const ptyManager = {
+      list: () => [codexSession],
+      get: (sessionId: string) => (sessionId === "s1" ? codexSession : null),
+      onSessionInput: vi.fn((cb) => {
+        inputCallback = cb;
+      }),
+      onSessionData: vi.fn((cb) => {
+        dataCallback = cb;
+      }),
+      getForegroundProcess: vi.fn(() => "codex"),
+    } as unknown as PtyHost;
+
+    wireRuntime(
+      wireDeps({ eventBus, agentDetector, agentStateStore, ptyManager }),
+    );
+
+    inputCallback?.("s1", "hello\n", 1);
+    dataCallback?.("s1", "Codex output\n", 1);
+
+    expect(agentDetector.getStates()).toEqual({});
+    expect(agentStateStore.getStates()).toEqual({});
+  });
+
   it("persists detector state changes for the next server process", () => {
     const eventBus = new EventBus();
     const agentDetector = new AgentDetector({ now: () => 456 });

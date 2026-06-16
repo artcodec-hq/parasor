@@ -1,4 +1,8 @@
-import type { SessionCommand, SessionLaunchPreset } from "@parasor/shared";
+import {
+  normalizeSessionLaunchPreset,
+  type SessionCommand,
+  type SessionLaunchPreset,
+} from "@parasor/shared";
 import { Hono } from "hono";
 import {
   WorkspaceConflictError,
@@ -82,6 +86,13 @@ export function createSessionRoutes(
     if (!body.projectId) {
       return c.json({ error: "projectId is required" }, 400);
     }
+    const launchPreset =
+      body.launchPreset === undefined
+        ? undefined
+        : normalizeSessionLaunchPreset(body.launchPreset);
+    if (body.launchPreset !== undefined && !launchPreset) {
+      return c.json({ error: "launchPreset is invalid" }, 400);
+    }
 
     const createStart = performance.now();
     terminalTraceRecorder?.record("session-create-request", {
@@ -99,9 +110,7 @@ export function createSessionRoutes(
         ...(body.command !== undefined && { command: body.command }),
         ...(body.cwd !== undefined && { cwd: body.cwd }),
         ...(body.title !== undefined && { title: body.title }),
-        ...(body.launchPreset !== undefined && {
-          launchPreset: body.launchPreset,
-        }),
+        ...(launchPreset !== undefined && { launchPreset }),
         ...(typeof body.bootstrapInput === "string" && {
           bootstrapInput: body.bootstrapInput,
         }),

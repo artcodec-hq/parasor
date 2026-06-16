@@ -3,7 +3,10 @@ import type { AppState, Notification, PortInfo } from "@parasor/shared";
 import type { AgentStateStore } from "../agent-detector/agent-state-store.js";
 import type { AgentDetector } from "../agent-detector/detector.js";
 import { ManualAgentTracker } from "../agent-detector/manual-agent-tracker.js";
-import { shouldObserveAgentOutput } from "../agent-detector/output-eligibility.js";
+import {
+  shouldAllowManualAgentOutputFallback,
+  shouldObserveAgentOutput,
+} from "../agent-detector/output-eligibility.js";
 import { createProjectQueries } from "../application/workspace/project-queries.js";
 import type { AgentStatusRecorder } from "../debug/agent-status-recorder.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
@@ -189,9 +192,11 @@ export function wireRuntime({
       return;
     }
     const foregroundProcess = ptyManager.getForegroundProcess(sessionId);
+    const allowManualFallback =
+      shouldAllowManualAgentOutputFallback(detectorSession);
     const observeOutput =
       shouldObserveAgentOutput(detectorSession, foregroundProcess) ||
-      manualAgentTracker.shouldObserve(sessionId);
+      (allowManualFallback && manualAgentTracker.shouldObserve(sessionId));
     agentDetector.feed(sessionId, data, {
       observeOutput,
     });

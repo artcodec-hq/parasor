@@ -252,6 +252,57 @@ describe("session routes", () => {
       );
     });
 
+    it("normalizes launchPreset before creating the session", async () => {
+      const launchPreset = {
+        presetId: "builtin:opencode",
+        source: "builtin",
+        label: "OpenCode",
+        commandLine: "opencode",
+        runtimeHint: {
+          runtimeId: "opencode",
+          tier: "native-managed",
+          expectedProcesses: ["opencode"],
+          detectCommands: ["opencode"],
+        },
+      };
+
+      const res = await app.request("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "proj-1",
+          launchPreset,
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      expect(mocks.ptyManager.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          launchPreset,
+        }),
+      );
+    });
+
+    it("rejects malformed launchPreset metadata", async () => {
+      const res = await app.request("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "proj-1",
+          launchPreset: {
+            id: "builtin:opencode",
+            name: "OpenCode",
+            command: "opencode",
+            runtimeHint: "native-managed",
+          },
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "launchPreset is invalid" });
+      expect(mocks.ptyManager.create).not.toHaveBeenCalled();
+    });
+
     it("records sanitized create lifecycle trace events when tracing is enabled", async () => {
       const recorder = new TerminalTraceRecorder({
         enabled: true,

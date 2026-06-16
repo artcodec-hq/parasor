@@ -24,7 +24,7 @@ export const CODEX_AGENT_INTEGRATION = {
       reversible: true,
     },
     {
-      kind: "session-log-watcher",
+      kind: "hook-config",
       activation: "preset-launch",
       writesUserConfig: false,
       reversible: true,
@@ -33,6 +33,8 @@ export const CODEX_AGENT_INTEGRATION = {
   events: {
     sessionstart: "noop",
     userpromptsubmit: { lifecycle: "running" },
+    posttooluse: { lifecycle: "running" },
+    permissionrequest: { lifecycle: "waiting" },
     stop: { lifecycle: "completed" },
     task_started: { lifecycle: "running" },
     turn_started: { lifecycle: "running" },
