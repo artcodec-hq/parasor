@@ -18,16 +18,32 @@ describe("parseLsofOutput", () => {
 
     const entries = parseLsofOutput(output);
     expect(entries).toEqual([
-      { pid: 1234, port: 3000, bindsAll: true },
-      { pid: 5678, port: 5173, bindsAll: false },
-      { pid: 9999, port: 8080, bindsAll: true },
+      { pid: 1234, port: 3000, bindHost: "*", bindsAll: true },
+      { pid: 5678, port: 5173, bindHost: "127.0.0.1", bindsAll: false },
+      { pid: 9999, port: 8080, bindHost: "[::]", bindsAll: true },
     ]);
   });
 
   it("handles 0.0.0.0 as bindsAll", () => {
     const output = "p100\nn0.0.0.0:4000";
     const entries = parseLsofOutput(output);
-    expect(entries).toEqual([{ pid: 100, port: 4000, bindsAll: true }]);
+    expect(entries).toEqual([
+      { pid: 100, port: 4000, bindHost: "0.0.0.0", bindsAll: true },
+    ]);
+  });
+
+  it("captures process names from lsof command fields", () => {
+    const output = "p100\ncvite\nn127.0.0.1:5173";
+    const entries = parseLsofOutput(output);
+    expect(entries).toEqual([
+      {
+        pid: 100,
+        port: 5173,
+        bindHost: "127.0.0.1",
+        bindsAll: false,
+        processName: "vite",
+      },
+    ]);
   });
 
   it("returns empty for empty input", () => {

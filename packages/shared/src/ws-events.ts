@@ -9,6 +9,7 @@ import type {
   PortInfo,
   Worktree,
 } from "./runtime.js";
+import type { RuntimeServiceInfo } from "./runtime-services.js";
 import type {
   AppState,
   Project,
@@ -67,6 +68,11 @@ export type WsEventMessage =
       expanded: boolean;
     }
   | { type: "ports-updated"; projectId: string; ports: PortInfo[] }
+  | {
+      type: "services-updated";
+      projectId: string;
+      services: RuntimeServiceInfo[];
+    }
   | {
       type: "git-state";
       projectId: string;

@@ -10,6 +10,7 @@ export * from "./pane-model.js";
 export * from "./panes.js";
 export * from "./runtime.js";
 export * from "./runtime-api.js";
+export * from "./runtime-services.js";
 export * from "./shell-presets.js";
 export * from "./state.js";
 export * from "./terminal.js";

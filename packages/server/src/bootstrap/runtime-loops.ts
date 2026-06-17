@@ -3,8 +3,12 @@ import type { Notification, PortInfo, ServiceConfig } from "@parasor/shared";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import { resolveForwarderBindHost } from "../net/reachable-host.js";
 import { PortForwarder } from "../port-forwarder/forwarder.js";
-import type { PortScanner } from "../port-scanner/scanner.js";
+import type { PortScanner, ScannedPortInfo } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
+import {
+  projectServicesToPorts,
+  RuntimeServiceRegistry,
+} from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { EventBus } from "../ws/events.js";
 import type { ProjectRuntime } from "./project-runtime.js";
@@ -80,7 +84,7 @@ export function createPortDetectedNotification(
  * port when one fronts this dev port).
  */
 export function enrichPorts(
-  ports: PortInfo[],
+  ports: ScannedPortInfo[],
   projectId: string,
   forwarder: PortForwarder,
 ): PortInfo[] {
@@ -89,7 +93,9 @@ export function enrichPorts(
     const reachable =
       info.bindsAll || forwarder.isInert() || reachablePort !== null;
     return {
-      ...info,
+      port: info.port,
+      pid: info.pid,
+      bindsAll: info.bindsAll,
       reachable,
       ...(reachablePort !== null ? { reachablePort } : {}),
     };
@@ -139,16 +145,25 @@ export function startRuntimeLoops({
   // Last raw `PortInfo[]` per project (no `reachable`/`reachablePort`) so we
   // can re-derive the enriched view when the forwarder changes out-of-band
   // (async bind completes/errors) or the `portDetection` setting flips.
-  const lastPorts = new Map<string, PortInfo[]>();
+  const lastPorts = new Map<string, ScannedPortInfo[]>();
   const forwarder =
     portForwarder ?? new PortForwarder(resolveForwarderBindHost(bindHost));
+  const serviceRegistry = new RuntimeServiceRegistry();
 
   // Derive the enriched ports for `projectId` from `ports`, broadcast
   // `ports-updated`, update the seen-reachability bookkeeping, and emit a
   // `port-detected` notification for any port that just became reachable.
-  function reemitPorts(projectId: string, ports: PortInfo[]): void {
+  function reemitPorts(projectId: string, ports: ScannedPortInfo[]): void {
     const mode = appStateStore.get().serviceConfig.portDetection;
-    const enriched = enrichPorts(ports, projectId, forwarder);
+    const services = serviceRegistry.syncProject({
+      projectId,
+      projectPath: projectPathFor(appStateStore, projectId),
+      worktreePaths: worktreePathsFor(appStateStore, projectId),
+      ports,
+      forwarder,
+    });
+    const enriched = projectServicesToPorts(services);
+    eventBus.broadcast({ type: "services-updated", projectId, services });
     eventBus.broadcast({ type: "ports-updated", projectId, ports: enriched });
 
     const previous = knownPorts.get(projectId) ?? new Map<number, boolean>();
@@ -259,4 +274,29 @@ export function startRuntimeLoops({
       }
     },
   };
+}
+
+function projectPathFor(
+  appStateStore: AppStateStore,
+  projectId: string,
+): string {
+  return (
+    appStateStore.get().projects.find((project) => project.id === projectId)
+      ?.path ?? ""
+  );
+}
+
+function worktreePathsFor(
+  appStateStore: AppStateStore,
+  projectId: string,
+): string[] {
+  const state = appStateStore.get();
+  const projectPath =
+    state.projects.find((project) => project.id === projectId)?.path ?? "";
+  const paths = new Set<string>();
+  if (projectPath) paths.add(projectPath);
+  for (const worktree of state.projectStates?.[projectId]?.worktrees ?? []) {
+    paths.add(worktree.path);
+  }
+  return Array.from(paths);
 }
