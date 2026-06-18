@@ -1128,4 +1128,67 @@ describe("buildSidebarProjects -- project root isRepo plumbing", () => {
     });
     expect(result[0]?.worktrees[0]?.name).toBe("main");
   });
+
+  it("counts live workspace services per worktree and ignores disappeared services", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees: [{ path: "/repos/p1", panes: [] }],
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      servicesByProject: {
+        p1: [
+          {
+            id: "svc-1",
+            kind: "workspace",
+            port: 5173,
+            pid: 100,
+            bindHost: "127.0.0.1",
+            connectHost: "127.0.0.1",
+            bindsAll: false,
+            protocol: "http",
+            attribution: {
+              source: "session-process-tree",
+              confidence: "high",
+              projectId: "p1",
+              worktreePath: "/repos/p1",
+              sessionId: "s1",
+            },
+            reachable: true,
+            lifecycle: "reachable",
+            firstSeenAt: 1,
+            lastSeenAt: 1,
+            source: "scanner",
+          },
+          {
+            id: "svc-2",
+            kind: "workspace",
+            port: 3000,
+            pid: 101,
+            bindHost: "127.0.0.1",
+            connectHost: "127.0.0.1",
+            bindsAll: false,
+            protocol: "http",
+            attribution: {
+              source: "session-process-tree",
+              confidence: "high",
+              projectId: "p1",
+              worktreePath: "/repos/p1",
+              sessionId: "s2",
+            },
+            reachable: false,
+            lifecycle: "disappeared",
+            firstSeenAt: 1,
+            lastSeenAt: 2,
+            disappearedAt: 2,
+            source: "scanner",
+          },
+        ],
+      },
+    });
+
+    expect(result[0]?.worktrees[0]?.serviceCount).toBe(1);
+  });
 });

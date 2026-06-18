@@ -10,6 +10,7 @@ import type {
   SessionActivityRecord,
   Worktree,
 } from "./runtime.js";
+import type { RuntimeServiceInfo } from "./runtime-services.js";
 import type {
   AppState,
   Project,
@@ -73,6 +74,11 @@ export type WsEventMessage =
     }
   | { type: "ports-updated"; projectId: string; ports: PortInfo[] }
   | {
+      type: "services-updated";
+      projectId: string;
+      services: RuntimeServiceInfo[];
+    }
+  | {
       type: "git-state";
       projectId: string;
       worktreePath: string;
@@ -117,6 +123,7 @@ export interface HydrationPayload {
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
   ports: Record<string, PortInfo[]>;
+  services: Record<string, RuntimeServiceInfo[]>;
   /**
    * Per-worktree git state, grouped by project. Outer key = projectId,
    * inner key = absolute worktree path. The project's main checkout

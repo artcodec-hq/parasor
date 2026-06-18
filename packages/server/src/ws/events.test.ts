@@ -48,6 +48,7 @@ describe("EventBus", () => {
       getNotifications: () => [],
       getPorts: () => ({}),
       getActivityHistory: () => [],
+      getServices: () => ({}),
       getGitStates: () => ({}),
       getWorktrees: () => ({}),
     });
@@ -63,6 +64,7 @@ describe("EventBus", () => {
     );
     expect(msg.type).toBe("app-state-snapshot");
     expect(msg.payload.seq).toBe(0);
+    expect(msg.payload.services).toEqual({});
   });
 
   it("broadcasts with incrementing seq", async () => {
@@ -167,6 +169,35 @@ describe("EventBus", () => {
       getNotifications: () => [],
       getPorts: () => ({}),
       getActivityHistory: () => [],
+      getServices: () => ({
+        p1: [
+          {
+            id: "svc",
+            kind: "workspace",
+            port: 5173,
+            pid: 100,
+            processName: "vite",
+            bindHost: "127.0.0.1",
+            connectHost: "127.0.0.1",
+            bindsAll: false,
+            protocol: "http",
+            serviceName: "vite",
+            attribution: {
+              source: "session-process-tree",
+              confidence: "high",
+              projectId: "p1",
+              worktreePath: "/repo",
+              sessionId: "s1",
+            },
+            reachable: true,
+            reachablePort: 49231,
+            lifecycle: "reachable",
+            firstSeenAt: 1,
+            lastSeenAt: 1,
+            source: "scanner+forwarder",
+          },
+        ],
+      }),
       getGitStates: () => ({}),
       getWorktrees: () => ({}),
     });
@@ -178,6 +209,7 @@ describe("EventBus", () => {
       (ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0],
     );
     expect(msg.payload.agentStates).toEqual({ s1: running });
+    expect(msg.payload.services.p1[0].port).toBe(5173);
   });
 });
 

@@ -60,6 +60,8 @@ import {
   markerFileFor,
 } from "./pty/host-daemon/mode-marker.js";
 import { ScrollbackLog } from "./pty/scrollback-log.js";
+import { RuntimeServiceAdvertisedUrlWatcher } from "./runtime-services/advertised-url-watcher.js";
+import { RuntimeServiceRegistry } from "./runtime-services/service-registry.js";
 import { CaffeinateController } from "./service/caffeinate.js";
 import { SessionActivityStore } from "./session-activity-store.js";
 import { AppStateStore } from "./state/app-state.js";
@@ -151,6 +153,8 @@ const ipcServer = new IpcServer({ dir: configDir });
 // snapshot's ports. Loopback-bound parasor ⇒ inert (no forwarders).
 const portScanner = new PortScanner();
 const portForwarder = new PortForwarder(resolveForwarderBindHost(hostname));
+const advertisedUrlWatcher = new RuntimeServiceAdvertisedUrlWatcher();
+const serviceRegistry = new RuntimeServiceRegistry({ advertisedUrlWatcher });
 
 // Shims
 const shims = installShims(configDir);
@@ -375,8 +379,8 @@ wireRuntime({
   appStateStore,
   eventBus,
   sessionActivityStore,
-  portScanner,
-  portForwarder,
+  serviceRegistry,
+  advertisedUrlWatcher,
   ptyManager,
   agentDetector,
   agentStateStore,
@@ -414,6 +418,8 @@ const runtimeLoops = startRuntimeLoops({
   projectRuntime,
   uploadStaging,
   portForwarder,
+  serviceRegistry,
+  advertisedUrlWatcher,
   reconcileWorktrees: (projectId, prefetched) =>
     worktreeReconciler.reconcile(projectId, prefetched),
 });
@@ -505,8 +511,7 @@ const { app, injectWebSocket } = createAppServer({
   serverNoticesStore,
   worktreeCache,
   projectRuntime,
-  portScanner,
-  portForwarder,
+  serviceRegistry,
   serverVersion: process.env.npm_package_version,
   uploadStaging,
   reconcileWorktrees: (projectId, prefetched) =>

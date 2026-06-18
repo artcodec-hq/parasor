@@ -7,18 +7,38 @@ const execFileAsync = promisify(execFile);
 export interface LsofEntry {
   pid: number;
   port: number;
+  bindHost: string;
   bindsAll: boolean;
+  processName?: string;
+}
+
+interface ProcessMetadata {
+  commandLine?: string;
+  cwd?: string;
+}
+
+export interface ScannedPortInfo extends PortInfo {
+  bindHost: string;
+  processName?: string;
+  commandLine?: string;
+  cwd?: string;
+  sessionId?: string;
+  sessionCwd?: string;
 }
 
 export function parseLsofOutput(output: string): LsofEntry[] {
   const entries: LsofEntry[] = [];
   let currentPid: number | null = null;
+  let currentProcessName: string | undefined;
 
   for (const line of output.split("\n")) {
     if (!line.trim()) continue;
 
     if (line.startsWith("p")) {
       currentPid = parseInt(line.slice(1), 10);
+      currentProcessName = undefined;
+    } else if (line.startsWith("c")) {
+      currentProcessName = line.slice(1) || undefined;
     } else if (line.startsWith("n") && currentPid !== null) {
       const addr = line.slice(1);
       const colonIdx = addr.lastIndexOf(":");
@@ -30,7 +50,13 @@ export function parseLsofOutput(output: string): LsofEntry[] {
 
       const bindsAll =
         host === "*" || host === "0.0.0.0" || host === "[::]" || host === "";
-      entries.push({ pid: currentPid, port, bindsAll });
+      entries.push({
+        pid: currentPid,
+        port,
+        bindHost: host,
+        bindsAll,
+        ...(currentProcessName ? { processName: currentProcessName } : {}),
+      });
     }
   }
 
@@ -85,14 +111,17 @@ export function findDescendantPids(
 }
 
 export class PortScanner {
-  private lastResult = new Map<string, PortInfo[]>();
+  private lastResult = new Map<string, ScannedPortInfo[]>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly activeInterval = 3000;
   private readonly idleInterval = 10000;
-  private onChange: ((projectId: string, ports: PortInfo[]) => void) | null =
-    null;
+  private onChange:
+    | ((projectId: string, ports: ScannedPortInfo[]) => void)
+    | null = null;
 
-  onPortsChanged(cb: (projectId: string, ports: PortInfo[]) => void): void {
+  onPortsChanged(
+    cb: (projectId: string, ports: ScannedPortInfo[]) => void,
+  ): void {
     this.onChange = cb;
   }
 
@@ -140,21 +169,23 @@ export class PortScanner {
     }
   }
 
-  getProjectPorts(projectId: string): PortInfo[] {
+  getProjectPorts(projectId: string): ScannedPortInfo[] {
     return this.lastResult.get(projectId) ?? [];
   }
 
-  getAllPorts(): Record<string, PortInfo[]> {
-    const result: Record<string, PortInfo[]> = {};
+  getAllPorts(): Record<string, ScannedPortInfo[]> {
+    const result: Record<string, ScannedPortInfo[]> = {};
     for (const [k, v] of this.lastResult) {
       result[k] = v;
     }
     return result;
   }
 
-  private async scan(sessions: Session[]): Promise<Map<string, PortInfo[]>> {
+  private async scan(
+    sessions: Session[],
+  ): Promise<Map<string, ScannedPortInfo[]>> {
     const [lsofOut, psOut] = await Promise.all([
-      execFileAsync("lsof", ["-iTCP", "-sTCP:LISTEN", "-n", "-P", "-Fpn"], {
+      execFileAsync("lsof", ["-iTCP", "-sTCP:LISTEN", "-n", "-P", "-Fpcn"], {
         timeout: 5000,
       })
         .then((r) => r.stdout)
@@ -165,6 +196,9 @@ export class PortScanner {
     ]);
 
     const listenEntries = parseLsofOutput(lsofOut);
+    const metadata = await loadProcessMetadata(
+      new Set(listenEntries.map((entry) => entry.pid)),
+    );
     const listenByPid = new Map<number, LsofEntry[]>();
     for (const entry of listenEntries) {
       if (!listenByPid.has(entry.pid)) listenByPid.set(entry.pid, []);
@@ -172,7 +206,7 @@ export class PortScanner {
     }
 
     const processTree = buildProcessTree(psOut);
-    const projectPorts = new Map<string, PortInfo[]>();
+    const projectPorts = new Map<string, ScannedPortInfo[]>();
 
     const sessionsByProject = new Map<string, Session[]>();
     for (const s of sessions) {
@@ -182,7 +216,7 @@ export class PortScanner {
     }
 
     for (const [projectId, projectSessions] of sessionsByProject) {
-      const ports: PortInfo[] = [];
+      const ports: ScannedPortInfo[] = [];
       const seenPorts = new Set<number>();
 
       for (const session of projectSessions) {
@@ -196,10 +230,17 @@ export class PortScanner {
           for (const entry of entries) {
             if (seenPorts.has(entry.port)) continue;
             seenPorts.add(entry.port);
+            const meta = metadata.get(entry.pid);
             ports.push({
               port: entry.port,
               pid: entry.pid,
+              bindHost: entry.bindHost,
               bindsAll: entry.bindsAll,
+              ...(entry.processName ? { processName: entry.processName } : {}),
+              ...(meta?.commandLine ? { commandLine: meta.commandLine } : {}),
+              ...(meta?.cwd ? { cwd: meta.cwd } : {}),
+              sessionId: session.id,
+              sessionCwd: session.cwd,
             });
           }
         }
@@ -212,7 +253,7 @@ export class PortScanner {
     return projectPorts;
   }
 
-  private diffAndNotify(newResult: Map<string, PortInfo[]>): void {
+  private diffAndNotify(newResult: Map<string, ScannedPortInfo[]>): void {
     const allProjectIds = new Set([
       ...this.lastResult.keys(),
       ...newResult.keys(),
@@ -229,4 +270,51 @@ export class PortScanner {
 
     this.lastResult = newResult;
   }
+}
+
+async function loadProcessMetadata(
+  pids: Set<number>,
+): Promise<Map<number, ProcessMetadata>> {
+  if (pids.size === 0) return new Map();
+  const pidList = Array.from(pids).join(",");
+  if (!pidList) return new Map();
+
+  const [cwdOutput, commandOutput] = await Promise.all([
+    execFileAsync("lsof", ["-a", "-p", pidList, "-d", "cwd", "-Fn"], {
+      timeout: 5000,
+    })
+      .then((r) => r.stdout)
+      .catch(() => ""),
+    execFileAsync("ps", ["-p", pidList, "-o", "pid=", "-o", "command="], {
+      timeout: 5000,
+    })
+      .then((r) => r.stdout)
+      .catch(() => ""),
+  ]);
+
+  const result = new Map<number, ProcessMetadata>();
+  let currentPid: number | null = null;
+  for (const line of cwdOutput.split("\n")) {
+    if (line.startsWith("p")) {
+      const pid = parseInt(line.slice(1), 10);
+      currentPid = Number.isFinite(pid) ? pid : null;
+    } else if (line.startsWith("n") && currentPid !== null) {
+      result.set(currentPid, {
+        ...result.get(currentPid),
+        cwd: line.slice(1) || undefined,
+      });
+    }
+  }
+
+  for (const line of commandOutput.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!match) continue;
+    const pid = parseInt(match[1], 10);
+    result.set(pid, {
+      ...result.get(pid),
+      commandLine: match[2].trim() || undefined,
+    });
+  }
+
+  return result;
 }

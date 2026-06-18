@@ -1,4 +1,4 @@
-import type { PortInfo } from "@parasor/shared";
+import type { PortInfo, RuntimeServiceInfo, Session } from "@parasor/shared";
 import { useDeferredValue, useMemo } from "react";
 import type { OpenUrlOptions } from "../../lib/open-url-options.js";
 import { SIDEBAR_WIDTH_MIN } from "../../lib/sidebar-width.js";
@@ -17,7 +17,9 @@ interface SidebarProps {
   selection: SidebarSelection;
   connected: boolean;
   portsByProjectId?: Record<string, PortInfo[]>;
+  servicesByProjectId?: Record<string, RuntimeServiceInfo[]>;
   projectNames?: Record<string, string>;
+  sessions?: Session[];
   onOpenUrl?: (url: string, options?: OpenUrlOptions) => void;
   width?: number;
   fill?: boolean;
@@ -85,7 +87,9 @@ export function Sidebar({
   selection,
   connected,
   portsByProjectId,
+  servicesByProjectId,
   projectNames,
+  sessions,
   onOpenUrl,
   width = 288,
   fill = false,
@@ -213,7 +217,9 @@ export function Sidebar({
       <SidebarFooter
         connected={connected}
         portsByProjectId={portsByProjectId}
+        servicesByProjectId={servicesByProjectId}
         projectNames={projectNames}
+        sessions={sessions}
         onOpenUrl={onOpenUrl}
         onOpenSettings={onOpenSettings}
         onNewProject={onNewProject}

@@ -58,6 +58,8 @@ export interface SidebarWorktree {
    * surfaces a pill and the remove dialog defaults to `--force`.
    */
   orphan?: boolean;
+  /** Live workspace-owned services attributed to this worktree. */
+  serviceCount?: number;
 }
 
 export interface SidebarProject {

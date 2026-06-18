@@ -954,6 +954,7 @@ export function App() {
         reviewPendingSessions,
         worktreesByProject: worktreesWithCounters,
         gitStates: store.gitStates,
+        servicesByProject: store.services,
         attentionDismissed,
         inactiveChildPanesByProject: readClientBrowserChildPanes(
           store.projects,
@@ -971,6 +972,7 @@ export function App() {
     reviewPendingSessions,
     worktreesWithCounters,
     store.gitStates,
+    store.services,
     attentionDismissed,
   ]);
 
@@ -1104,7 +1106,9 @@ export function App() {
       },
       connected: store.connected,
       portsByProjectId: store.ports,
+      servicesByProjectId: store.services,
       projectNames,
+      sessions,
       onOpenUrl: openUrl,
       pinnedMonitorCount: pinnedSessionCount,
       onSelectMonitor: handleSelectMonitor,
@@ -1132,7 +1136,9 @@ export function App() {
       paneModel.focusedPane,
       store.connected,
       store.ports,
+      store.services,
       projectNames,
+      sessions,
       openUrl,
       pinnedSessionCount,
       handleSelectMonitor,

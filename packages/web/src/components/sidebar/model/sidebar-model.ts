@@ -4,6 +4,7 @@ import {
   deriveAgentStatusContext,
   type GitState,
   type Project,
+  type RuntimeServiceInfo,
   type Session,
   terminalPaneId,
   type Worktree,
@@ -52,6 +53,8 @@ interface BuildSidebarProjectsOptions {
    * worktree*) can be gated when the root directory has no `.git`.
    */
   gitStates?: Record<string, Record<string, GitState | null>>;
+  /** Runtime services grouped by project id. Used for compact worktree counts. */
+  servicesByProject?: Record<string, RuntimeServiceInfo[]>;
   /**
    * Per-session "viewed waiting" timestamps. When a session's `waiting`
    * lifecycle has already been viewed (focused pane match + same
@@ -92,6 +95,10 @@ interface CounterIndex {
   lookup(path: string): Worktree | undefined;
 }
 
+interface ServiceCountIndex {
+  lookup(path: string): number;
+}
+
 function normalizePath(p: string): string {
   let n = p.replace(/\/+$/, "");
   if (n.startsWith("/private/")) n = n.slice("/private".length);
@@ -121,6 +128,29 @@ function counterLookup(
   };
 }
 
+function serviceCountLookup(
+  servicesByProject: Record<string, RuntimeServiceInfo[]> | undefined,
+  projectId: string,
+): ServiceCountIndex {
+  const counts = new Map<string, number>();
+  for (const service of servicesByProject?.[projectId] ?? []) {
+    if (
+      service.kind !== "workspace" ||
+      service.lifecycle === "disappeared" ||
+      !service.attribution.worktreePath
+    ) {
+      continue;
+    }
+    const key = normalizePath(service.attribution.worktreePath);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return {
+    lookup(path) {
+      return counts.get(normalizePath(path)) ?? 0;
+    },
+  };
+}
+
 export function buildSidebarProjects({
   projects,
   activeProjectId,
@@ -132,11 +162,13 @@ export function buildSidebarProjects({
   gitStates,
   attentionDismissed,
   inactiveChildPanesByProject,
+  servicesByProject,
 }: BuildSidebarProjectsOptions): SidebarProject[] {
   const dismissed = attentionDismissed ?? {};
   return sortProjects(projects).map((project) => {
     const isActive = project.id === activeProjectId;
     const counters = counterLookup(worktreesByProject, project.id);
+    const serviceCounts = serviceCountLookup(servicesByProject, project.id);
     const rootGit = gitStates?.[project.id]?.[project.path];
     const isNotRepo = rootGit?.isRepo === false;
     const worktrees = isActive
@@ -147,6 +179,7 @@ export function buildSidebarProjects({
           agentStates,
           reviewPendingSessions,
           counters,
+          serviceCounts,
           isNotRepo,
           attentionDismissed: dismissed,
         })
@@ -156,6 +189,7 @@ export function buildSidebarProjects({
           agentStates,
           reviewPendingSessions,
           counters,
+          serviceCounts,
           projectWorktrees: worktreesByProject?.[project.id] ?? [],
           childPanes: inactiveChildPanesByProject?.[project.id] ?? {},
           isNotRepo,
@@ -180,6 +214,7 @@ interface BuildActiveWorktreesOptions {
   agentStates: Record<string, AgentState>;
   reviewPendingSessions: Set<string>;
   counters: CounterIndex;
+  serviceCounts: ServiceCountIndex;
   attentionDismissed: AttentionDismissals;
   /**
    * `true` when project root is confirmed not a git repo. Drives the
@@ -195,11 +230,17 @@ function buildActiveWorktrees({
   agentStates,
   reviewPendingSessions,
   counters,
+  serviceCounts,
   isNotRepo,
   attentionDismissed,
 }: BuildActiveWorktreesOptions): SidebarWorktree[] {
   if (worktrees.length === 0) {
-    return buildPlaceholderWorktrees(project, counters, isNotRepo);
+    return buildPlaceholderWorktrees(
+      project,
+      counters,
+      serviceCounts,
+      isNotRepo,
+    );
   }
   return worktrees.map((wt) => {
     const children = buildChildren({
@@ -219,6 +260,7 @@ function buildActiveWorktrees({
       dirty: meta?.dirtyCount ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
+      serviceCount: serviceCounts.lookup(wt.path),
       children,
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
@@ -232,6 +274,7 @@ function buildActiveWorktrees({
 function buildPlaceholderWorktrees(
   project: Project,
   counters: CounterIndex,
+  serviceCounts: ServiceCountIndex,
   isNotRepo: boolean,
 ): SidebarWorktree[] {
   const meta = counters.lookup(project.path);
@@ -244,6 +287,7 @@ function buildPlaceholderWorktrees(
       dirty: meta?.dirtyCount ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
+      serviceCount: serviceCounts.lookup(project.path),
       children: [],
       hasWorkingChild: false,
       hasAlertChild: false,
@@ -257,6 +301,7 @@ interface BuildInactiveWorktreesOptions {
   agentStates: Record<string, AgentState>;
   reviewPendingSessions: Set<string>;
   counters: CounterIndex;
+  serviceCounts: ServiceCountIndex;
   // Seeds the row set so worktrees with no sessions still appear.
   projectWorktrees: Worktree[];
   // Additional non-session children keyed by worktree path.
@@ -274,6 +319,7 @@ function buildInactiveWorktrees({
   agentStates,
   reviewPendingSessions,
   counters,
+  serviceCounts,
   projectWorktrees,
   childPanes,
   isNotRepo,
@@ -354,6 +400,7 @@ function buildInactiveWorktrees({
       dirty: meta?.dirtyCount ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
+      serviceCount: serviceCounts.lookup(cwd),
       children,
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),

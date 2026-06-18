@@ -22,8 +22,11 @@ import {
   type RuntimeDescribeResult,
   type RuntimeMethodName,
   type RuntimeMethodParams,
+  type RuntimeServiceInfo,
   type RuntimeStatusParams,
   type RuntimeStatusResult,
+  type ServicesListParams,
+  type ServicesListResult,
   type TerminalCreateParams,
   type TerminalCreateResult,
   type TerminalListParams,
@@ -59,6 +62,7 @@ export interface RuntimeApiDeps {
   eventBus: EventBus;
   getAgentStates: () => Record<string, AgentState>;
   getPorts: () => Record<string, PortInfo[]>;
+  getServices: () => Record<string, RuntimeServiceInfo[]>;
   platform?: NodeJS.Platform;
   projectManager: ProjectManager;
   projectRuntime: ProjectRuntime;
@@ -150,6 +154,8 @@ async function executeMethod(
       return gitStatus(deps, params as GitStatusParams);
     case "ports.list":
       return portsList(deps, params as PortsListParams);
+    case "services.list":
+      return servicesList(deps, params as ServicesListParams);
   }
 }
 
@@ -196,6 +202,7 @@ function runtimeStatus(
     appStateStore,
     getAgentStates,
     getPorts,
+    getServices,
     platform = process.platform,
     projectRuntime,
     ptyManager,
@@ -221,6 +228,7 @@ function runtimeStatus(
     worktrees: filterRecord(worktreeCache.get(), projectIds),
     gitStates: filterRecord(projectRuntime.getGitStates(), projectIds),
     ports: filterRecord(getPorts(), projectIds),
+    services: filterRecord(getServices(), projectIds),
     hostPlatform: platform,
   };
 }
@@ -404,6 +412,19 @@ function portsList(
   return {
     ports: {
       [params.projectId]: ports[params.projectId] ?? [],
+    },
+  };
+}
+
+function servicesList(
+  { getServices }: RuntimeApiDeps,
+  params: ServicesListParams,
+): ServicesListResult {
+  const services = getServices();
+  if (!params.projectId) return { services };
+  return {
+    services: {
+      [params.projectId]: services[params.projectId] ?? [],
     },
   };
 }

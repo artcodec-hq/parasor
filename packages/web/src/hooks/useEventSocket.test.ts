@@ -139,6 +139,7 @@ function makeSnapshot(
     agentStates: {},
     notifications: [],
     ports: {},
+    services: {},
     gitStates: {},
     worktrees: {},
     hostPlatform: "darwin",
