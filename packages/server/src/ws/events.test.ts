@@ -47,6 +47,7 @@ describe("EventBus", () => {
       getAgentStates: () => ({}),
       getNotifications: () => [],
       getPorts: () => ({}),
+      getActivityHistory: () => [],
       getServices: () => ({}),
       getGitStates: () => ({}),
       getWorktrees: () => ({}),
@@ -167,6 +168,7 @@ describe("EventBus", () => {
       getAgentStates: () => ({ s1: running }),
       getNotifications: () => [],
       getPorts: () => ({}),
+      getActivityHistory: () => [],
       getServices: () => ({
         p1: [
           {

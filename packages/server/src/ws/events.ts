@@ -14,12 +14,14 @@ import {
 } from "@parasor/shared";
 import type { WSContext } from "hono/ws";
 import { PromiseMutex } from "../lib/promise-mutex.js";
+import type { SessionActivityStore } from "../session-activity-store.js";
 
 export interface HydrationSources {
   getState: () => Readonly<AppState>;
   getAgentStates: () => Record<string, AgentState>;
   getNotifications: () => Notification[];
   getPorts: () => Record<string, PortInfo[]>;
+  getActivityHistory: () => ReturnType<SessionActivityStore["getRecent"]>;
   getServices: () => Record<string, RuntimeServiceInfo[]>;
   getGitStates: () => Record<string, Record<string, GitState | null>>;
   /**
@@ -82,6 +84,7 @@ export class EventBus {
           agentStates: this.sources.getAgentStates(),
           notifications: this.sources.getNotifications(),
           ports: this.sources.getPorts(),
+          activityHistory: this.sources.getActivityHistory(),
           services: this.sources.getServices(),
           gitStates: this.sources.getGitStates(),
           worktrees: this.sources.getWorktrees(),
@@ -107,6 +110,7 @@ export class EventBus {
           agentStates: {},
           notifications: [],
           ports: {},
+          activityHistory: [],
           services: {},
           gitStates: {},
           worktrees: {},

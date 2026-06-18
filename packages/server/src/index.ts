@@ -63,6 +63,7 @@ import { ScrollbackLog } from "./pty/scrollback-log.js";
 import { RuntimeServiceAdvertisedUrlWatcher } from "./runtime-services/advertised-url-watcher.js";
 import { RuntimeServiceRegistry } from "./runtime-services/service-registry.js";
 import { CaffeinateController } from "./service/caffeinate.js";
+import { SessionActivityStore } from "./session-activity-store.js";
 import { AppStateStore } from "./state/app-state.js";
 import { ProjectManager } from "./state/project-manager.js";
 import { ServerNoticesStore } from "./state/server-notices.js";
@@ -218,6 +219,7 @@ if (ptyHostMode === "in-process") {
 // State
 
 const appStateStore = new AppStateStore({ dir: configDir });
+const sessionActivityStore = new SessionActivityStore({ dir: configDir });
 
 if (appStateOwner) {
   /*
@@ -376,6 +378,7 @@ const projectRuntime = createProjectRuntime({
 wireRuntime({
   appStateStore,
   eventBus,
+  sessionActivityStore,
   serviceRegistry,
   advertisedUrlWatcher,
   ptyManager,

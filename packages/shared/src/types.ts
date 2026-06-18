@@ -14,5 +14,6 @@ export * from "./runtime-services.js";
 export * from "./shell-presets.js";
 export * from "./state.js";
 export * from "./terminal.js";
+export * from "./terminal-presence.js";
 export * from "./worktree-local-files.js";
 export * from "./ws-events.js";
