@@ -77,8 +77,7 @@ function buildServiceEntries(
       const sessionId = service.attribution.sessionId;
       const session = sessionId ? sessionsById.get(sessionId) : undefined;
       const lifecycle = service.lifecycle;
-      const reachable =
-        service.reachable || service.advertisedUrl !== undefined;
+      const reachable = service.reachable;
       const canOpen = reachable && lifecycle !== "disappeared";
       entries.push({
         key: service.id,
@@ -300,8 +299,12 @@ function serviceDetail(
   }
   if (session?.title) parts.push(session.title);
   if (service.lifecycle === "disappeared") parts.push("closed");
-  else if (!service.reachable && !service.advertisedUrl) {
-    parts.push("localhost only");
+  else if (!service.reachable) {
+    if (service.lifecycle === "forwarder-pending")
+      parts.push("forwarder pending");
+    else if (service.lifecycle === "forwarder-failed") {
+      parts.push("forwarder failed");
+    } else parts.push("localhost only");
   }
   return parts.join(" - ");
 }

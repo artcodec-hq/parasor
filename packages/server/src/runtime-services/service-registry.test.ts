@@ -8,12 +8,22 @@ import {
 } from "./service-registry.js";
 
 function forwarder(opts?: {
+  forwarderStatus?: "none" | "pending" | "reachable" | "failed";
   inert?: boolean;
   reachablePort?: number | null;
 }): PortForwarder {
+  const forwarderStatus =
+    opts?.forwarderStatus ??
+    (opts?.reachablePort !== undefined && opts.reachablePort !== null
+      ? "reachable"
+      : "none");
   return {
     isInert: () => opts?.inert === true,
     getReachablePort: () => opts?.reachablePort ?? null,
+    getForwarderState: () =>
+      forwarderStatus === "reachable"
+        ? { status: "reachable", reachablePort: opts?.reachablePort ?? 49231 }
+        : { status: forwarderStatus },
     setOnChange: vi.fn(),
     sync: vi.fn(),
     stop: vi.fn(),
@@ -91,6 +101,56 @@ describe("RuntimeServiceRegistry", () => {
         reachablePort: 49231,
       },
     ]);
+  });
+
+  it("distinguishes pending, failed, and localhost-only loopback services", () => {
+    const pendingRegistry = new RuntimeServiceRegistry();
+    expect(
+      pendingRegistry.syncProject({
+        projectId: "p1",
+        projectPath: "/repo",
+        worktreePaths: ["/repo"],
+        ports: [port()],
+        forwarder: forwarder({ forwarderStatus: "pending" }),
+        now: 1000,
+      })[0],
+    ).toMatchObject({
+      reachable: false,
+      lifecycle: "forwarder-pending",
+      source: "scanner",
+    });
+
+    const failedRegistry = new RuntimeServiceRegistry();
+    expect(
+      failedRegistry.syncProject({
+        projectId: "p1",
+        projectPath: "/repo",
+        worktreePaths: ["/repo"],
+        ports: [port()],
+        forwarder: forwarder({ forwarderStatus: "failed" }),
+        now: 1000,
+      })[0],
+    ).toMatchObject({
+      reachable: false,
+      lifecycle: "forwarder-failed",
+      source: "scanner",
+    });
+
+    const offRegistry = new RuntimeServiceRegistry();
+    expect(
+      offRegistry.syncProject({
+        projectId: "p1",
+        projectPath: "/repo",
+        worktreePaths: ["/repo"],
+        ports: [port()],
+        forwarder: forwarder({ forwarderStatus: "none" }),
+        now: 1000,
+      })[0],
+    ).toMatchObject({
+      reachable: false,
+      lifecycle: "localhost-only",
+      source: "scanner",
+    });
   });
 
   it("attaches validated advertised URLs to matching workspace services only", () => {

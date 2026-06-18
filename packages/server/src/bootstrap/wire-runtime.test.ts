@@ -186,6 +186,10 @@ describe("wireRuntime hydration services", () => {
         isInert: () => false,
         getReachablePort: (_projectId: string, port: number) =>
           port === 5173 ? 49231 : null,
+        getForwarderState: (_projectId: string, port: number) =>
+          port === 5173
+            ? { status: "reachable", reachablePort: 49231 }
+            : { status: "none" },
       } as never,
       now: 1,
     });

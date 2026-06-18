@@ -101,13 +101,22 @@ export class RuntimeServiceRegistry {
     previous: RuntimeServiceInfo | undefined,
     now: number,
   ): RuntimeServiceInfo {
-    const reachablePort = input.forwarder.getReachablePort(
+    const forwarderState = input.forwarder.getForwarderState(
       input.projectId,
       port.port,
     );
+    const reachablePort =
+      forwarderState.status === "reachable"
+        ? forwarderState.reachablePort
+        : null;
     const reachable =
       port.bindsAll || input.forwarder.isInert() || reachablePort !== null;
-    const lifecycle = reachable ? "reachable" : "localhost-only";
+    const lifecycle = lifecycleFor({
+      bindsAll: port.bindsAll,
+      forwarderInert: input.forwarder.isInert(),
+      forwarderStatus: forwarderState.status,
+      reachable,
+    });
     const attribution = attributeRuntimeService({
       projectId: input.projectId,
       sessionId: port.sessionId,
@@ -197,4 +206,21 @@ function serviceNameFor(processName: string | undefined, port: number): string {
     return processName;
   }
   return processName;
+}
+
+function lifecycleFor({
+  bindsAll,
+  forwarderInert,
+  forwarderStatus,
+  reachable,
+}: {
+  bindsAll: boolean;
+  forwarderInert: boolean;
+  forwarderStatus: ReturnType<PortForwarder["getForwarderState"]>["status"];
+  reachable: boolean;
+}): RuntimeServiceInfo["lifecycle"] {
+  if (reachable || bindsAll || forwarderInert) return "reachable";
+  if (forwarderStatus === "pending") return "forwarder-pending";
+  if (forwarderStatus === "failed") return "forwarder-failed";
+  return "localhost-only";
 }

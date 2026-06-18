@@ -107,6 +107,12 @@ function makeFakeForwarder(opts?: { inert?: boolean }): FakeForwarder {
     },
     getReachablePort: (projectId: string, devPort: number) =>
       reachable.get(projectId)?.get(devPort) ?? null,
+    getForwarderState: (projectId: string, devPort: number) => {
+      const listenPort = reachable.get(projectId)?.get(devPort);
+      return listenPort === undefined
+        ? { status: "pending" }
+        : { status: "reachable", reachablePort: listenPort };
+    },
   } as unknown as PortForwarder;
   return {
     forwarder,
