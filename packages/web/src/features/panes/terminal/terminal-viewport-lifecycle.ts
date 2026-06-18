@@ -404,8 +404,12 @@ export function useTerminalViewportLifecycle({
         setLastForegroundAtMs(Date.now());
         // Foreground is the touch device's engagement signal. On desktop a bare
         // window focus (e.g. alt-tab) is not intent to interact, so we don't
-        // claim the width there -- the cursor entering the terminal does.
-        if (isTouchRef.current) applyResize(true);
+        // claim the width there unless the pointer is already over the
+        // terminal. That covers mobile->desktop handoff where no mouseenter
+        // fires because the cursor never moved.
+        if (isTouchRef.current || container.matches(":hover")) {
+          applyResize(true);
+        }
       };
       document.addEventListener("visibilitychange", onForeground);
       window.addEventListener("focus", onForeground);
