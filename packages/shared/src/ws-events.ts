@@ -7,6 +7,7 @@ import type {
   GitState,
   Notification,
   PortInfo,
+  SessionActivityRecord,
   Worktree,
 } from "./runtime.js";
 import type { RuntimeServiceInfo } from "./runtime-services.js";
@@ -61,6 +62,10 @@ export type WsEventMessage =
       error?: string;
     }
   | { type: "browser-url-changed"; paneId: string; url: string }
+  | {
+      type: "activity-recorded";
+      record: SessionActivityRecord;
+    }
   | {
       type: "filetree-expanded";
       paneId: string;
@@ -127,6 +132,8 @@ export interface HydrationPayload {
   gitStates: Record<string, Record<string, GitState | null>>;
   /** Per-project worktree list (`git worktree list --porcelain` snapshot). */
   worktrees: Record<string, Worktree[]>;
+  /** Most recent session activity records for hydration. */
+  activityHistory?: SessionActivityRecord[];
   /**
    * Node process.platform of the host running parasor server. Web clients
    * use this to gate platform-specific UI (e.g. macOS-only service

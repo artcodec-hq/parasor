@@ -1,3 +1,5 @@
+import type { SessionEndReason } from "./state.js";
+
 export type AgentLifecycle =
   | "running"
   | "waiting"
@@ -15,6 +17,28 @@ export interface AgentState {
   source: AgentSignalSource;
   confidence: AgentSignalConfidence;
   detectedAt: number;
+}
+
+export type SessionActivityKind =
+  | "session-created"
+  | "session-restarted"
+  | "session-ended"
+  | "session-closed"
+  | "agent-transition";
+
+export type SessionActivitySource = AgentSignalSource | "daemon";
+
+export interface SessionActivityRecord {
+  id: string;
+  sessionId: string;
+  timestamp: number;
+  kind: SessionActivityKind;
+  source: SessionActivitySource;
+  summary: string;
+  projectId?: string;
+  agentLifecycle?: AgentLifecycle;
+  endReason?: SessionEndReason;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Notification {

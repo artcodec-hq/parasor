@@ -7,6 +7,7 @@ import {
   DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
   DEFAULT_DROP_SIZE_MAX_BYTES,
   type Session,
+  type SessionActivityRecord,
 } from "@parasor/shared";
 import type { WSContext } from "hono/ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +18,7 @@ import type { IpcServer } from "../ipc/socket-server.js";
 import type { PtyHost } from "../pty/host.js";
 import { RuntimeServiceAdvertisedUrlWatcher } from "../runtime-services/advertised-url-watcher.js";
 import { RuntimeServiceRegistry } from "../runtime-services/service-registry.js";
+import type { SessionActivityStore } from "../session-activity-store.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
@@ -87,6 +89,7 @@ function wireDeps(overrides: {
   agentDetector: AgentDetector;
   agentStateStore: AgentStateStore;
   ptyManager: PtyHost;
+  sessionActivityStore?: SessionActivityStore;
 }) {
   return {
     appStateStore: {
@@ -96,7 +99,10 @@ function wireDeps(overrides: {
     eventBus: overrides.eventBus,
     serviceRegistry: new RuntimeServiceRegistry(),
     advertisedUrlWatcher: new RuntimeServiceAdvertisedUrlWatcher(),
-    ptyManager: overrides.ptyManager,
+    ptyManager: {
+      ...overrides.ptyManager,
+      get: overrides.ptyManager.get ?? (() => null),
+    } as unknown as PtyHost,
     agentDetector: overrides.agentDetector,
     agentStateStore: overrides.agentStateStore,
     ipcServer: {
@@ -120,6 +126,12 @@ function wireDeps(overrides: {
     uploadStaging: {
       releaseSession: vi.fn(),
     } as unknown as UploadStaging,
+    sessionActivityStore:
+      overrides.sessionActivityStore ??
+      ({
+        append: vi.fn(),
+        getRecent: vi.fn(() => []),
+      } as unknown as SessionActivityStore),
   };
 }
 
@@ -276,6 +288,98 @@ describe("wireRuntime hydration services", () => {
 });
 
 describe("wireRuntime agent state persistence", () => {
+  it("hydrates activity history from the activity store", async () => {
+    const activityHistory: SessionActivityRecord[] = [
+      {
+        id: "a1",
+        sessionId: "s1",
+        timestamp: 1_000,
+        kind: "session-created",
+        source: "daemon",
+        summary: "Session created",
+      },
+    ];
+    const eventBus = new EventBus();
+    const agentDetector = new AgentDetector();
+    const agentStateStore = new AgentStateStore({ dir: tempRoot() });
+    const ptyManager = {
+      list: () => [],
+      onSessionInput: vi.fn(),
+      onSessionData: vi.fn(),
+      getForegroundProcess: vi.fn(),
+    } as unknown as PtyHost;
+    const sessionActivityStore = {
+      append: vi.fn(() => true),
+      getRecent: vi.fn(() => activityHistory),
+    } as unknown as SessionActivityStore;
+
+    wireRuntime(
+      wireDeps({
+        eventBus,
+        agentDetector,
+        agentStateStore,
+        ptyManager,
+        sessionActivityStore,
+      }),
+    );
+
+    const ws = mockWs();
+    await eventBus.addClient(ws as unknown as WSContext);
+
+    const payload = JSON.parse(ws.send.mock.calls[0][0]).payload;
+    expect(payload.activityHistory).toEqual(activityHistory);
+    expect(sessionActivityStore.getRecent).toHaveBeenCalledWith(100);
+  });
+
+  it("broadcasts activity-recorded for daemon session events", async () => {
+    const eventBus = new EventBus();
+    const agentDetector = new AgentDetector();
+    const root = tempRoot();
+    const agentStateStore = new AgentStateStore({ dir: root });
+    const ptyManager = {
+      list: () => [],
+      get: () => null,
+      onSessionInput: vi.fn(),
+      onSessionData: vi.fn(),
+      getForegroundProcess: vi.fn(),
+    } as unknown as PtyHost;
+    const sessionActivityStore = {
+      append: vi.fn(() => true),
+      getRecent: vi.fn(() => []),
+    } as unknown as SessionActivityStore;
+
+    wireRuntime(
+      wireDeps({
+        eventBus,
+        agentDetector,
+        agentStateStore,
+        ptyManager,
+        sessionActivityStore,
+      }),
+    );
+    const ws = mockWs();
+    await eventBus.addClient(ws as unknown as WSContext);
+    ws.send.mockReset();
+
+    eventBus.broadcast({
+      type: "session-created",
+      session: session("s1"),
+    });
+
+    const events = ws.send.mock.calls.map(
+      (call) => JSON.parse(call[0] as string).message?.type,
+    );
+    expect(events).toContain("activity-recorded");
+    expect(sessionActivityStore.append).toHaveBeenCalledTimes(1);
+    expect(sessionActivityStore.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "s1",
+        kind: "session-created",
+        source: "daemon",
+      }),
+    );
+  });
+
   it("hydrates reconnecting clients from the persisted live-session state", async () => {
     const eventBus = new EventBus();
     const agentDetector = new AgentDetector();

@@ -11,6 +11,7 @@ import type {
   RuntimeServiceInfo,
   ServiceConfig,
   Session,
+  SessionActivityRecord,
   Worktree,
   WsEventMessage,
 } from "@parasor/shared";
@@ -25,6 +26,7 @@ import {
 // (notifications older than the snapshot keep accumulating client-side
 // until the next hydration), so trim here too.
 const NOTIFICATION_RETENTION_LIMIT = 200;
+const ACTIVITY_HISTORY_LIMIT = 100;
 
 const STORE_CACHE_KEY = "parasor:store-cache";
 // v7: ProjectState.sidebar added to cached server-store subset.
@@ -61,6 +63,7 @@ export interface AppStore {
   sessions: Session[];
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
+  sessionActivityHistory: SessionActivityRecord[];
   ports: Record<string, PortInfo[]>;
   services: Record<string, RuntimeServiceInfo[]>;
   /**
@@ -93,6 +96,7 @@ export const EMPTY_STORE: AppStore = {
   sessions: [],
   agentStates: {},
   notifications: [],
+  sessionActivityHistory: [],
   ports: {},
   services: {},
   gitStates: {},
@@ -301,6 +305,14 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
     case "gitignore-updated":
       return { ...store, fileChangeSeq: store.fileChangeSeq + 1 };
 
+    case "activity-recorded": {
+      const next = [msg.record, ...store.sessionActivityHistory];
+      if (next.length > ACTIVITY_HISTORY_LIMIT) {
+        next.length = ACTIVITY_HISTORY_LIMIT;
+      }
+      return { ...store, sessionActivityHistory: next };
+    }
+
     case "browser-url-changed":
       return { ...store, pendingOpenUrl: msg.url };
 
@@ -405,6 +417,10 @@ export function applySnapshot(payload: HydrationPayload): AppStore {
     ports: payload.ports,
     services: payload.services ?? {},
     gitStates: payload.gitStates,
+    sessionActivityHistory: (payload.activityHistory ?? [])
+      .slice()
+      .reverse()
+      .slice(0, ACTIVITY_HISTORY_LIMIT),
     serviceConfig: payload.state.serviceConfig,
     paneCommands: payload.state.paneCommands ?? [],
     ideCommands: payload.state.ideCommands ?? [],
