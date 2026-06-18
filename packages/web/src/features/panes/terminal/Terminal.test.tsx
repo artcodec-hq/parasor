@@ -1576,6 +1576,35 @@ describe("Terminal", () => {
     expect(mockTermResize).toHaveBeenCalledWith(90, 30);
   });
 
+  it("re-claims the desktop width on focus when the cursor is already over the terminal", () => {
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const termContainer = must(document.querySelector(".xterm")?.parentElement);
+    const term = must(
+      MockXTerm.mock.results[0]?.value as
+        | { cols: number; rows: number }
+        | undefined,
+    );
+    vi.spyOn(termContainer, "matches").mockImplementation(
+      (selector) => selector === ":hover",
+    );
+    mockTermResize.mockClear();
+    mockTermResize.mockImplementationOnce((cols: number, rows: number) => {
+      term.cols = cols;
+      term.rows = rows;
+    });
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
+    );
+  });
+
   it("re-claims the shared PTY width on cursor enter even when the local size is unchanged", () => {
     // The shared PTY may hold another device's width. Engaging must push this
     // device's size to the PTY even though the local xterm already matches it,
