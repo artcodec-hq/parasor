@@ -1,5 +1,6 @@
 import type {
   HydrationPayload,
+  SessionActivityRecord,
   Session,
   WsEventMessage,
 } from "@parasor/shared";
@@ -148,6 +149,36 @@ describe("applyEvent: session-ended", () => {
     };
     const next = applyEvent(store, msg);
     expect(next.sessions[0].state).toBe("running");
+  });
+});
+
+describe("applyEvent: activity-recorded", () => {
+  it("prepends newest record and keeps existing history", () => {
+    const existing: SessionActivityRecord = {
+      id: "existing",
+      sessionId: "s1",
+      timestamp: 1,
+      kind: "session-created",
+      source: "daemon",
+      summary: "existing",
+    };
+    const incoming: SessionActivityRecord = {
+      id: "incoming",
+      sessionId: "s1",
+      timestamp: 2,
+      kind: "agent-transition",
+      source: "daemon",
+      summary: "incoming",
+      agentLifecycle: "running",
+    };
+
+    const store = storeWith({ sessionActivityHistory: [existing] });
+    const next = applyEvent(store, {
+      type: "activity-recorded",
+      record: incoming,
+    });
+
+    expect(next.sessionActivityHistory).toEqual([incoming, existing]);
   });
 });
 
@@ -527,6 +558,26 @@ describe("applyEvent: project-deleted drops worktrees", () => {
 });
 
 describe("snapshotApplied flag (warm-boot priming gate)", () => {
+  const ACTIVITY_HISTORY: SessionActivityRecord[] = [
+    {
+      id: "s-a",
+      sessionId: "s1",
+      timestamp: 100,
+      kind: "session-created",
+      source: "daemon",
+      summary: "Session created",
+    },
+    {
+      id: "s-b",
+      sessionId: "s2",
+      timestamp: 101,
+      kind: "agent-transition",
+      source: "daemon",
+      summary: "Agent waiting",
+      agentLifecycle: "waiting",
+    },
+  ];
+
   const SNAPSHOT: HydrationPayload = {
     seq: 1,
     state: {
@@ -546,6 +597,7 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
     },
     agentStates: {},
     notifications: [],
+    activityHistory: ACTIVITY_HISTORY,
     ports: {},
     gitStates: {},
     worktrees: {},
@@ -559,7 +611,17 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
   it("applySnapshot sets snapshotApplied true", () => {
     const store = applySnapshot(SNAPSHOT);
     expect(store.snapshotApplied).toBe(true);
+    expect(store.sessionActivityHistory).toEqual(ACTIVITY_HISTORY.slice().reverse());
     expect(store.paneCommands).toEqual([]);
+  });
+
+  it("applySnapshot defaults missing activityHistory to empty", () => {
+    const store = applySnapshot({
+      ...SNAPSHOT,
+      activityHistory: undefined,
+    });
+
+    expect(store.sessionActivityHistory).toEqual([]);
   });
 
   it("loadCachedStore returns snapshotApplied=false even when cache has data", () => {

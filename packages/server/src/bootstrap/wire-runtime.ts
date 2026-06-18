@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { AppState, Notification, PortInfo } from "@parasor/shared";
+import type {
+  AgentLifecycle,
+  AppState,
+  Notification,
+  PortInfo,
+  SessionActivityRecord,
+  SessionActivitySource,
+  SessionEndReason,
+} from "@parasor/shared";
 import type { AgentStateStore } from "../agent-detector/agent-state-store.js";
 import type { AgentDetector } from "../agent-detector/detector.js";
 import { ManualAgentTracker } from "../agent-detector/manual-agent-tracker.js";
@@ -21,10 +29,12 @@ import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
 import type { ProjectRuntime } from "./project-runtime.js";
 import { enrichPorts } from "./runtime-loops.js";
+import type { SessionActivityStore } from "../session-activity-store.js";
 
 export interface WireRuntimeDeps {
   appStateStore: AppStateStore;
   eventBus: EventBus;
+  sessionActivityStore: SessionActivityStore;
   portScanner: PortScanner;
   /**
    * The shared per-port TCP forwarder (same instance handed to
@@ -78,6 +88,7 @@ export function buildHydrationStateSnapshot({
 export function wireRuntime({
   appStateStore,
   eventBus,
+  sessionActivityStore,
   portScanner,
   portForwarder,
   ptyManager,
@@ -103,6 +114,7 @@ export function wireRuntime({
     getState: () => buildHydrationStateSnapshot({ appStateStore, ptyManager }),
     getAgentStates: () =>
       agentStateStore.getStates({ liveSessionIds: getLiveSessionIds() }),
+    getActivityHistory: () => sessionActivityStore.getRecent(100),
     getNotifications: () => eventBus.getNotifications(),
     getPorts: () => {
       const out: Record<string, PortInfo[]> = {};
@@ -118,6 +130,33 @@ export function wireRuntime({
   });
 
   const osc7Lifecycle = new Osc7Lifecycle();
+  const createActivityRecord = (
+    sessionId: string,
+    params: {
+      kind: SessionActivityRecord["kind"];
+      source: SessionActivitySource;
+      summary: string;
+      projectId?: string;
+      agentLifecycle?: AgentLifecycle;
+      endReason?: SessionEndReason;
+      metadata?: Record<string, unknown>;
+    },
+  ): SessionActivityRecord | null => {
+    const record: SessionActivityRecord = {
+      id: randomUUID(),
+      sessionId,
+      timestamp: Date.now(),
+      kind: params.kind,
+      source: params.source,
+      summary: params.summary,
+      projectId: params.projectId,
+      agentLifecycle: params.agentLifecycle,
+      endReason: params.endReason,
+      metadata: params.metadata,
+    };
+    const accepted = sessionActivityStore.append(record);
+    return accepted ? record : null;
+  };
   const manualAgentTracker = new ManualAgentTracker({
     onDebug: (sessionId, message) => {
       debugRecorder?.record("manual-tracker", { message }, sessionId);
@@ -125,6 +164,47 @@ export function wireRuntime({
   });
   const originalBroadcast = eventBus.broadcast.bind(eventBus);
   eventBus.broadcast = (message) => {
+    let activityRecord: SessionActivityRecord | null = null;
+    if (message.type === "session-created") {
+      activityRecord = createActivityRecord(message.session.id, {
+        kind: "session-created",
+        source: "daemon",
+        projectId: message.session.projectId,
+        summary: "Session created",
+      });
+    } else if (message.type === "session-restarted") {
+      activityRecord = createActivityRecord(message.session.id, {
+        kind: "session-restarted",
+        source: "daemon",
+        projectId: message.session.projectId,
+        summary: "Session restarted",
+      });
+    } else if (message.type === "session-ended") {
+      const session = ptyManager.get(message.sessionId);
+      activityRecord = createActivityRecord(message.sessionId, {
+        kind: "session-ended",
+        source: "daemon",
+        projectId: session?.projectId,
+        endReason: message.endReason,
+        summary: "Session ended",
+      });
+    } else if (message.type === "session-closed") {
+      activityRecord = createActivityRecord(message.sessionId, {
+        kind: "session-closed",
+        source: "daemon",
+        projectId: message.projectId,
+        summary: "Session closed",
+      });
+    } else if (message.type === "agent-state") {
+      activityRecord = createActivityRecord(message.state.sessionId, {
+        kind: "agent-transition",
+        source: message.state.source,
+        agentLifecycle: message.state.lifecycle,
+        projectId: ptyManager.get(message.state.sessionId)?.projectId,
+        summary: `Agent: ${message.state.lifecycle}`,
+      });
+    }
+
     // Cache mutations must happen BEFORE broadcast so that a client
     // hydrating in the same tick (post-broadcast addClient) reads the
     // updated cache. Snapshot is sync inside `addClient`, so a
@@ -163,6 +243,12 @@ export function wireRuntime({
         });
     }
     originalBroadcast(message);
+    if (activityRecord) {
+      originalBroadcast({
+        type: "activity-recorded",
+        record: activityRecord,
+      });
+    }
     if (message.type === "session-closed") {
       osc7Lifecycle.removeSession(message.sessionId);
       agentDetector.removeSession(message.sessionId);

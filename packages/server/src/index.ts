@@ -66,6 +66,7 @@ import { ProjectManager } from "./state/project-manager.js";
 import { ServerNoticesStore } from "./state/server-notices.js";
 import { WorktreeCache } from "./state/worktree-cache.js";
 import { EventBus } from "./ws/events.js";
+import { SessionActivityStore } from "./session-activity-store.js";
 
 function summarizeDetectorTrace(
   event: DetectorTraceEvent,
@@ -214,6 +215,7 @@ if (ptyHostMode === "in-process") {
 // State
 
 const appStateStore = new AppStateStore({ dir: configDir });
+const sessionActivityStore = new SessionActivityStore({ dir: configDir });
 
 if (appStateOwner) {
   /*
@@ -372,6 +374,7 @@ const projectRuntime = createProjectRuntime({
 wireRuntime({
   appStateStore,
   eventBus,
+  sessionActivityStore,
   portScanner,
   portForwarder,
   ptyManager,

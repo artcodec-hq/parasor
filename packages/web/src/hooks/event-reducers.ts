@@ -8,6 +8,7 @@ import type {
   PortInfo,
   Project,
   ProjectState,
+  SessionActivityRecord,
   ServiceConfig,
   Session,
   Worktree,
@@ -24,6 +25,7 @@ import {
 // (notifications older than the snapshot keep accumulating client-side
 // until the next hydration), so trim here too.
 const NOTIFICATION_RETENTION_LIMIT = 200;
+const ACTIVITY_HISTORY_LIMIT = 100;
 
 const STORE_CACHE_KEY = "parasor:store-cache";
 // v7: ProjectState.sidebar added to cached server-store subset.
@@ -60,6 +62,7 @@ export interface AppStore {
   sessions: Session[];
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
+  sessionActivityHistory: SessionActivityRecord[];
   ports: Record<string, PortInfo[]>;
   /**
    * Per-worktree git state. Outer key = projectId, inner key = absolute
@@ -91,6 +94,7 @@ export const EMPTY_STORE: AppStore = {
   sessions: [],
   agentStates: {},
   notifications: [],
+  sessionActivityHistory: [],
   ports: {},
   gitStates: {},
   serviceConfig: {
@@ -288,6 +292,14 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
     case "gitignore-updated":
       return { ...store, fileChangeSeq: store.fileChangeSeq + 1 };
 
+    case "activity-recorded": {
+      const next = [msg.record, ...store.sessionActivityHistory];
+      if (next.length > ACTIVITY_HISTORY_LIMIT) {
+        next.length = ACTIVITY_HISTORY_LIMIT;
+      }
+      return { ...store, sessionActivityHistory: next };
+    }
+
     case "browser-url-changed":
       return { ...store, pendingOpenUrl: msg.url };
 
@@ -391,6 +403,10 @@ export function applySnapshot(payload: HydrationPayload): AppStore {
     notifications: [...payload.notifications].reverse(),
     ports: payload.ports,
     gitStates: payload.gitStates,
+    sessionActivityHistory: (payload.activityHistory ?? [])
+      .slice()
+      .reverse()
+      .slice(0, ACTIVITY_HISTORY_LIMIT),
     serviceConfig: payload.state.serviceConfig,
     paneCommands: payload.state.paneCommands ?? [],
     ideCommands: payload.state.ideCommands ?? [],

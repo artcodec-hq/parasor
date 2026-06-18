@@ -13,12 +13,14 @@ import {
 } from "@parasor/shared";
 import type { WSContext } from "hono/ws";
 import { PromiseMutex } from "../lib/promise-mutex.js";
+import type { SessionActivityStore } from "../session-activity-store.js";
 
 export interface HydrationSources {
   getState: () => Readonly<AppState>;
   getAgentStates: () => Record<string, AgentState>;
   getNotifications: () => Notification[];
   getPorts: () => Record<string, PortInfo[]>;
+  getActivityHistory: () => ReturnType<SessionActivityStore["getRecent"]>;
   getGitStates: () => Record<string, Record<string, GitState | null>>;
   /**
    * Per-project worktree snapshot. Sync because it reads from a
@@ -80,6 +82,7 @@ export class EventBus {
           agentStates: this.sources.getAgentStates(),
           notifications: this.sources.getNotifications(),
           ports: this.sources.getPorts(),
+          activityHistory: this.sources.getActivityHistory(),
           gitStates: this.sources.getGitStates(),
           worktrees: this.sources.getWorktrees(),
           hostPlatform: process.platform,
@@ -104,6 +107,7 @@ export class EventBus {
           agentStates: {},
           notifications: [],
           ports: {},
+          activityHistory: [],
           gitStates: {},
           worktrees: {},
           hostPlatform: process.platform,
