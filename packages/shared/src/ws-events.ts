@@ -6,8 +6,8 @@ import type {
   AgentState,
   GitState,
   Notification,
-  SessionActivityRecord,
   PortInfo,
+  SessionActivityRecord,
   Worktree,
 } from "./runtime.js";
 import type {

@@ -6,8 +6,8 @@ import {
   type AppState,
   DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
   DEFAULT_DROP_SIZE_MAX_BYTES,
-  type SessionActivityRecord,
   type Session,
+  type SessionActivityRecord,
 } from "@parasor/shared";
 import type { WSContext } from "hono/ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,11 +18,11 @@ import type { IpcServer } from "../ipc/socket-server.js";
 import type { PortForwarder } from "../port-forwarder/forwarder.js";
 import type { PortScanner } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
+import type { SessionActivityStore } from "../session-activity-store.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
 import { EventBus } from "../ws/events.js";
-import type { SessionActivityStore } from "../session-activity-store.js";
 import type { ProjectRuntime } from "./project-runtime.js";
 import { buildHydrationStateSnapshot, wireRuntime } from "./wire-runtime.js";
 

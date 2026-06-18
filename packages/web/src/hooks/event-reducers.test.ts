@@ -1,7 +1,7 @@
 import type {
   HydrationPayload,
-  SessionActivityRecord,
   Session,
+  SessionActivityRecord,
   WsEventMessage,
 } from "@parasor/shared";
 import {
@@ -611,7 +611,9 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
   it("applySnapshot sets snapshotApplied true", () => {
     const store = applySnapshot(SNAPSHOT);
     expect(store.snapshotApplied).toBe(true);
-    expect(store.sessionActivityHistory).toEqual(ACTIVITY_HISTORY.slice().reverse());
+    expect(store.sessionActivityHistory).toEqual(
+      ACTIVITY_HISTORY.slice().reverse(),
+    );
     expect(store.paneCommands).toEqual([]);
   });
 

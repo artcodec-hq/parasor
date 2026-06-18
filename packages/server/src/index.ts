@@ -61,12 +61,12 @@ import {
 } from "./pty/host-daemon/mode-marker.js";
 import { ScrollbackLog } from "./pty/scrollback-log.js";
 import { CaffeinateController } from "./service/caffeinate.js";
+import { SessionActivityStore } from "./session-activity-store.js";
 import { AppStateStore } from "./state/app-state.js";
 import { ProjectManager } from "./state/project-manager.js";
 import { ServerNoticesStore } from "./state/server-notices.js";
 import { WorktreeCache } from "./state/worktree-cache.js";
 import { EventBus } from "./ws/events.js";
-import { SessionActivityStore } from "./session-activity-store.js";
 
 function summarizeDetectorTrace(
   event: DetectorTraceEvent,

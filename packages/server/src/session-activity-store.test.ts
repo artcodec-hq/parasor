@@ -42,7 +42,9 @@ describe("SessionActivityStore", () => {
       dir: root,
       now: () => 1_000,
     });
-    const appended = store.append(record("s1", { kind: "session-created" }, 1_000));
+    const appended = store.append(
+      record("s1", { kind: "session-created" }, 1_000),
+    );
     expect(appended).toBe(true);
     expect(store.getRecent()).toHaveLength(1);
     expect(readFileSync(join(root, "session-activity.json"), "utf8")).toContain(
@@ -114,8 +116,12 @@ describe("SessionActivityStore", () => {
       noiseWindowMs: 2_000,
       now: () => 1_000,
     });
-    store.append(record("s1", { kind: "session-closed", source: "daemon" }, 1_000));
-    store.append(record("s1", { kind: "session-closed", source: "daemon" }, 1_500));
+    store.append(
+      record("s1", { kind: "session-closed", source: "daemon" }, 1_000),
+    );
+    store.append(
+      record("s1", { kind: "session-closed", source: "daemon" }, 1_500),
+    );
 
     expect(store.getRecent()).toHaveLength(1);
   });
@@ -126,8 +132,12 @@ describe("SessionActivityStore", () => {
       dir: root,
       now: () => 1_000,
     });
-    store.append(record("s1", { kind: "session-created", source: "daemon" }, 1_000));
-    store.append(record("s1", { kind: "session-ended", source: "daemon" }, 1_500));
+    store.append(
+      record("s1", { kind: "session-created", source: "daemon" }, 1_000),
+    );
+    store.append(
+      record("s1", { kind: "session-ended", source: "daemon" }, 1_500),
+    );
 
     expect(store.getRecent()).toHaveLength(2);
   });

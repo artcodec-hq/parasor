@@ -209,10 +209,9 @@ export class SessionActivityStore {
     }));
   }
 
-  private migrate(input: PersistedSessionActivityFile): Record<
-    string,
-    SessionActivityRecord[]
-  > {
+  private migrate(
+    input: PersistedSessionActivityFile,
+  ): Record<string, SessionActivityRecord[]> {
     const sessions: Record<string, SessionActivityRecord[]> = {};
     for (const [sessionId, records] of Object.entries(input.sessions)) {
       if (!Array.isArray(records)) continue;
@@ -251,14 +250,23 @@ function isValidRecord(value: unknown): value is SessionActivityRecord {
   if (!isRecord(value)) return false;
   if (typeof value.sessionId !== "string" || !value.sessionId) return false;
   if (typeof value.id !== "string" || !value.id) return false;
-  if (typeof value.timestamp !== "number" || !Number.isFinite(value.timestamp)) {
+  if (
+    typeof value.timestamp !== "number" ||
+    !Number.isFinite(value.timestamp)
+  ) {
     return false;
   }
   if (value.timestamp < 0) return false;
-  if (typeof value.kind !== "string" || !KINDS.has(value.kind as SessionActivityKind)) {
+  if (
+    typeof value.kind !== "string" ||
+    !KINDS.has(value.kind as SessionActivityKind)
+  ) {
     return false;
   }
-  if (typeof value.source !== "string" || !SOURCES.has(value.source as SessionActivitySource)) {
+  if (
+    typeof value.source !== "string" ||
+    !SOURCES.has(value.source as SessionActivitySource)
+  ) {
     return false;
   }
   if (typeof value.summary !== "string") return false;

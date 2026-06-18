@@ -23,13 +23,13 @@ import type { PortForwarder } from "../port-forwarder/forwarder.js";
 import type { PortScanner } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
 import { Osc7Lifecycle } from "../pty/osc7-lifecycle.js";
+import type { SessionActivityStore } from "../session-activity-store.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
 import type { ProjectRuntime } from "./project-runtime.js";
 import { enrichPorts } from "./runtime-loops.js";
-import type { SessionActivityStore } from "../session-activity-store.js";
 
 export interface WireRuntimeDeps {
   appStateStore: AppStateStore;

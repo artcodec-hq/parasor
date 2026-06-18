@@ -8,9 +8,9 @@ import type {
   PortInfo,
   Project,
   ProjectState,
-  SessionActivityRecord,
   ServiceConfig,
   Session,
+  SessionActivityRecord,
   Worktree,
   WsEventMessage,
 } from "@parasor/shared";
