@@ -11,28 +11,24 @@ import { createProjectQueries } from "../application/workspace/project-queries.j
 import type { AgentStatusRecorder } from "../debug/agent-status-recorder.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import type { IpcServer } from "../ipc/socket-server.js";
-import type { PortForwarder } from "../port-forwarder/forwarder.js";
-import type { PortScanner } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
 import { Osc7Lifecycle } from "../pty/osc7-lifecycle.js";
+import type { RuntimeServiceAdvertisedUrlWatcher } from "../runtime-services/advertised-url-watcher.js";
+import {
+  projectServicesToPorts,
+  type RuntimeServiceRegistry,
+} from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
 import type { ProjectRuntime } from "./project-runtime.js";
-import { enrichPorts } from "./runtime-loops.js";
 
 export interface WireRuntimeDeps {
   appStateStore: AppStateStore;
   eventBus: EventBus;
-  portScanner: PortScanner;
-  /**
-   * The shared per-port TCP forwarder (same instance handed to
-   * `startRuntimeLoops`). Used to enrich the hydration snapshot's ports with
-   * `reachable`/`reachablePort` so a reloaded/reconnected client can resolve
-   * already-open browser panes without waiting for the next port-set change.
-   */
-  portForwarder: PortForwarder;
+  serviceRegistry: RuntimeServiceRegistry;
+  advertisedUrlWatcher: RuntimeServiceAdvertisedUrlWatcher;
   ptyManager: PtyHost;
   agentDetector: AgentDetector;
   agentStateStore: AgentStateStore;
@@ -78,8 +74,8 @@ export function buildHydrationStateSnapshot({
 export function wireRuntime({
   appStateStore,
   eventBus,
-  portScanner,
-  portForwarder,
+  serviceRegistry,
+  advertisedUrlWatcher,
   ptyManager,
   agentDetector,
   agentStateStore,
@@ -106,13 +102,14 @@ export function wireRuntime({
     getNotifications: () => eventBus.getNotifications(),
     getPorts: () => {
       const out: Record<string, PortInfo[]> = {};
-      for (const [projectId, ports] of Object.entries(
-        portScanner.getAllPorts(),
+      for (const [projectId, services] of Object.entries(
+        serviceRegistry.getAllServices(),
       )) {
-        out[projectId] = enrichPorts(ports, projectId, portForwarder);
+        out[projectId] = projectServicesToPorts(services);
       }
       return out;
     },
+    getServices: () => serviceRegistry.getAllServices(),
     getGitStates: () => projectRuntime.getGitStates(),
     getWorktrees: () => worktreeCache.get(),
   });
@@ -168,6 +165,7 @@ export function wireRuntime({
       agentDetector.removeSession(message.sessionId);
       agentStateStore.remove(message.sessionId);
       manualAgentTracker.removeSession(message.sessionId);
+      advertisedUrlWatcher.removeSession(message.sessionId);
     }
     projectRuntime.handleBroadcast(message);
   };
@@ -201,6 +199,13 @@ export function wireRuntime({
       observeOutput,
     });
     manualAgentTracker.observeOutput(sessionId, data);
+    if (detectorSession) {
+      advertisedUrlWatcher.feed(
+        sessionId,
+        data,
+        sessionBindingFor(detectorSession, appStateStore, worktreeCache),
+      );
+    }
 
     const newCwd = osc7Lifecycle.feed(sessionId, data);
     if (!newCwd) return;
@@ -244,6 +249,7 @@ export function wireRuntime({
     agentDetector.removeSession(sessionId);
     agentStateStore.remove(sessionId);
     manualAgentTracker.removeSession(sessionId);
+    advertisedUrlWatcher.removeSession(sessionId);
     const session = ptyManager.get(sessionId);
     if (session) {
       projectRuntime.handleSessionEnded(session.projectId);
@@ -288,4 +294,51 @@ export function wireRuntime({
     });
     return { ok: true };
   });
+}
+
+function sessionBindingFor(
+  session: {
+    projectId: string;
+    cwd: string;
+  },
+  appStateStore: AppStateStore,
+  worktreeCache: WorktreeCache,
+): {
+  projectId: string;
+  worktreePath: string;
+} {
+  const state = appStateStore.get();
+  const projectPath =
+    state.projects.find((project) => project.id === session.projectId)?.path ??
+    "";
+  const worktreePaths = [
+    projectPath,
+    ...(worktreeCache.get()[session.projectId] ?? []).map(
+      (worktree) => worktree.path,
+    ),
+  ].filter((path) => path.trim() !== "");
+  const worktreePath = deepestContainingPath(session.cwd, worktreePaths);
+  return {
+    projectId: session.projectId,
+    worktreePath: worktreePath ?? session.cwd,
+  };
+}
+
+function deepestContainingPath(
+  targetPath: string,
+  candidatePaths: string[],
+): string | undefined {
+  const normalizedTarget = normalizePath(targetPath);
+  return candidatePaths
+    .map((path) => ({ path, normalized: normalizePath(path) }))
+    .filter(
+      (candidate) =>
+        normalizedTarget === candidate.normalized ||
+        normalizedTarget.startsWith(`${candidate.normalized}/`),
+    )
+    .sort((a, b) => b.normalized.length - a.normalized.length)[0]?.path;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\/+$/, "").replace(/\\/g, "/");
 }

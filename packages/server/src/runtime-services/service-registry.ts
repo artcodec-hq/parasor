@@ -1,6 +1,7 @@
 import type { PortInfo, RuntimeServiceInfo } from "@parasor/shared";
 import type { PortForwarder } from "../port-forwarder/forwarder.js";
 import type { ScannedPortInfo } from "../port-scanner/scanner.js";
+import type { RuntimeServiceAdvertisedUrlWatcher } from "./advertised-url-watcher.js";
 import {
   attributeRuntimeService,
   connectHostForBindHost,
@@ -21,15 +22,20 @@ export interface RuntimeServiceRegistryProjectInput {
 
 export interface RuntimeServiceRegistryOptions {
   disappearedRetentionMs?: number;
+  advertisedUrlWatcher?: RuntimeServiceAdvertisedUrlWatcher;
 }
 
 export class RuntimeServiceRegistry {
   private readonly byProject = new Map<string, RuntimeServiceInfo[]>();
   private readonly disappearedRetentionMs: number;
+  private readonly advertisedUrlWatcher:
+    | RuntimeServiceAdvertisedUrlWatcher
+    | undefined;
 
   constructor(options: RuntimeServiceRegistryOptions = {}) {
     this.disappearedRetentionMs =
       options.disappearedRetentionMs ?? DEFAULT_DISAPPEARED_RETENTION_MS;
+    this.advertisedUrlWatcher = options.advertisedUrlWatcher;
   }
 
   syncProject(input: RuntimeServiceRegistryProjectInput): RuntimeServiceInfo[] {
@@ -38,14 +44,15 @@ export class RuntimeServiceRegistry {
     const previousById = new Map(
       previous.map((service) => [service.id, service]),
     );
-    const live = input.ports.map((port) =>
-      this.buildService(
+    const live = input.ports.map((port) => {
+      const service = this.buildService(
         input,
         port,
         previousById.get(serviceIdFor(input.projectId, port)),
         now,
-      ),
-    );
+      );
+      return this.advertisedUrlWatcher?.applyToService(service) ?? service;
+    });
     const liveIds = new Set(live.map((service) => service.id));
     const retained = previous.flatMap((service) => {
       if (liveIds.has(service.id)) return [];
@@ -68,6 +75,7 @@ export class RuntimeServiceRegistry {
     );
     if (next.length === 0) this.byProject.delete(input.projectId);
     else this.byProject.set(input.projectId, next);
+    this.advertisedUrlWatcher?.reconcile(this.getLiveServices(), now);
     return next;
   }
 
@@ -81,6 +89,10 @@ export class RuntimeServiceRegistry {
       out[projectId] = services;
     }
     return out;
+  }
+
+  private getLiveServices(): RuntimeServiceInfo[] {
+    return [...this.byProject.values()].flat();
   }
 
   private buildService(

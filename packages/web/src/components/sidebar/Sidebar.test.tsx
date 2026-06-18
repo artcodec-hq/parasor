@@ -228,6 +228,82 @@ describe("Sidebar project actions", () => {
     });
   });
 
+  it("renders service context and prefers advertised URLs for open and copy", () => {
+    const onOpenUrl = vi.fn();
+    const writeText = vi.fn();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderSidebar({
+      projectNames: { "project-1": "Project" },
+      sessions: [
+        {
+          id: "s1",
+          projectId: "project-1",
+          pid: 100,
+          state: "running",
+          generation: 1,
+          title: "dev",
+          command: { type: "shell" },
+          cwd: "/repo",
+          shell: "/bin/zsh",
+          createdAt: 1,
+        },
+      ],
+      servicesByProjectId: {
+        "project-1": [
+          {
+            id: "svc",
+            kind: "workspace",
+            port: 5173,
+            pid: 100,
+            processName: "vite",
+            bindHost: "127.0.0.1",
+            connectHost: "127.0.0.1",
+            bindsAll: false,
+            protocol: "http",
+            serviceName: "vite",
+            attribution: {
+              source: "session-process-tree",
+              confidence: "high",
+              projectId: "project-1",
+              worktreePath: "/repo",
+              sessionId: "s1",
+            },
+            advertisedUrl: {
+              origin: "https://app.test:5173",
+              protocol: "https",
+              host: "app.test",
+              hostKind: "custom",
+              sourceSessionId: "s1",
+              capturedAt: 1,
+              validatedListenerPid: 100,
+            },
+            reachable: false,
+            lifecycle: "reachable",
+            firstSeenAt: 1,
+            lastSeenAt: 1,
+            source: "scanner",
+          },
+        ],
+      },
+      onOpenUrl,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Network ports" }));
+    expect(screen.getByText("vite")).toBeTruthy();
+    expect(screen.getByText("Project - repo - dev")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("https://app.test:5173");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(onOpenUrl).toHaveBeenCalledWith("https://app.test:5173", {
+      projectId: "project-1",
+    });
+  });
+
   it("removes closed ports from the sidebar network list", () => {
     const baseProps = {
       projects,

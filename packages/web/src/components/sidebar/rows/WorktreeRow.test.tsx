@@ -126,6 +126,18 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(screen.queryByLabelText("Modified")).toBeNull();
   });
 
+  it("renders a live service count pill", () => {
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), serviceCount: 2 }}
+        selection={selection}
+      />,
+    );
+
+    expect(screen.getByLabelText("2 live services").textContent).toBe("2");
+  });
+
   it("uses secondary text for the project root label", () => {
     render(
       <WorktreeRow

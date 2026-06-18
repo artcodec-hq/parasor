@@ -118,6 +118,7 @@ export interface HydrationPayload {
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
   ports: Record<string, PortInfo[]>;
+  services: Record<string, RuntimeServiceInfo[]>;
   /**
    * Per-worktree git state, grouped by project. Outer key = projectId,
    * inner key = absolute worktree path. The project's main checkout

@@ -1,4 +1,5 @@
 import type { AgentState, GitState, PortInfo, Worktree } from "./runtime.js";
+import type { RuntimeServiceInfo } from "./runtime-services.js";
 import {
   normalizeSessionLaunchPreset,
   type SessionLaunchPreset,
@@ -18,6 +19,7 @@ export const RUNTIME_METHODS = [
   "files.read",
   "git.status",
   "ports.list",
+  "services.list",
 ] as const;
 
 export type RuntimeMethodName = (typeof RUNTIME_METHODS)[number];
@@ -139,6 +141,12 @@ export const RUNTIME_METHOD_DESCRIPTORS: readonly RuntimeMethodDescriptor[] = [
     access: "read",
     stability: "experimental",
   },
+  {
+    name: "services.list",
+    version: 1,
+    access: "read",
+    stability: "experimental",
+  },
 ];
 
 export const RUNTIME_TERMINAL_READ_DEFAULT_MAX_BYTES = 256 * 1024;
@@ -196,6 +204,7 @@ export interface RuntimeStatusResult {
   worktrees: Record<string, Worktree[]>;
   gitStates: Record<string, Record<string, GitState | null>>;
   ports: Record<string, PortInfo[]>;
+  services: Record<string, RuntimeServiceInfo[]>;
   hostPlatform: NodeJS.Platform;
 }
 
@@ -292,6 +301,14 @@ export interface PortsListResult {
   ports: Record<string, PortInfo[]>;
 }
 
+export interface ServicesListParams {
+  projectId?: string;
+}
+
+export interface ServicesListResult {
+  services: Record<string, RuntimeServiceInfo[]>;
+}
+
 export type RuntimeMethodParams = {
   "runtime.describe": undefined;
   "runtime.status": RuntimeStatusParams;
@@ -303,6 +320,7 @@ export type RuntimeMethodParams = {
   "files.read": FilesReadParams;
   "git.status": GitStatusParams;
   "ports.list": PortsListParams;
+  "services.list": ServicesListParams;
 };
 
 export type RuntimeMethodResult = {
@@ -316,6 +334,7 @@ export type RuntimeMethodResult = {
   "files.read": FilesReadResult;
   "git.status": GitStatusResult;
   "ports.list": PortsListResult;
+  "services.list": ServicesListResult;
 };
 
 export type RuntimeValidationResult<T> =
@@ -396,6 +415,10 @@ export function normalizeRuntimeMethodParams<M extends RuntimeMethodName>(
         RuntimeMethodParams[M]
       >;
     case "ports.list":
+      return optionalProjectIdParams(value) as RuntimeValidationResult<
+        RuntimeMethodParams[M]
+      >;
+    case "services.list":
       return optionalProjectIdParams(value) as RuntimeValidationResult<
         RuntimeMethodParams[M]
       >;

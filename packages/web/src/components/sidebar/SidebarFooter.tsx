@@ -1,4 +1,4 @@
-import type { PortInfo } from "@parasor/shared";
+import type { PortInfo, RuntimeServiceInfo, Session } from "@parasor/shared";
 import type { OpenUrlOptions } from "../../lib/open-url-options.js";
 import { PaGlyph, PaneFooter } from "../primitives/index.js";
 import { NetworkPortCenter } from "./NetworkPortCenter.js";
@@ -10,7 +10,9 @@ import {
 interface SidebarFooterProps {
   connected: boolean;
   portsByProjectId?: Record<string, PortInfo[]>;
+  servicesByProjectId?: Record<string, RuntimeServiceInfo[]>;
   projectNames?: Record<string, string>;
+  sessions?: Session[];
   onOpenUrl?: (url: string, options?: OpenUrlOptions) => void;
   onOpenSettings?: () => void;
   onNewProject?: () => void;
@@ -21,7 +23,9 @@ interface SidebarFooterProps {
 export function SidebarFooter({
   connected,
   portsByProjectId,
+  servicesByProjectId,
   projectNames,
+  sessions,
   onOpenUrl,
   onOpenSettings,
   onNewProject,
@@ -36,7 +40,9 @@ export function SidebarFooter({
         <NetworkPortCenter
           connected={connected}
           portsByProjectId={portsByProjectId}
+          servicesByProjectId={servicesByProjectId}
           projectNames={projectNames}
+          sessions={sessions}
           onOpenUrl={onOpenUrl}
         />
       }

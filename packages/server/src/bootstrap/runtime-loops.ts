@@ -5,6 +5,7 @@ import { resolveForwarderBindHost } from "../net/reachable-host.js";
 import { PortForwarder } from "../port-forwarder/forwarder.js";
 import type { PortScanner, ScannedPortInfo } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
+import type { RuntimeServiceAdvertisedUrlWatcher } from "../runtime-services/advertised-url-watcher.js";
 import {
   projectServicesToPorts,
   RuntimeServiceRegistry,
@@ -49,6 +50,9 @@ export interface StartRuntimeLoopsDeps {
   bindHost?: string;
   /** Injectable for tests; defaults to one built from `bindHost`. */
   portForwarder?: PortForwarder;
+  /** Shared runtime service registry; injectable so hydration/API read the same state. */
+  serviceRegistry?: RuntimeServiceRegistry;
+  advertisedUrlWatcher?: RuntimeServiceAdvertisedUrlWatcher;
   titlePollIntervalMs?: number;
   gitPollIntervalMs?: number;
   uploadSweepIntervalMs?: number;
@@ -131,6 +135,8 @@ export function startRuntimeLoops({
   reconcileWorktrees,
   bindHost = "0.0.0.0",
   portForwarder,
+  serviceRegistry,
+  advertisedUrlWatcher,
   titlePollIntervalMs = DEFAULT_TITLE_POLL_INTERVAL_MS,
   gitPollIntervalMs = DEFAULT_GIT_POLL_INTERVAL_MS,
   uploadSweepIntervalMs = DEFAULT_UPLOAD_SWEEP_INTERVAL_MS,
@@ -148,14 +154,14 @@ export function startRuntimeLoops({
   const lastPorts = new Map<string, ScannedPortInfo[]>();
   const forwarder =
     portForwarder ?? new PortForwarder(resolveForwarderBindHost(bindHost));
-  const serviceRegistry = new RuntimeServiceRegistry();
+  const registry = serviceRegistry ?? new RuntimeServiceRegistry();
 
   // Derive the enriched ports for `projectId` from `ports`, broadcast
   // `ports-updated`, update the seen-reachability bookkeeping, and emit a
   // `port-detected` notification for any port that just became reachable.
   function reemitPorts(projectId: string, ports: ScannedPortInfo[]): void {
     const mode = appStateStore.get().serviceConfig.portDetection;
-    const services = serviceRegistry.syncProject({
+    const services = registry.syncProject({
       projectId,
       projectPath: projectPathFor(appStateStore, projectId),
       worktreePaths: worktreePathsFor(appStateStore, projectId),
@@ -198,6 +204,10 @@ export function startRuntimeLoops({
   // toast). Registered unconditionally so it works for an injected test
   // forwarder too.
   forwarder.setOnChange((projectId) => {
+    const ports = lastPorts.get(projectId);
+    if (ports) reemitPorts(projectId, ports);
+  });
+  advertisedUrlWatcher?.setOnChanged((projectId) => {
     const ports = lastPorts.get(projectId);
     if (ports) reemitPorts(projectId, ports);
   });

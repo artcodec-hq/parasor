@@ -247,6 +247,7 @@ function eventStore(overrides: Record<string, unknown> = {}) {
     agentStates: {},
     notifications: [],
     ports: {},
+    services: {},
     gitStates: {},
     paneCommands: [],
     ideCommands: [],

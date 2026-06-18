@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
-import type { AgentState } from "@parasor/shared";
+import type { AgentState, RuntimeServiceInfo } from "@parasor/shared";
 import { type Context, Hono } from "hono";
 import type { AgentDetector } from "../agent-detector/detector.js";
 import { originMiddleware } from "../auth/origin.js";
@@ -16,8 +16,6 @@ import { FontInstaller } from "../fonts/installer.js";
 import { createFontRoutes } from "../fonts/routes.js";
 import type { FilesystemService } from "../fs/service.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
-import type { PortForwarder } from "../port-forwarder/forwarder.js";
-import type { PortScanner } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
 import { createDebugAgentStatusRoute } from "../routes/debug-agent-status.js";
 import { createDebugDiagnosticsRoute } from "../routes/debug-diagnostics.js";
@@ -37,6 +35,10 @@ import { createRuntimeRoutes } from "../routes/runtime.js";
 import { createServerNoticesRoutes } from "../routes/server-notices.js";
 import { createServiceConfigRoutes } from "../routes/service-config.js";
 import { createSessionRoutes } from "../routes/sessions.js";
+import {
+  projectServicesToPorts,
+  type RuntimeServiceRegistry,
+} from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { ServerNoticesStore } from "../state/server-notices.js";
@@ -49,7 +51,6 @@ import {
   setupTerminalRelay,
 } from "../ws/terminal.js";
 import type { ProjectRuntime } from "./project-runtime.js";
-import { enrichPorts } from "./runtime-loops.js";
 
 export type AuthMode = "token" | "allowlist" | "none";
 
@@ -73,8 +74,7 @@ export interface CreateAppServerDeps {
   serverNoticesStore: ServerNoticesStore;
   worktreeCache: WorktreeCache;
   projectRuntime: ProjectRuntime;
-  portScanner: PortScanner;
-  portForwarder: PortForwarder;
+  serviceRegistry: RuntimeServiceRegistry;
   serverVersion?: string;
   uploadStaging: UploadStaging;
   reconcileWorktrees?: (
@@ -108,8 +108,7 @@ export function createAppServer({
   serverNoticesStore,
   worktreeCache,
   projectRuntime,
-  portScanner,
-  portForwarder,
+  serviceRegistry,
   serverVersion = "0.0.0",
   uploadStaging,
   reconcileWorktrees,
@@ -245,13 +244,15 @@ export function createAppServer({
       getAgentStates,
       getPorts: () => {
         const out: Record<string, import("@parasor/shared").PortInfo[]> = {};
-        for (const [projectId, ports] of Object.entries(
-          portScanner.getAllPorts(),
+        for (const [projectId, services] of Object.entries(
+          serviceRegistry.getAllServices(),
         )) {
-          out[projectId] = enrichPorts(ports, projectId, portForwarder);
+          out[projectId] = projectServicesToPorts(services);
         }
         return out;
       },
+      getServices: (): Record<string, RuntimeServiceInfo[]> =>
+        serviceRegistry.getAllServices(),
       projectManager,
       projectRuntime,
       ptyManager,

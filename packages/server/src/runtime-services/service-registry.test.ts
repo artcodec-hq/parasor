@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PortForwarder } from "../port-forwarder/forwarder.js";
 import type { ScannedPortInfo } from "../port-scanner/scanner.js";
+import { RuntimeServiceAdvertisedUrlWatcher } from "./advertised-url-watcher.js";
 import {
   projectServicesToPorts,
   RuntimeServiceRegistry,
@@ -90,6 +91,58 @@ describe("RuntimeServiceRegistry", () => {
         reachablePort: 49231,
       },
     ]);
+  });
+
+  it("attaches validated advertised URLs to matching workspace services only", () => {
+    const watcher = new RuntimeServiceAdvertisedUrlWatcher();
+    watcher.feed("s1", "ready at http://localhost:5173/path?secret=1", {
+      projectId: "p1",
+      worktreePath: "/repo",
+    });
+    const registry = new RuntimeServiceRegistry({
+      advertisedUrlWatcher: watcher,
+    });
+    const services = registry.syncProject({
+      projectId: "p1",
+      projectPath: "/repo",
+      worktreePaths: ["/repo"],
+      ports: [port()],
+      forwarder: forwarder(),
+      now: 1000,
+    });
+
+    expect(services[0].advertisedUrl).toMatchObject({
+      origin: "http://localhost:5173",
+      validatedListenerPid: 100,
+    });
+    expect(projectServicesToPorts(services)).toEqual([
+      {
+        port: 5173,
+        pid: 100,
+        bindsAll: false,
+        reachable: false,
+      },
+    ]);
+
+    const external = registry.syncProject({
+      projectId: "p1",
+      projectPath: "/repo",
+      worktreePaths: ["/repo"],
+      ports: [
+        port({
+          sessionId: undefined,
+          sessionCwd: undefined,
+          cwd: "/tmp",
+          commandLine: undefined,
+        }),
+      ],
+      forwarder: forwarder(),
+      now: 1100,
+    });
+    const externalService = external.find(
+      (service) => service.kind === "external",
+    );
+    expect(externalService?.advertisedUrl).toBeUndefined();
   });
 
   it("retains disappeared services for a bounded window", () => {

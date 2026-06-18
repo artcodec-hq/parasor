@@ -166,6 +166,16 @@ export function WorktreeRow({
               orphan
             </span>
           )}
+          {(worktree.serviceCount ?? 0) > 0 && (
+            <span
+              role="img"
+              aria-label={`${worktree.serviceCount} live service${worktree.serviceCount === 1 ? "" : "s"}`}
+              title={`${worktree.serviceCount} live service${worktree.serviceCount === 1 ? "" : "s"}`}
+              className="shrink-0 rounded-tag border border-accent/40 bg-accent/10 px-1 text-[10px] font-medium leading-tight text-accent"
+            >
+              {worktree.serviceCount}
+            </span>
+          )}
         </button>
         {dirtyDotClass && (
           <span

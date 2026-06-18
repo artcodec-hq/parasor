@@ -14,6 +14,7 @@ import type { FilesystemService } from "../fs/service.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import type { PtyHost } from "../pty/host.js";
 import type { RuntimeApiDeps } from "../runtime-api/dispatcher.js";
+import { RuntimeServiceRegistry } from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { ServerNoticesStore } from "../state/server-notices.js";
@@ -157,6 +158,34 @@ function makeDeps(root = mkdtempSync(join(tmpdir(), "parasor-runtime-api-"))) {
     getPorts: () => ({
       [project.id]: [{ port: 5173, pid: 100, bindsAll: true, reachable: true }],
     }),
+    getServices: () => ({
+      [project.id]: [
+        {
+          id: "svc",
+          kind: "workspace",
+          port: 5173,
+          pid: 100,
+          processName: "vite",
+          bindHost: "0.0.0.0",
+          connectHost: "localhost",
+          bindsAll: true,
+          protocol: "http",
+          serviceName: "vite",
+          attribution: {
+            source: "session-process-tree",
+            confidence: "high",
+            projectId: project.id,
+            worktreePath: project.path,
+            sessionId: "sess-1",
+          },
+          reachable: true,
+          lifecycle: "reachable",
+          firstSeenAt: 1,
+          lastSeenAt: 1,
+          source: "scanner",
+        },
+      ],
+    }),
     platform: "darwin",
     projectManager,
     projectRuntime,
@@ -214,11 +243,7 @@ function makeProductionApp(
     } as unknown as ServerNoticesStore,
     worktreeCache: harness.deps.worktreeCache,
     projectRuntime: harness.deps.projectRuntime,
-    portScanner: { getAllPorts: vi.fn(() => ({})) } as never,
-    portForwarder: {
-      getReachablePort: vi.fn(() => null),
-      isInert: vi.fn(() => true),
-    } as never,
+    serviceRegistry: new RuntimeServiceRegistry(),
     uploadStaging: {} as UploadStaging,
     getFilesystemService: (projectId, worktreePath) =>
       harness.deps.projectRuntime.getFilesystemService(projectId, worktreePath),
@@ -379,6 +404,10 @@ describe("runtime API route", () => {
     expect(data.result.agentStates["sess-1"]).toBeTruthy();
     expect(data.result.worktrees[harness.project.id]).toHaveLength(1);
     expect(data.result.ports[harness.project.id][0].reachable).toBe(true);
+    expect(data.result.services[harness.project.id][0]).toMatchObject({
+      port: 5173,
+      serviceName: "vite",
+    });
     expect(data.result.projectStates).toBeUndefined();
     expect(data.result.serviceConfig).toBeUndefined();
   });
@@ -608,6 +637,28 @@ describe("runtime API route", () => {
         ports: {
           [harness.project.id]: [
             { port: 5173, pid: 100, bindsAll: true, reachable: true },
+          ],
+        },
+      },
+    });
+  });
+
+  it("returns attributed service snapshots", async () => {
+    const res = await runtimeCall(app, {
+      method: "services.list",
+      params: { projectId: harness.project.id },
+    });
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      result: {
+        services: {
+          [harness.project.id]: [
+            {
+              kind: "workspace",
+              port: 5173,
+              serviceName: "vite",
+              attribution: { worktreePath: harness.project.path },
+            },
           ],
         },
       },

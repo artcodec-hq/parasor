@@ -1,4 +1,4 @@
-import type { PortInfo } from "@parasor/shared";
+import type { PortInfo, RuntimeServiceInfo, Session } from "@parasor/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OpenUrlOptions } from "../../lib/open-url-options.js";
 import { PaGlyph } from "../primitives/index.js";
@@ -7,7 +7,9 @@ import { SidebarRowActionButton } from "./primitives/index.js";
 interface NetworkPortCenterProps {
   connected: boolean;
   portsByProjectId?: Record<string, PortInfo[]>;
+  servicesByProjectId?: Record<string, RuntimeServiceInfo[]>;
   projectNames?: Record<string, string>;
+  sessions?: Session[];
   onOpenUrl?: (url: string, options?: OpenUrlOptions) => void;
 }
 
@@ -18,6 +20,18 @@ interface PortCenterEntry {
   projectName: string;
   reachable: boolean;
   url: string;
+  title: string;
+  detail: string;
+  lifecycle?: RuntimeServiceInfo["lifecycle"];
+  canOpen: boolean;
+}
+
+function hasServiceEntries(
+  servicesByProjectId: Record<string, RuntimeServiceInfo[]> | undefined,
+): boolean {
+  return Object.values(servicesByProjectId ?? {}).some(
+    (services) => services.length > 0,
+  );
 }
 
 function buildPortEntries(
@@ -34,6 +48,11 @@ function buildPortEntries(
         projectName: projectNames?.[projectId] ?? "project",
         reachable: info.reachable ?? info.bindsAll,
         url: `http://localhost:${info.port}`,
+        title: String(info.port),
+        detail: `${projectNames?.[projectId] ?? "project"}${
+          !(info.reachable ?? info.bindsAll) ? " - localhost only" : ""
+        }`,
+        canOpen: info.reachable ?? info.bindsAll,
       });
     }
   }
@@ -44,9 +63,50 @@ function buildPortEntries(
   );
 }
 
+function buildServiceEntries(
+  servicesByProjectId: Record<string, RuntimeServiceInfo[]> | undefined,
+  projectNames: Record<string, string> | undefined,
+  sessions: Session[] | undefined,
+): PortCenterEntry[] {
+  const sessionsById = new Map((sessions ?? []).map((s) => [s.id, s]));
+  const entries: PortCenterEntry[] = [];
+  for (const [projectId, services] of Object.entries(
+    servicesByProjectId ?? {},
+  )) {
+    for (const service of services ?? []) {
+      const sessionId = service.attribution.sessionId;
+      const session = sessionId ? sessionsById.get(sessionId) : undefined;
+      const lifecycle = service.lifecycle;
+      const reachable =
+        service.reachable || service.advertisedUrl !== undefined;
+      const canOpen = reachable && lifecycle !== "disappeared";
+      entries.push({
+        key: service.id,
+        port: service.port,
+        projectId,
+        projectName: projectNames?.[projectId] ?? "project",
+        reachable,
+        url: serviceUrl(service),
+        title:
+          service.serviceName ?? service.processName ?? String(service.port),
+        detail: serviceDetail(service, projectNames?.[projectId], session),
+        lifecycle,
+        canOpen,
+      });
+    }
+  }
+  return entries.sort((a, b) =>
+    a.projectName === b.projectName
+      ? a.port - b.port || a.title.localeCompare(b.title)
+      : a.projectName.localeCompare(b.projectName),
+  );
+}
+
 function usePortCenterState(
   portsByProjectId: Record<string, PortInfo[]> | undefined,
+  servicesByProjectId: Record<string, RuntimeServiceInfo[]> | undefined,
   projectNames: Record<string, string> | undefined,
+  sessions: Session[] | undefined,
 ) {
   const initializedRef = useRef(false);
   const [open, setOpen] = useState(false);
@@ -54,8 +114,11 @@ function usePortCenterState(
     () => new Set(),
   );
   const entries = useMemo(
-    () => buildPortEntries(portsByProjectId, projectNames),
-    [portsByProjectId, projectNames],
+    () =>
+      hasServiceEntries(servicesByProjectId)
+        ? buildServiceEntries(servicesByProjectId, projectNames, sessions)
+        : buildPortEntries(portsByProjectId, projectNames),
+    [portsByProjectId, projectNames, servicesByProjectId, sessions],
   );
   const currentPortKeys = useMemo(
     () => new Set(entries.map((entry) => entry.key)),
@@ -96,12 +159,19 @@ function usePortCenterState(
 export function NetworkPortCenter({
   connected,
   portsByProjectId,
+  servicesByProjectId,
   projectNames,
+  sessions,
   onOpenUrl,
 }: NetworkPortCenterProps) {
   const rootRef = useRef<HTMLSpanElement>(null);
   const { entries, hasUnread, markCurrentSeen, open, setOpen } =
-    usePortCenterState(portsByProjectId, projectNames);
+    usePortCenterState(
+      portsByProjectId,
+      servicesByProjectId,
+      projectNames,
+      sessions,
+    );
 
   useEffect(() => {
     if (!open) return;
@@ -172,24 +242,37 @@ export function NetworkPortCenter({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="cm-mono text-xs text-text-primary">
-                      {entry.port}
+                      {entry.title}
+                      <span className="ml-1 text-text-secondary">
+                        :{entry.port}
+                      </span>
                     </div>
                     <div className="truncate text-xs text-text-secondary">
-                      {entry.projectName}
-                      {!entry.reachable && " - localhost only"}
+                      {entry.detail}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    disabled={!entry.reachable || !onOpenUrl}
-                    onClick={() => {
-                      onOpenUrl?.(entry.url, { projectId: entry.projectId });
-                      setOpen(false);
-                    }}
-                    className="flex h-7 shrink-0 items-center rounded-control px-2 text-xs text-accent hover:bg-row-hover-bg disabled:text-text-secondary disabled:opacity-50"
-                  >
-                    Open
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(entry.url);
+                      }}
+                      className="flex h-7 items-center rounded-control px-2 text-xs text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!entry.canOpen || !onOpenUrl}
+                      onClick={() => {
+                        onOpenUrl?.(entry.url, { projectId: entry.projectId });
+                        setOpen(false);
+                      }}
+                      className="flex h-7 items-center rounded-control px-2 text-xs text-accent hover:bg-row-hover-bg disabled:text-text-secondary disabled:opacity-50"
+                    >
+                      Open
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -198,4 +281,32 @@ export function NetworkPortCenter({
       )}
     </span>
   );
+}
+
+function serviceUrl(service: RuntimeServiceInfo): string {
+  if (service.advertisedUrl) return service.advertisedUrl.origin;
+  const protocol = service.protocol === "https" ? "https" : "http";
+  return `${protocol}://localhost:${service.port}`;
+}
+
+function serviceDetail(
+  service: RuntimeServiceInfo,
+  projectName: string | undefined,
+  session: Session | undefined,
+): string {
+  const parts = [projectName ?? "project"];
+  if (service.attribution.worktreePath) {
+    parts.push(lastPathSegment(service.attribution.worktreePath));
+  }
+  if (session?.title) parts.push(session.title);
+  if (service.lifecycle === "disappeared") parts.push("closed");
+  else if (!service.reachable && !service.advertisedUrl) {
+    parts.push("localhost only");
+  }
+  return parts.join(" - ");
+}
+
+function lastPathSegment(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.split("/").pop() || path;
 }
