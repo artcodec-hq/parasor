@@ -10,6 +10,11 @@
  *   `refresh` envelopes apply (back-compat for old web clients).
  */
 
+import type {
+  TerminalClientKind,
+  TerminalMobileSubscribeMode,
+} from "./terminal-presence.js";
+
 /**
  * Capabilities declared by either side. Both fields default to `false`
  * if absent -- `chunkedReplay` requires `binary` (validated server-side).
@@ -72,6 +77,8 @@ export type WsTerminalClientMessage =
       type: "init";
       cols: number;
       rows: number;
+      clientKind?: TerminalClientKind;
+      mobileMode?: TerminalMobileSubscribeMode;
       capabilities?: TerminalCapabilities & { lastSeen?: TerminalLastSeen };
     }
   /*

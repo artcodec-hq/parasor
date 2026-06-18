@@ -52,6 +52,14 @@ export class TerminalPresenceManager {
     return this.snapshot(sessionId, this.getOrCreate(sessionId));
   }
 
+  getAll(): Record<string, TerminalPresenceSnapshot> {
+    const out: Record<string, TerminalPresenceSnapshot> = {};
+    for (const [sessionId, state] of this.sessions) {
+      out[sessionId] = this.snapshot(sessionId, state);
+    }
+    return out;
+  }
+
   subscribeMobile(
     sessionId: string,
     clientId: string,
@@ -231,10 +239,17 @@ export class TerminalPresenceManager {
     const existing = this.sessions.get(sessionId);
     if (existing) this.clearTimers(existing);
     this.sessions.delete(sessionId);
-    const state = this.getOrCreate(sessionId);
-    return this.update(sessionId, state, [
-      this.presenceChanged(sessionId, state),
-    ]);
+    const snapshot: TerminalPresenceSnapshot = {
+      sessionId,
+      driver: { kind: "idle" },
+      layout: null,
+      subscribers: [],
+    };
+    const effects: TerminalPresenceEffect[] = [
+      { type: "presence-changed", snapshot },
+    ];
+    this.emit(effects);
+    return { snapshot, effects };
   }
 
   private getOrCreate(sessionId: string): SessionPresenceState {

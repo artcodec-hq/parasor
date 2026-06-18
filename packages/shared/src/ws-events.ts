@@ -19,6 +19,10 @@ import type {
   Session,
   SessionEndReason,
 } from "./state.js";
+import type {
+  MobileSessionSnapshot,
+  TerminalPresenceSnapshot,
+} from "./terminal-presence.js";
 
 export type WsEventMessage =
   | { type: "session-created"; session: Session }
@@ -46,6 +50,17 @@ export type WsEventMessage =
       worktreePath: string;
     }
   | { type: "app-state-snapshot"; payload: HydrationPayload }
+  | {
+      type: "terminal-presence-changed";
+      sessionId: string;
+      presence: TerminalPresenceSnapshot;
+    }
+  | {
+      type: "mobile-session-snapshot";
+      projectId: string;
+      worktreePath: string;
+      snapshot: MobileSessionSnapshot;
+    }
   | { type: "layout-updated"; projectId: string; layout: PaneNode | null }
   | {
       type: "panes-updated";
@@ -134,6 +149,10 @@ export interface HydrationPayload {
   worktrees: Record<string, Worktree[]>;
   /** Most recent session activity records for hydration. */
   activityHistory?: SessionActivityRecord[];
+  /** Server-owned terminal presence snapshots by session id. */
+  terminalPresences?: Record<string, TerminalPresenceSnapshot>;
+  /** Bounded mobile resume projection, grouped by project id. */
+  mobileSessionSnapshots?: Record<string, MobileSessionSnapshot[]>;
   /**
    * Node process.platform of the host running parasor server. Web clients
    * use this to gate platform-specific UI (e.g. macOS-only service
