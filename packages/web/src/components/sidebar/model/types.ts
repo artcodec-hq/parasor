@@ -1,4 +1,7 @@
-import type { WorktreeLineageMetadata } from "@parasor/shared";
+import type {
+  AgentStatusContext,
+  WorktreeLineageMetadata,
+} from "@parasor/shared";
 import type { AgentDotState } from "../../primitives/index.js";
 
 /**
@@ -16,6 +19,7 @@ export interface SidebarChild {
   /** Subtext rendered next to the label. Kept short so it fits one line. */
   hint?: string;
   status: AgentDotState;
+  statusContext?: AgentStatusContext;
   /** Terminal pin state. Always `false` for browser children. */
   pinned: boolean;
   /** Only meaningful for kind==="browser": true = auto port detection. */
@@ -54,6 +58,8 @@ export interface SidebarWorktree {
    * surfaces a pill and the remove dialog defaults to `--force`.
    */
   orphan?: boolean;
+  /** Live workspace-owned services attributed to this worktree. */
+  serviceCount?: number;
 }
 
 export interface SidebarProject {

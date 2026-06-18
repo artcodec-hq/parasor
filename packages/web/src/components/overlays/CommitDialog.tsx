@@ -9,6 +9,7 @@ import {
   DialogCloseButton,
   DialogFooter,
   DialogRoot,
+  PaGlyph,
 } from "../primitives/index.js";
 
 export interface CommitFileEntry {
@@ -66,6 +67,7 @@ export interface CommitBodyProps {
    * responsible for parsing the diff and indexing it by file path.
    */
   diffsByPath?: ReadonlyMap<string, DiffFile>;
+  onOpenFilePath?: (filePath: string) => void;
 }
 
 export function CommitBody({
@@ -77,6 +79,7 @@ export function CommitBody({
   setMessage,
   layout,
   diffsByPath,
+  onOpenFilePath,
 }: CommitBodyProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const toggleExpand = (path: string) =>
@@ -148,6 +151,16 @@ export function CommitBody({
                     {f.status}
                   </span>
                 </label>
+                {onOpenFilePath && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenFilePath(f.path)}
+                    aria-label={`Open ${f.path}`}
+                    className="flex h-tap-sm w-tap-sm shrink-0 items-center justify-center rounded-control text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
+                  >
+                    <PaGlyph.doc />
+                  </button>
+                )}
                 {fileDiff ? (
                   <button
                     type="button"

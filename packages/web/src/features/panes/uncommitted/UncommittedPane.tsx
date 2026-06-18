@@ -28,6 +28,7 @@ interface UncommittedPaneProps {
   /** Called when user dismisses the inline error. */
   onClearError: () => void;
   onSubmit: (input: { message: string; paths: string[] }) => void;
+  onOpenFilePath?: (filePath: string) => void;
 }
 
 /**
@@ -47,6 +48,7 @@ export function UncommittedPane({
   error,
   onClearError,
   onSubmit,
+  onOpenFilePath,
 }: UncommittedPaneProps) {
   const [message, setMessage] = useState("");
   const [selected, setSelected] = useState<Set<string>>(
@@ -152,6 +154,7 @@ export function UncommittedPane({
           setMessage={setMessage}
           layout="inline"
           diffsByPath={diffsByPath}
+          onOpenFilePath={onOpenFilePath}
         />
       )}
 

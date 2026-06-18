@@ -47,6 +47,7 @@ interface EditorPaneProps {
   worktreePath?: string;
   filePath: string;
   fileChangeSeq?: number;
+  onClose?: () => void;
 }
 
 export function EditorPane(props: EditorPaneProps) {
@@ -64,6 +65,7 @@ export function EditorPane(props: EditorPaneProps) {
         filePath={props.filePath}
         kind={mediaKind}
         fileChangeSeq={props.fileChangeSeq}
+        onClose={props.onClose}
       />
     );
   }
@@ -75,6 +77,7 @@ function TextEditorPane({
   worktreePath,
   filePath,
   fileChangeSeq,
+  onClose,
 }: EditorPaneProps) {
   const project = useProject(projectId);
   const readOnly = !!project?.readOnly;
@@ -331,6 +334,11 @@ function TextEditorPane({
                   <PaGlyph.save />
                 </PaneIconButton>
               </>
+            )}
+            {onClose && (
+              <PaneIconButton onClick={onClose} label="Close file preview">
+                <PaGlyph.close />
+              </PaneIconButton>
             )}
           </div>
         }

@@ -8,6 +8,7 @@ import type {
   PortInfo,
   Project,
   ProjectState,
+  RuntimeServiceInfo,
   ServiceConfig,
   Session,
   Worktree,
@@ -61,6 +62,7 @@ export interface AppStore {
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
   ports: Record<string, PortInfo[]>;
+  services: Record<string, RuntimeServiceInfo[]>;
   /**
    * Per-worktree git state. Outer key = projectId, inner key = absolute
    * worktree path. Use `pickGitState(store, projectId, worktreePath)` for
@@ -92,6 +94,7 @@ export const EMPTY_STORE: AppStore = {
   agentStates: {},
   notifications: [],
   ports: {},
+  services: {},
   gitStates: {},
   serviceConfig: {
     preventIdleSleep: false,
@@ -212,12 +215,16 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
       const { [msg.projectId]: _, ...projectStates } = store.projectStates;
       const { [msg.projectId]: _wt, ...worktrees } = store.worktrees;
       const { [msg.projectId]: _gs, ...gitStates } = store.gitStates;
+      const { [msg.projectId]: _ports, ...ports } = store.ports;
+      const { [msg.projectId]: _services, ...services } = store.services;
       return {
         ...store,
         projects: store.projects.filter((p) => p.id !== msg.projectId),
         sessions: store.sessions.filter((s) => s.projectId !== msg.projectId),
         projectStates,
         agentStates,
+        ports,
+        services,
         gitStates,
         worktrees,
       };
@@ -239,6 +246,12 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
       return {
         ...store,
         ports: { ...store.ports, [msg.projectId]: msg.ports },
+      };
+
+    case "services-updated":
+      return {
+        ...store,
+        services: { ...store.services, [msg.projectId]: msg.services },
       };
 
     case "git-state": {
@@ -390,6 +403,7 @@ export function applySnapshot(payload: HydrationPayload): AppStore {
     // every time the snapshot is reapplied.
     notifications: [...payload.notifications].reverse(),
     ports: payload.ports,
+    services: payload.services ?? {},
     gitStates: payload.gitStates,
     serviceConfig: payload.state.serviceConfig,
     paneCommands: payload.state.paneCommands ?? [],

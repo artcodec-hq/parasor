@@ -29,13 +29,13 @@ describe("shouldObserveAgentOutput", () => {
     ).toBe(false);
   });
 
-  it("observes dedicated claude sessions", () => {
+  it("does not observe dedicated claude sessions because hooks own native state", () => {
     expect(
       shouldObserveAgentOutput(
         makeSession({ command: { type: "claude" } }),
         "claude",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not observe shell-launched agents until the manual tracker engages", () => {
@@ -53,7 +53,7 @@ describe("shouldObserveAgentOutput", () => {
     ).toBe(false);
   });
 
-  it("observes built-in shell preset agents when the foreground process matches", () => {
+  it("does not observe native-managed built-in preset agents from output", () => {
     expect(
       shouldObserveAgentOutput(
         makeSession({
@@ -72,7 +72,7 @@ describe("shouldObserveAgentOutput", () => {
         }),
         "codex",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not trust user-authored launch preset runtime hints", () => {

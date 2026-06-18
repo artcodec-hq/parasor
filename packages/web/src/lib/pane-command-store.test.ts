@@ -49,7 +49,6 @@ describe("pane-command-store", () => {
       "builtin:claude",
       "builtin:codex",
       "builtin:opencode",
-      "builtin:gemini",
       "cmd:1",
     ]);
     expect(commands[0]).toMatchObject({
@@ -63,7 +62,7 @@ describe("pane-command-store", () => {
         label: "Terminal",
       },
     });
-    expect(commands[5]).toEqual({
+    expect(commands[4]).toEqual({
       id: "cmd:1",
       label: "Dev",
       initialInput: "pnpm dev",
@@ -103,7 +102,6 @@ describe("pane-command-store", () => {
       "builtin:terminal",
       "builtin:codex",
       "builtin:opencode",
-      "builtin:gemini",
     ]);
   });
 });

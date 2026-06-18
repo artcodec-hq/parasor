@@ -14,9 +14,9 @@ import { AgentStateStore } from "../agent-detector/agent-state-store.js";
 import { AgentDetector } from "../agent-detector/detector.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import type { IpcServer } from "../ipc/socket-server.js";
-import type { PortForwarder } from "../port-forwarder/forwarder.js";
-import type { PortScanner } from "../port-scanner/scanner.js";
 import type { PtyHost } from "../pty/host.js";
+import { RuntimeServiceAdvertisedUrlWatcher } from "../runtime-services/advertised-url-watcher.js";
+import { RuntimeServiceRegistry } from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
@@ -94,13 +94,8 @@ function wireDeps(overrides: {
       isSessionsReadOnly: () => true,
     } as unknown as AppStateStore,
     eventBus: overrides.eventBus,
-    portScanner: {
-      getAllPorts: () => ({}),
-    } as unknown as PortScanner,
-    portForwarder: {
-      isInert: () => true,
-      getReachablePort: () => null,
-    } as unknown as PortForwarder,
+    serviceRegistry: new RuntimeServiceRegistry(),
+    advertisedUrlWatcher: new RuntimeServiceAdvertisedUrlWatcher(),
     ptyManager: overrides.ptyManager,
     agentDetector: overrides.agentDetector,
     agentStateStore: overrides.agentStateStore,
@@ -154,8 +149,8 @@ describe("buildHydrationStateSnapshot", () => {
   });
 });
 
-describe("wireRuntime hydration ports", () => {
-  it("enriches the hydration snapshot's ports with forwarder reachability", async () => {
+describe("wireRuntime hydration services", () => {
+  it("hydrates services and compatibility ports from the service registry", async () => {
     const eventBus = new EventBus();
     const agentDetector = new AgentDetector();
     const agentStateStore = new AgentStateStore({ dir: tempRoot() });
@@ -172,24 +167,32 @@ describe("wireRuntime hydration ports", () => {
       agentStateStore,
       ptyManager,
     });
-    // A loopback dev port fronted by a forwarder that has finished binding.
-    (
-      deps.portScanner as unknown as { getAllPorts: () => unknown }
-    ).getAllPorts = () => ({
-      "proj-1": [{ port: 5173, pid: 1, bindsAll: false }],
+    deps.serviceRegistry.syncProject({
+      projectId: "proj-1",
+      projectPath: "/repo",
+      worktreePaths: ["/repo"],
+      ports: [
+        {
+          port: 5173,
+          pid: 1,
+          bindHost: "127.0.0.1",
+          bindsAll: false,
+          processName: "vite",
+          sessionId: "s1",
+          sessionCwd: "/repo",
+        },
+      ],
+      forwarder: {
+        isInert: () => false,
+        getReachablePort: (_projectId: string, port: number) =>
+          port === 5173 ? 49231 : null,
+        getForwarderState: (_projectId: string, port: number) =>
+          port === 5173
+            ? { status: "reachable", reachablePort: 49231 }
+            : { status: "none" },
+      } as never,
+      now: 1,
     });
-    (
-      deps.portForwarder as unknown as {
-        isInert: () => boolean;
-        getReachablePort: (p: string, d: number) => number | null;
-      }
-    ).isInert = () => false;
-    (
-      deps.portForwarder as unknown as {
-        getReachablePort: (p: string, d: number) => number | null;
-      }
-    ).getReachablePort = (p, d) =>
-      p === "proj-1" && d === 5173 ? 49231 : null;
 
     wireRuntime(deps);
 
@@ -208,6 +211,67 @@ describe("wireRuntime hydration ports", () => {
         },
       ],
     });
+    expect(msg.payload.services["proj-1"][0]).toMatchObject({
+      kind: "workspace",
+      port: 5173,
+      serviceName: "vite",
+      reachablePort: 49231,
+    });
+  });
+
+  it("feeds scoped terminal output into the advertised URL watcher", () => {
+    const eventBus = new EventBus();
+    const agentDetector = new AgentDetector();
+    const agentStateStore = new AgentStateStore({ dir: tempRoot() });
+    const managed = { ...session("s1"), state: "running", generation: 1 };
+    const ptyManager = {
+      list: () => [managed],
+      get: (sessionId: string) => (sessionId === "s1" ? managed : undefined),
+      onSessionInput: vi.fn(),
+      onSessionData: vi.fn(),
+      getForegroundProcess: vi.fn(),
+    } as unknown as PtyHost;
+
+    const deps = wireDeps({
+      eventBus,
+      agentDetector,
+      agentStateStore,
+      ptyManager,
+    });
+    wireRuntime(deps);
+
+    const handler = (
+      ptyManager.onSessionData as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0] as (
+      sessionId: string,
+      data: string,
+      generation: number,
+    ) => void;
+    handler("s1", "ready at http://localhost:5173", 1);
+
+    const service = deps.advertisedUrlWatcher.applyToService({
+      id: "svc",
+      kind: "workspace",
+      port: 5173,
+      pid: 100,
+      bindHost: "127.0.0.1",
+      connectHost: "127.0.0.1",
+      bindsAll: false,
+      protocol: "http",
+      attribution: {
+        source: "session-process-tree",
+        confidence: "high",
+        projectId: "proj-1",
+        worktreePath: "/repo",
+        sessionId: "s1",
+      },
+      reachable: true,
+      lifecycle: "reachable",
+      firstSeenAt: 1,
+      lastSeenAt: 1,
+      source: "scanner",
+    });
+    expect(service.advertisedUrl?.origin).toBe("http://localhost:5173");
   });
 });
 
@@ -238,6 +302,55 @@ describe("wireRuntime agent state persistence", () => {
 
     expect(msg.payload.agentStates).toEqual({ s1: agentState("s1") });
     expect(agentStateStore.getStates()).toEqual({ s1: agentState("s1") });
+  });
+
+  it("does not let native-managed preset sessions fall back to output detection", () => {
+    let inputCallback:
+      | ((sessionId: string, data: string, generation: number) => void)
+      | undefined;
+    let dataCallback:
+      | ((sessionId: string, data: string, generation: number) => void)
+      | undefined;
+    const eventBus = new EventBus();
+    const agentDetector = new AgentDetector({ now: () => 456 });
+    const root = tempRoot();
+    const agentStateStore = new AgentStateStore({ dir: root });
+    const codexSession: Session = {
+      ...session("s1"),
+      state: "running",
+      launchPreset: {
+        presetId: "builtin:codex",
+        source: "builtin",
+        label: "Codex",
+        commandLine: "codex",
+        runtimeHint: {
+          runtimeId: "codex",
+          tier: "native-managed",
+          expectedProcesses: ["codex"],
+        },
+      },
+    };
+    const ptyManager = {
+      list: () => [codexSession],
+      get: (sessionId: string) => (sessionId === "s1" ? codexSession : null),
+      onSessionInput: vi.fn((cb) => {
+        inputCallback = cb;
+      }),
+      onSessionData: vi.fn((cb) => {
+        dataCallback = cb;
+      }),
+      getForegroundProcess: vi.fn(() => "codex"),
+    } as unknown as PtyHost;
+
+    wireRuntime(
+      wireDeps({ eventBus, agentDetector, agentStateStore, ptyManager }),
+    );
+
+    inputCallback?.("s1", "hello\n", 1);
+    dataCallback?.("s1", "Codex output\n", 1);
+
+    expect(agentDetector.getStates()).toEqual({});
+    expect(agentStateStore.getStates()).toEqual({});
   });
 
   it("persists detector state changes for the next server process", () => {

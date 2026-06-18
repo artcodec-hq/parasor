@@ -1,3 +1,5 @@
+export * from "./agent-integrations.js";
+export * from "./agent-status-context.js";
 export * from "./builtin-shell-presets.js";
 export * from "./client.js";
 export * from "./drops.js";
@@ -7,6 +9,8 @@ export * from "./pane-commands.js";
 export * from "./pane-model.js";
 export * from "./panes.js";
 export * from "./runtime.js";
+export * from "./runtime-api.js";
+export * from "./runtime-services.js";
 export * from "./shell-presets.js";
 export * from "./state.js";
 export * from "./terminal.js";

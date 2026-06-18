@@ -7,6 +7,7 @@ import {
   type HydrationPayload,
   type Notification,
   type PortInfo,
+  type RuntimeServiceInfo,
   type Worktree,
   type WsEventEnvelope,
   type WsEventMessage,
@@ -19,6 +20,7 @@ export interface HydrationSources {
   getAgentStates: () => Record<string, AgentState>;
   getNotifications: () => Notification[];
   getPorts: () => Record<string, PortInfo[]>;
+  getServices: () => Record<string, RuntimeServiceInfo[]>;
   getGitStates: () => Record<string, Record<string, GitState | null>>;
   /**
    * Per-project worktree snapshot. Sync because it reads from a
@@ -80,6 +82,7 @@ export class EventBus {
           agentStates: this.sources.getAgentStates(),
           notifications: this.sources.getNotifications(),
           ports: this.sources.getPorts(),
+          services: this.sources.getServices(),
           gitStates: this.sources.getGitStates(),
           worktrees: this.sources.getWorktrees(),
           hostPlatform: process.platform,
@@ -104,6 +107,7 @@ export class EventBus {
           agentStates: {},
           notifications: [],
           ports: {},
+          services: {},
           gitStates: {},
           worktrees: {},
           hostPlatform: process.platform,

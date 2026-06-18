@@ -455,9 +455,10 @@ function cellsFromText(text: string): MockCellSpec[] {
 // Minimal `IBufferLine` over an explicit cell list, mirroring xterm's
 // `getCell(x, cell?)` contract: a reusable `cell` arg is mutated in place. The
 // trailing half of a wide glyph is width 0 with empty chars.
-function makeBufferLine(cells: MockCellSpec[]): unknown {
+function makeBufferLine(cells: MockCellSpec[], isWrapped = false): unknown {
   return {
     length: cells.length,
+    isWrapped,
     getCell(x: number, cell?: Record<string, unknown>) {
       const spec = cells[x];
       if (!spec) return undefined;
@@ -3475,6 +3476,70 @@ describe("Terminal", () => {
 
     expect(mockTermSelect).toHaveBeenCalledWith(4, 5, 27);
     expect(onOpenFilePath).toHaveBeenCalledWith("packages/web/src/App.tsx");
+    expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
+  });
+
+  it("opens tapped wrapped file paths in the terminal on touch devices", () => {
+    const onOpenFilePath = vi.fn();
+    const lines = new Map<number, unknown>([
+      [5, makeBufferLine(cellsFromText("packages/web/src/"))],
+      [6, makeBufferLine(cellsFromText("features/App.tsx:12"), true)],
+    ]);
+    mockTermGetLine.mockImplementation((lineNumber: number) =>
+      lines.get(lineNumber),
+    );
+    render(
+      <Terminal
+        sessionId="s1"
+        worktreePath="/repo"
+        onOpenFilePath={onOpenFilePath}
+      />,
+      { wrapper },
+    );
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    plainTapOnScreen(screen, 45, 15);
+
+    expect(mockTermSelect).toHaveBeenCalledWith(0, 6, 19);
+    expect(onOpenFilePath).toHaveBeenCalledWith(
+      "packages/web/src/features/App.tsx",
+    );
+    expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
+  });
+
+  it("opens tapped TUI-split file paths in the terminal on touch devices", () => {
+    const onOpenFilePath = vi.fn();
+    const lines = new Map<number, unknown>([
+      [
+        5,
+        makeBufferLine(cellsFromText("  dist/assets/parasor-campaign-demo-")),
+      ],
+      [
+        6,
+        makeBufferLine(cellsFromText("  BAEvbAkV.png                      ")),
+      ],
+    ]);
+    mockTermGetLine.mockImplementation((lineNumber: number) =>
+      lines.get(lineNumber),
+    );
+    render(
+      <Terminal
+        sessionId="s1"
+        worktreePath="/repo"
+        onOpenFilePath={onOpenFilePath}
+      />,
+      { wrapper },
+    );
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    plainTapOnScreen(screen, 45, 15);
+
+    expect(mockTermSelect).toHaveBeenCalledWith(2, 6, 12);
+    expect(onOpenFilePath).toHaveBeenCalledWith(
+      "dist/assets/parasor-campaign-demo-BAEvbAkV.png",
+    );
     expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
   });
 

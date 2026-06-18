@@ -10,6 +10,10 @@ Rules:
 - Keep product source, package metadata, release/deployment docs, security
   docs, license files, and maintainer-facing architecture docs that are needed
   to build, run, review, or secure the app.
+- Keep repository `docs/` for durable public documentation that should remain
+  versioned with the project.
+- Put temporary or development-only investigation notes under `/tmp`, ignored
+  `tmp/`, or another explicit temporary location outside tracked docs.
 - Do not add private planning or operational notes to this repository.
 - Keep changes minimal and reversible. Prefer existing implementation patterns
   before introducing new abstractions.

@@ -5,6 +5,9 @@ import type {
 } from "@parasor/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PortForwarder } from "../port-forwarder/forwarder.js";
+import type { ScannedPortInfo } from "../port-scanner/scanner.js";
+import { RuntimeServiceAdvertisedUrlWatcher } from "../runtime-services/advertised-url-watcher.js";
+import { RuntimeServiceRegistry } from "../runtime-services/service-registry.js";
 import {
   broadcastForegroundTitles,
   startRuntimeLoops,
@@ -104,6 +107,12 @@ function makeFakeForwarder(opts?: { inert?: boolean }): FakeForwarder {
     },
     getReachablePort: (projectId: string, devPort: number) =>
       reachable.get(projectId)?.get(devPort) ?? null,
+    getForwarderState: (projectId: string, devPort: number) => {
+      const listenPort = reachable.get(projectId)?.get(devPort);
+      return listenPort === undefined
+        ? { status: "pending" }
+        : { status: "reachable", reachablePort: listenPort };
+    },
   } as unknown as PortForwarder;
   return {
     forwarder,
@@ -123,12 +132,21 @@ describe("startRuntimeLoops port-detected notifications", () => {
     vi.useRealTimers();
   });
 
-  function setup(mode: PortDetectionMode, opts?: { inert?: boolean }) {
+  function setup(
+    mode: PortDetectionMode,
+    opts?: {
+      inert?: boolean;
+      advertisedUrlWatcher?: RuntimeServiceAdvertisedUrlWatcher;
+      serviceRegistry?: RuntimeServiceRegistry;
+    },
+  ) {
     const handlerRef: {
-      current: ((projectId: string, ports: PortInfo[]) => void) | null;
+      current: ((projectId: string, ports: ScannedPortInfo[]) => void) | null;
     } = { current: null };
     const portScanner = {
-      onPortsChanged: (cb: (projectId: string, ports: PortInfo[]) => void) => {
+      onPortsChanged: (
+        cb: (projectId: string, ports: ScannedPortInfo[]) => void,
+      ) => {
         handlerRef.current = cb;
       },
       start: vi.fn(),
@@ -139,7 +157,8 @@ describe("startRuntimeLoops port-detected notifications", () => {
     const eventBus = { broadcast, addNotification };
     const appStateStore = {
       get: () => ({
-        projects: [{ id: "p1", name: "demo" }],
+        projects: [{ id: "p1", name: "demo", path: "/repo" }],
+        projectStates: {},
         serviceConfig: { portDetection: mode, preventIdleSleep: false },
       }),
     };
@@ -158,10 +177,27 @@ describe("startRuntimeLoops port-detected notifications", () => {
       projectRuntime: projectRuntime as never,
       uploadStaging: uploadStaging as never,
       portForwarder: fake.forwarder,
+      ...(opts?.serviceRegistry
+        ? { serviceRegistry: opts.serviceRegistry }
+        : {}),
+      ...(opts?.advertisedUrlWatcher
+        ? { advertisedUrlWatcher: opts.advertisedUrlWatcher }
+        : {}),
     });
 
-    const trigger = handlerRef.current;
-    if (!trigger) throw new Error("handler not registered");
+    const trigger = (
+      projectId: string,
+      ports: Array<PortInfo & Partial<ScannedPortInfo>>,
+    ) => {
+      if (!handlerRef.current) throw new Error("handler not registered");
+      handlerRef.current(
+        projectId,
+        ports.map((port) => ({
+          bindHost: port.bindsAll ? "0.0.0.0" : "127.0.0.1",
+          ...port,
+        })),
+      );
+    };
     return { trigger, broadcast, addNotification, fake, loops };
   }
 
@@ -206,7 +242,7 @@ describe("startRuntimeLoops port-detected notifications", () => {
     trigger("p1", [{ port: 5173, pid: 1, bindsAll: false }]);
 
     expect(fake.sync).toHaveBeenCalledWith("p1", [
-      { port: 5173, pid: 1, bindsAll: false },
+      { port: 5173, pid: 1, bindsAll: false, bindHost: "127.0.0.1" },
     ]);
     expect(broadcast).toHaveBeenCalledWith({
       type: "ports-updated",
@@ -241,6 +277,45 @@ describe("startRuntimeLoops port-detected notifications", () => {
     expect((addNotification.mock.calls[0][0] as Notification).reachable).toBe(
       true,
     );
+  });
+
+  it("re-emits services when a scoped advertised URL is captured", () => {
+    const watcher = new RuntimeServiceAdvertisedUrlWatcher();
+    const registry = new RuntimeServiceRegistry({
+      advertisedUrlWatcher: watcher,
+    });
+    const { trigger, broadcast } = setup("all-interfaces", {
+      advertisedUrlWatcher: watcher,
+      serviceRegistry: registry,
+    });
+    trigger("p1", [
+      {
+        port: 5173,
+        pid: 1,
+        bindHost: "127.0.0.1",
+        bindsAll: false,
+        sessionId: "s1",
+        sessionCwd: "/repo",
+      },
+    ]);
+    broadcast.mockClear();
+
+    watcher.feed("s1", "http://localhost:5173", {
+      projectId: "p1",
+      worktreePath: "/repo",
+    });
+
+    expect(broadcast).toHaveBeenCalledWith({
+      type: "services-updated",
+      projectId: "p1",
+      services: [
+        expect.objectContaining({
+          advertisedUrl: expect.objectContaining({
+            origin: "http://localhost:5173",
+          }),
+        }),
+      ],
+    });
   });
 
   it("does not start a forwarder in 'off' mode", () => {
@@ -295,7 +370,7 @@ describe("startRuntimeLoops port-detected notifications", () => {
     // has not completed -- getReachablePort is still null -> not reachable yet.
     trigger("p1", [{ port: 5173, pid: 1, bindsAll: false }]);
     expect(fake.sync).toHaveBeenCalledWith("p1", [
-      { port: 5173, pid: 1, bindsAll: false },
+      { port: 5173, pid: 1, bindsAll: false, bindHost: "127.0.0.1" },
     ]);
     expect(addNotification).not.toHaveBeenCalled();
     expect(broadcast).toHaveBeenLastCalledWith({
@@ -350,7 +425,9 @@ describe("startRuntimeLoops port-detected notifications", () => {
       dropSizeMaxBytes: 1,
       dropSizeHardMaxBytes: 1,
     });
-    expect(fake.sync).toHaveBeenCalledWith("p1", ports);
+    expect(fake.sync).toHaveBeenCalledWith("p1", [
+      { port: 5173, pid: 1, bindsAll: false, bindHost: "127.0.0.1" },
+    ]);
   });
 
   it("does not re-emit when a public port flips back to loopback-only", () => {

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
-import type { AgentState } from "@parasor/shared";
+import type { AgentState, RuntimeServiceInfo } from "@parasor/shared";
 import { type Context, Hono } from "hono";
 import type { AgentDetector } from "../agent-detector/detector.js";
 import { originMiddleware } from "../auth/origin.js";
@@ -31,9 +31,14 @@ import { createIdeCommandRoutes } from "../routes/ide-commands.js";
 import { createOpenRoute } from "../routes/open.js";
 import { createPaneCommandRoutes } from "../routes/pane-commands.js";
 import { createProjectRoutes } from "../routes/projects.js";
+import { createRuntimeRoutes } from "../routes/runtime.js";
 import { createServerNoticesRoutes } from "../routes/server-notices.js";
 import { createServiceConfigRoutes } from "../routes/service-config.js";
 import { createSessionRoutes } from "../routes/sessions.js";
+import {
+  projectServicesToPorts,
+  type RuntimeServiceRegistry,
+} from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { ServerNoticesStore } from "../state/server-notices.js";
@@ -69,6 +74,8 @@ export interface CreateAppServerDeps {
   serverNoticesStore: ServerNoticesStore;
   worktreeCache: WorktreeCache;
   projectRuntime: ProjectRuntime;
+  serviceRegistry: RuntimeServiceRegistry;
+  serverVersion?: string;
   uploadStaging: UploadStaging;
   reconcileWorktrees?: (
     projectId: string,
@@ -101,6 +108,8 @@ export function createAppServer({
   serverNoticesStore,
   worktreeCache,
   projectRuntime,
+  serviceRegistry,
+  serverVersion = "0.0.0",
   uploadStaging,
   reconcileWorktrees,
   getFilesystemService,
@@ -227,6 +236,30 @@ export function createAppServer({
   );
 
   app.route("/api/notices", createServerNoticesRoutes(serverNoticesStore));
+  app.route(
+    "/api/runtime",
+    createRuntimeRoutes({
+      appStateStore,
+      eventBus,
+      getAgentStates,
+      getPorts: () => {
+        const out: Record<string, import("@parasor/shared").PortInfo[]> = {};
+        for (const [projectId, services] of Object.entries(
+          serviceRegistry.getAllServices(),
+        )) {
+          out[projectId] = projectServicesToPorts(services);
+        }
+        return out;
+      },
+      getServices: (): Record<string, RuntimeServiceInfo[]> =>
+        serviceRegistry.getAllServices(),
+      projectManager,
+      projectRuntime,
+      ptyManager,
+      serverVersion,
+      worktreeCache,
+    }),
+  );
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/auth/verify", (c) => {

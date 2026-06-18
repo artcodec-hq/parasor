@@ -247,6 +247,7 @@ function eventStore(overrides: Record<string, unknown> = {}) {
     agentStates: {},
     notifications: [],
     ports: {},
+    services: {},
     gitStates: {},
     paneCommands: [],
     ideCommands: [],
@@ -264,6 +265,7 @@ function eventStore(overrides: Record<string, unknown> = {}) {
     hydrated: true,
     snapshotApplied: true,
     eventSocketConnected: true,
+    eventSocketStatus: { phase: "open", since: Date.now() },
     unreadCount: 0,
     markRead: vi.fn(),
     clearPendingUrl: vi.fn(),
@@ -365,7 +367,7 @@ describe("App session creation routes", () => {
     );
 
     expect(screen.getByTestId("launcher-commands").textContent).toBe(
-      "Terminal,Claude,Codex,OpenCode,Gemini,Dev",
+      "Terminal,Claude,Codex,OpenCode,Dev",
     );
   });
 

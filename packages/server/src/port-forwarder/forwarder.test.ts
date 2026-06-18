@@ -1,5 +1,5 @@
 import net from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PortForwarder } from "./forwarder.js";
 
 /*
@@ -149,11 +149,49 @@ describe("PortForwarder", () => {
     cleanups.push(() => forwarder.stop());
 
     expect(forwarder.getReachablePort("proj", echo.port)).toBeNull();
+    expect(forwarder.getForwarderState("proj", echo.port)).toEqual({
+      status: "none",
+    });
     forwarder.sync("proj", [{ port: echo.port, bindsAll: false }]);
+    expect(forwarder.getForwarderState("proj", echo.port)).toEqual({
+      status: "pending",
+    });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
     expect(forwarder.getReachablePort("proj", echo.port)).not.toBeNull();
+    expect(forwarder.getForwarderState("proj", echo.port)).toMatchObject({
+      status: "reachable",
+    });
     expect(forwarder.getReachablePort("proj", 65000)).toBeNull();
     expect(forwarder.getReachablePort("other-proj", echo.port)).toBeNull();
+  });
+
+  it("reports bind failures until the next sync retries or clears the port", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const forwarder = new PortForwarder("203.0.113.1");
+      cleanups.push(() => forwarder.stop());
+      const changes: string[] = [];
+      forwarder.setOnChange((projectId) => changes.push(projectId));
+
+      forwarder.sync("proj", [{ port: 5173, bindsAll: false }]);
+      expect(forwarder.getForwarderState("proj", 5173)).toEqual({
+        status: "pending",
+      });
+      await new Promise((r) => setTimeout(r, SETTLE_MS));
+
+      expect(changes).toEqual(["proj"]);
+      expect(forwarder.getReachablePort("proj", 5173)).toBeNull();
+      expect(forwarder.getForwarderState("proj", 5173)).toEqual({
+        status: "failed",
+      });
+
+      forwarder.sync("proj", []);
+      expect(forwarder.getForwarderState("proj", 5173)).toEqual({
+        status: "none",
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("fires the change listener once the async bind completes", async () => {

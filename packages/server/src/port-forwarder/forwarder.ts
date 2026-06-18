@@ -5,6 +5,12 @@ export interface ForwardedPortSpec {
   bindsAll: boolean;
 }
 
+export type ForwarderPortState =
+  | { status: "none" }
+  | { status: "pending" }
+  | { status: "reachable"; reachablePort: number }
+  | { status: "failed" };
+
 interface LiveForwarder {
   server: net.Server;
   /** The dev-server port this forwarder fronts. */
@@ -34,6 +40,7 @@ interface LiveForwarder {
  */
 export class PortForwarder {
   private readonly byProject = new Map<string, Map<number, LiveForwarder>>();
+  private readonly failedByProject = new Map<string, Set<number>>();
   private onChange: ((projectId: string) => void) | null = null;
 
   constructor(private readonly bindHost: string | null) {}
@@ -64,6 +71,7 @@ export class PortForwarder {
         current.delete(devPort);
       }
     }
+    this.failedByProject.delete(projectId);
     for (const devPort of wanted) {
       if (current.has(devPort)) continue;
       const forwarder = this.createForwarder(projectId, devPort);
@@ -79,10 +87,26 @@ export class PortForwarder {
    * forwarder exists, it has not finished binding, or its bind errored.
    */
   getReachablePort(projectId: string, devPort: number): number | null {
-    if (this.bindHost === null) return null;
+    const state = this.getForwarderState(projectId, devPort);
+    return state.status === "reachable" ? state.reachablePort : null;
+  }
+
+  getForwarderState(projectId: string, devPort: number): ForwarderPortState {
+    if (this.bindHost === null) return { status: "none" };
     const forwarder = this.byProject.get(projectId)?.get(devPort);
-    if (!forwarder?.server.listening) return null;
-    return forwarder.reachablePort;
+    if (forwarder) {
+      if (!forwarder.server.listening || forwarder.reachablePort === null) {
+        return { status: "pending" };
+      }
+      return {
+        status: "reachable",
+        reachablePort: forwarder.reachablePort,
+      };
+    }
+    if (this.failedByProject.get(projectId)?.has(devPort)) {
+      return { status: "failed" };
+    }
+    return { status: "none" };
   }
 
   stop(): void {
@@ -92,6 +116,7 @@ export class PortForwarder {
       }
     }
     this.byProject.clear();
+    this.failedByProject.clear();
   }
 
   private teardownForwarder(forwarder: LiveForwarder): void {
@@ -148,7 +173,12 @@ export class PortForwarder {
           removed = true;
         }
       }
-      if (removed) this.onChange?.(projectId);
+      if (removed) {
+        const failed = this.failedByProject.get(projectId) ?? new Set<number>();
+        failed.add(devPort);
+        this.failedByProject.set(projectId, failed);
+        this.onChange?.(projectId);
+      }
     });
     server.listen(0, bindHost);
     return forwarder;

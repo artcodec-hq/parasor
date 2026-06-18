@@ -165,6 +165,13 @@ describe("mapEventType -- codex", () => {
     );
   });
 
+  it("maps native Codex tool and permission hooks", () => {
+    expect(mapEventType("codex", "PostToolUse")).toEqual(hookState("running"));
+    expect(mapEventType("codex", "PermissionRequest")).toEqual(
+      hookState("waiting"),
+    );
+  });
+
   it("maps task_started to running", () => {
     expect(mapEventType("codex", "task_started")).toEqual(hookState("running"));
   });

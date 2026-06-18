@@ -162,6 +162,44 @@ describe("applyEvent: browser-url-changed", () => {
   });
 });
 
+describe("applyEvent: services-updated", () => {
+  it("stores runtime services per project", () => {
+    const next = applyEvent(EMPTY_STORE, {
+      type: "services-updated",
+      projectId: "p1",
+      services: [
+        {
+          id: "svc",
+          kind: "workspace",
+          port: 5173,
+          pid: 100,
+          processName: "vite",
+          bindHost: "127.0.0.1",
+          connectHost: "127.0.0.1",
+          bindsAll: false,
+          protocol: "http",
+          serviceName: "vite",
+          attribution: {
+            source: "session-process-tree",
+            confidence: "high",
+            projectId: "p1",
+            worktreePath: "/repo",
+            sessionId: "s1",
+          },
+          reachable: true,
+          lifecycle: "reachable",
+          firstSeenAt: 1,
+          lastSeenAt: 1,
+          source: "scanner",
+        },
+      ],
+    });
+
+    expect(next.services.p1).toHaveLength(1);
+    expect(next.services.p1[0].serviceName).toBe("vite");
+  });
+});
+
 describe("applyEvent: notification", () => {
   it("prepends incoming notifications and caps retention at 200", () => {
     let store = EMPTY_STORE;
@@ -511,6 +549,31 @@ describe("applyEvent: worktree-removed", () => {
 describe("applyEvent: project-deleted drops worktrees", () => {
   it("removes the worktrees entry for the deleted project", () => {
     const store = storeWith({
+      ports: { p1: [{ port: 3000, pid: 1, bindsAll: true }], p2: [] },
+      services: {
+        p1: [
+          {
+            id: "svc",
+            kind: "workspace",
+            port: 3000,
+            pid: 1,
+            bindHost: "0.0.0.0",
+            connectHost: "localhost",
+            bindsAll: true,
+            protocol: "http",
+            attribution: {
+              source: "project",
+              confidence: "low",
+              projectId: "p1",
+            },
+            reachable: true,
+            lifecycle: "reachable",
+            firstSeenAt: 1,
+            lastSeenAt: 1,
+            source: "scanner",
+          },
+        ],
+      },
       worktrees: {
         p1: [{ path: "/tmp/p1", head: "abc", branch: "main" }],
         p2: [{ path: "/tmp/p2", head: "def", branch: "main" }],
@@ -523,6 +586,8 @@ describe("applyEvent: project-deleted drops worktrees", () => {
     expect(next.worktrees).toEqual({
       p2: [{ path: "/tmp/p2", head: "def", branch: "main" }],
     });
+    expect(next.ports).toEqual({ p2: [] });
+    expect(next.services).toEqual({});
   });
 });
 
@@ -547,6 +612,7 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
     agentStates: {},
     notifications: [],
     ports: {},
+    services: {},
     gitStates: {},
     worktrees: {},
     hostPlatform: "linux",
@@ -560,6 +626,7 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
     const store = applySnapshot(SNAPSHOT);
     expect(store.snapshotApplied).toBe(true);
     expect(store.paneCommands).toEqual([]);
+    expect(store.services).toEqual({});
   });
 
   it("loadCachedStore returns snapshotApplied=false even when cache has data", () => {

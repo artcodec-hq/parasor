@@ -1,0 +1,52 @@
+import type { AgentIntegrationManifest } from "../agent-integrations.js";
+
+export const CODEX_AGENT_INTEGRATION = {
+  runtimeId: "codex",
+  hookAgent: "codex",
+  label: "Codex",
+  iconKey: "agent",
+  commandLine: "codex",
+  appendEnter: true,
+  tier: "native-managed",
+  expectedProcesses: ["codex"],
+  detectCommands: ["codex"],
+  installStrategies: [
+    {
+      kind: "shim-wrapper",
+      activation: "preset-launch",
+      writesUserConfig: false,
+      reversible: true,
+    },
+    {
+      kind: "notify-command",
+      activation: "preset-launch",
+      writesUserConfig: false,
+      reversible: true,
+    },
+    {
+      kind: "hook-config",
+      activation: "preset-launch",
+      writesUserConfig: false,
+      reversible: true,
+    },
+  ],
+  events: {
+    sessionstart: "noop",
+    userpromptsubmit: { lifecycle: "running" },
+    posttooluse: { lifecycle: "running" },
+    permissionrequest: { lifecycle: "waiting" },
+    stop: { lifecycle: "completed" },
+    task_started: { lifecycle: "running" },
+    turn_started: { lifecycle: "running" },
+    agent_turn_started: { lifecycle: "running" },
+    "agent-turn-started": { lifecycle: "running" },
+    exec_command_begin: { lifecycle: "running" },
+    task_complete: { lifecycle: "completed" },
+    turn_complete: { lifecycle: "completed" },
+    agent_turn_complete: { lifecycle: "completed" },
+    "agent-turn-complete": { lifecycle: "completed" },
+    exec_approval_request: { lifecycle: "waiting" },
+    apply_patch_approval_request: { lifecycle: "waiting" },
+    request_user_input: { lifecycle: "waiting" },
+  },
+} as const satisfies AgentIntegrationManifest;
