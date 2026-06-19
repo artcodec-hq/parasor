@@ -343,6 +343,7 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
       };
 
     case "file-change":
+    case "file-changes":
     case "gitignore-updated":
       return { ...store, fileChangeSeq: store.fileChangeSeq + 1 };
 

@@ -3,13 +3,25 @@ import { join, relative, sep } from "node:path";
 import { type AsyncSubscription, subscribe } from "@parcel/watcher";
 
 export type FileChangeEvent = "create" | "update" | "delete";
-type FileChangeCallback = (event: FileChangeEvent, relPath: string) => void;
+export interface FileChangeEntry {
+  event: FileChangeEvent;
+  path: string;
+}
+export interface FileChangeBatch {
+  events: FileChangeEntry[];
+  overflow: boolean;
+  count: number;
+}
+type FileChangeCallback = (batch: FileChangeBatch) => void;
 type GitignoreChangeCallback = () => void;
 type GitRefChangeCallback = () => void;
 type IsIgnoredCallback = (relPath: string, isDir: boolean) => boolean;
 
 const FILE_IGNORED = new Set([".DS_Store", "Thumbs.db"]);
 const GIT_REF_PATHS = /^\.git\/(HEAD|index|refs\/)/;
+const FILE_BATCH_FLUSH_MS = 150;
+const FILE_BATCH_MAX_WAIT_MS = 500;
+const MAX_FILE_BATCH_EVENTS = 5_000;
 const DEBOUNCE_MS = 300;
 const GIT_REF_DEBOUNCE_MS = 500;
 
@@ -20,7 +32,11 @@ export class FileWatcher {
   private readonly onGitignoreChange: GitignoreChangeCallback;
   private readonly onGitRefChange: GitRefChangeCallback;
   private readonly isIgnored: IsIgnoredCallback;
-  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private pendingEvents = new Map<string, FileChangeEntry>();
+  private pendingEventCount = 0;
+  private pendingOverflow = false;
+  private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  private batchFirstEventAt = 0;
   private gitRefTimer: ReturnType<typeof setTimeout> | null = null;
   private gitignoreTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -55,6 +71,53 @@ export class FileWatcher {
       console.warn(`File watching disabled for ${this.root}: ${message}`);
       this.subscription = null;
     }
+  }
+
+  private clearBatchTimer(): void {
+    if (!this.batchTimer) return;
+    clearTimeout(this.batchTimer);
+    this.batchTimer = null;
+  }
+
+  private flushBatch(): void {
+    this.clearBatchTimer();
+    if (this.pendingEventCount === 0) return;
+
+    const batch: FileChangeBatch = {
+      events: this.pendingOverflow ? [] : [...this.pendingEvents.values()],
+      overflow: this.pendingOverflow,
+      count: this.pendingEventCount,
+    };
+    this.pendingEvents.clear();
+    this.pendingEventCount = 0;
+    this.pendingOverflow = false;
+    this.batchFirstEventAt = 0;
+    this.onChange(batch);
+  }
+
+  private queueChange(event: FileChangeEvent, path: string): void {
+    this.pendingEventCount += 1;
+    if (!this.pendingOverflow) {
+      if (this.pendingEventCount > MAX_FILE_BATCH_EVENTS) {
+        this.pendingEvents.clear();
+        this.pendingOverflow = true;
+      } else {
+        this.pendingEvents.set(`${event}:${path}`, { event, path });
+      }
+    }
+
+    const now = Date.now();
+    if (this.batchFirstEventAt === 0) this.batchFirstEventAt = now;
+    if (now - this.batchFirstEventAt >= FILE_BATCH_MAX_WAIT_MS) {
+      this.flushBatch();
+      return;
+    }
+
+    this.clearBatchTimer();
+    this.batchTimer = setTimeout(() => {
+      this.flushBatch();
+    }, FILE_BATCH_FLUSH_MS);
+    this.batchTimer.unref?.();
   }
 
   private handleEvent(type: FileChangeEvent, absPath: string): void {
@@ -95,24 +158,15 @@ export class FileWatcher {
       if (this.isIgnored(posixRel, isDir)) return;
     }
 
-    const key = `${type}:${posixRel}`;
-    const existing = this.debounceTimers.get(key);
-    if (existing) clearTimeout(existing);
-
-    this.debounceTimers.set(
-      key,
-      setTimeout(() => {
-        this.debounceTimers.delete(key);
-        this.onChange(type, posixRel);
-      }, DEBOUNCE_MS),
-    );
+    this.queueChange(type, posixRel);
   }
 
   async stop(): Promise<void> {
-    for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.debounceTimers.clear();
+    this.clearBatchTimer();
+    this.pendingEvents.clear();
+    this.pendingEventCount = 0;
+    this.pendingOverflow = false;
+    this.batchFirstEventAt = 0;
     if (this.gitRefTimer) {
       clearTimeout(this.gitRefTimer);
       this.gitRefTimer = null;

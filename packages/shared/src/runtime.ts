@@ -146,11 +146,44 @@ export interface Worktree {
   orphan?: boolean;
 }
 
+export type GitChangeArea = "staged" | "unstaged" | "untracked";
+
+export type GitChangeStatus =
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "untracked"
+  | "conflict";
+
+export interface GitChangeEntry {
+  path: string;
+  /** Primary staging area for compact source-control views. */
+  area: GitChangeArea;
+  status: GitChangeStatus;
+  /** Single-letter compact status used by existing Git badges. */
+  code: string;
+  /** Present for rename/copy entries. */
+  oldPath?: string;
+  /** True for unmerged entries. */
+  conflict?: boolean;
+  /** Raw porcelain index status when present. */
+  indexStatus?: string;
+  /** Raw porcelain worktree status when present. */
+  worktreeStatus?: string;
+}
+
 export interface GitState {
   branch: string;
   dirty: boolean;
   pullRequestUrl?: string;
   fileStatuses?: Record<string, string>;
+  /**
+   * Structured working-tree entries for richer source-control surfaces.
+   * `fileStatuses` remains for compact badges and existing consumers.
+   */
+  changes?: GitChangeEntry[];
   /** Commits ahead of upstream. `undefined` when no upstream tracking. */
   ahead?: number;
   /** Commits behind upstream. `undefined` when no upstream tracking. */

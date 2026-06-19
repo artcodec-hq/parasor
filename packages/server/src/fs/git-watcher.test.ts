@@ -7,6 +7,7 @@ import {
   GitWatcher,
   parseGitPorcelain,
   parseGitStatusV2,
+  parseGitStatusV2WithFiles,
 } from "./git-watcher.js";
 
 const GIT_IDENTITY_ENV = {
@@ -100,6 +101,21 @@ describe("GitWatcher", () => {
     expect(state?.fileStatuses).toBeDefined();
     expect(state?.fileStatuses?.["file.txt"]).toBe("M");
     expect(state?.fileStatuses?.["new.txt"]).toBe("?");
+    expect(state?.changes).toEqual([
+      {
+        path: "file.txt",
+        area: "unstaged",
+        status: "modified",
+        code: "M",
+        worktreeStatus: "M",
+      },
+      {
+        path: "new.txt",
+        area: "untracked",
+        status: "untracked",
+        code: "?",
+      },
+    ]);
   });
 
   it("returns no fileStatuses for clean repo", async () => {
@@ -113,6 +129,7 @@ describe("GitWatcher", () => {
 
     const state = await watcher.check(root);
     expect(state?.fileStatuses).toBeUndefined();
+    expect(state?.changes).toBeUndefined();
   });
 });
 
@@ -409,5 +426,90 @@ describe("parseGitStatusV2", () => {
       behind: undefined,
       dirtyCount: 0,
     });
+  });
+});
+
+describe("parseGitStatusV2WithFiles", () => {
+  it("returns structured changes while preserving compact fileStatuses", () => {
+    const input = [
+      "# branch.head main",
+      "# branch.ab +1 -2",
+      "1 .M N... 100644 100644 100644 abc def src/unstaged.ts",
+      "1 M. N... 100644 100644 100644 abc def src/staged.ts",
+      "? src/new.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitStatusV2WithFiles(input)).toEqual({
+      branch: "main",
+      ahead: 1,
+      behind: 2,
+      dirtyCount: 3,
+      fileStatuses: {
+        "src/unstaged.ts": "M",
+        "src/staged.ts": "M",
+        "src/new.ts": "?",
+      },
+      changes: [
+        {
+          path: "src/unstaged.ts",
+          area: "unstaged",
+          status: "modified",
+          code: "M",
+          worktreeStatus: "M",
+        },
+        {
+          path: "src/staged.ts",
+          area: "staged",
+          status: "modified",
+          code: "M",
+          indexStatus: "M",
+        },
+        {
+          path: "src/new.ts",
+          area: "untracked",
+          status: "untracked",
+          code: "?",
+        },
+      ],
+    });
+  });
+
+  it("keeps oldPath for renames", () => {
+    const input = [
+      "2 R. N... 100644 100644 100644 abc def R100 src/new.ts",
+      "src/old.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitStatusV2WithFiles(input).changes).toEqual([
+      {
+        path: "src/new.ts",
+        area: "staged",
+        status: "renamed",
+        code: "R",
+        oldPath: "src/old.ts",
+        indexStatus: "R",
+      },
+    ]);
+  });
+
+  it("marks unmerged entries as conflicts", () => {
+    const input = [
+      "u UU N... 100644 100644 100644 100644 abc def 123 src/conflict.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitStatusV2WithFiles(input).changes).toEqual([
+      {
+        path: "src/conflict.ts",
+        area: "unstaged",
+        status: "conflict",
+        code: "U",
+        conflict: true,
+        indexStatus: "U",
+        worktreeStatus: "U",
+      },
+    ]);
   });
 });

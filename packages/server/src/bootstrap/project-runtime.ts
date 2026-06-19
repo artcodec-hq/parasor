@@ -165,8 +165,15 @@ export function createProjectRuntime({
       const fsService = getFilesystemService(projectId);
       const watcher = new FileWatcher(
         worktreePath,
-        (event, path) => {
-          eventBus.broadcast({ type: "file-change", projectId, event, path });
+        (batch) => {
+          eventBus.broadcast({
+            type: "file-changes",
+            projectId,
+            worktreePath,
+            events: batch.events,
+            overflow: batch.overflow,
+            count: batch.count,
+          });
           scheduleGitDiff(projectId, worktreePath);
         },
         () => {

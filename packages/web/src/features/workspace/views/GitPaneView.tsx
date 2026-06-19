@@ -73,12 +73,23 @@ export function GitPaneView({
   gitActions,
 }: GitPaneViewProps) {
   const uncommittedFiles = useMemo(() => {
+    if (gitState?.changes) {
+      return gitState.changes
+        .map((change) => ({
+          path: change.path,
+          status: change.code,
+          area: change.area,
+          oldPath: change.oldPath,
+          conflict: change.conflict,
+        }))
+        .sort((a, b) => a.path.localeCompare(b.path));
+    }
     const fileStatuses = gitState?.fileStatuses;
     if (!fileStatuses) return [];
     return Object.entries(fileStatuses)
       .map(([path, status]) => ({ path, status }))
       .sort((a, b) => a.path.localeCompare(b.path));
-  }, [gitState?.fileStatuses]);
+  }, [gitState?.changes, gitState?.fileStatuses]);
 
   if (gitState?.isRepo === false) {
     return (

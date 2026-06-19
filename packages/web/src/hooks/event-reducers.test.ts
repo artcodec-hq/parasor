@@ -113,6 +113,34 @@ describe("applyEvent: file-change", () => {
     };
     expect(applyEvent(store, msg).fileChangeSeq).toBe(6);
   });
+
+  it("increments fileChangeSeq once for a file-changes batch", () => {
+    const store = storeWith({ fileChangeSeq: 5 });
+    const msg: WsEventMessage = {
+      type: "file-changes",
+      projectId: "p1",
+      worktreePath: "/repo",
+      count: 2,
+      events: [
+        { event: "create", path: "a.ts" },
+        { event: "update", path: "b.ts" },
+      ],
+    };
+    expect(applyEvent(store, msg).fileChangeSeq).toBe(6);
+  });
+
+  it("increments fileChangeSeq once for an overflow file-changes batch", () => {
+    const store = storeWith({ fileChangeSeq: 5 });
+    const msg: WsEventMessage = {
+      type: "file-changes",
+      projectId: "p1",
+      worktreePath: "/repo",
+      count: 5001,
+      events: [],
+      overflow: true,
+    };
+    expect(applyEvent(store, msg).fileChangeSeq).toBe(6);
+  });
 });
 
 describe("applyEvent: gitignore-updated", () => {

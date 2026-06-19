@@ -16,6 +16,9 @@ export interface CommitFileEntry {
   path: string;
   /** Single-letter porcelain status: 'M', 'A', 'D', 'R', '?', etc. */
   status: string;
+  area?: "staged" | "unstaged" | "untracked";
+  oldPath?: string;
+  conflict?: boolean;
 }
 
 export interface CommitDialogProps {
@@ -43,10 +46,19 @@ function Caret({ open }: { open: boolean }) {
 }
 
 function statusTone(status: string): string {
+  if (status === "U") return "text-danger";
   if (status === "?") return "text-text-secondary/70";
   if (status === "D") return "text-danger";
   if (status === "A") return "text-success";
   return "text-text-primary/85";
+}
+
+function fileTitle(file: CommitFileEntry): string {
+  const parts = [file.path];
+  if (file.oldPath) parts.push(`from ${file.oldPath}`);
+  if (file.area) parts.push(file.area);
+  if (file.conflict) parts.push("conflict");
+  return parts.join(" · ");
 }
 
 export interface CommitBodyProps {
@@ -144,9 +156,15 @@ export function CommitBody({
                     onChange={() => toggle(f.path)}
                     className="h-3.5 w-3.5 accent-accent"
                   />
-                  <span className="cm-scroll-x min-w-0 flex-1" title={f.path}>
+                  <span
+                    className="cm-scroll-x min-w-0 flex-1"
+                    title={fileTitle(f)}
+                  >
                     {f.path}
                   </span>
+                  {f.conflict && (
+                    <span className="text-xs text-danger">conflict</span>
+                  )}
                   <span className={`text-xs ${statusTone(f.status)}`}>
                     {f.status}
                   </span>

@@ -24,6 +24,13 @@ import type {
   TerminalPresenceSnapshot,
 } from "./terminal-presence.js";
 
+export type FileChangeEvent = "create" | "update" | "delete";
+
+export interface FileChangeEntry {
+  event: FileChangeEvent;
+  path: string;
+}
+
 export type WsEventMessage =
   | { type: "session-created"; session: Session }
   | { type: "session-closed"; sessionId: string; projectId: string }
@@ -102,8 +109,16 @@ export type WsEventMessage =
   | {
       type: "file-change";
       projectId: string;
-      event: "create" | "update" | "delete";
+      event: FileChangeEvent;
       path: string;
+    }
+  | {
+      type: "file-changes";
+      projectId: string;
+      worktreePath: string;
+      events: FileChangeEntry[];
+      overflow?: boolean;
+      count: number;
     }
   | { type: "gitignore-updated"; projectId: string }
   | { type: "session-cwd-changed"; sessionId: string; cwd: string }

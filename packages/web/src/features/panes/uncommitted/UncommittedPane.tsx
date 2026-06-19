@@ -15,6 +15,9 @@ import { type DiffFile, parseDiff } from "../diff/diff-render.js";
 export interface UncommittedFileEntry {
   path: string;
   status: string;
+  area?: "staged" | "unstaged" | "untracked";
+  oldPath?: string;
+  conflict?: boolean;
 }
 
 interface UncommittedPaneProps {
