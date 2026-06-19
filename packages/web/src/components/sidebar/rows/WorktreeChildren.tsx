@@ -52,7 +52,9 @@ export function WorktreeChildren({
 }: WorktreeChildrenProps) {
   if (worktree.children.length === 0) return null;
 
-  if (onReorderPanes) {
+  const childrenDisabled = worktree.orphan === true;
+
+  if (onReorderPanes && !childrenDisabled) {
     return (
       <SortableChildren
         project={project}
@@ -71,16 +73,22 @@ export function WorktreeChildren({
         <ChildRow
           key={child.id}
           child={child}
+          disabled={childrenDisabled}
           selected={
+            !childrenDisabled &&
             selection.selectedWorktreeId === worktree.id &&
             selection.selectedChildId === child.id
           }
           onTogglePin={
-            child.kind === "terminal" && onToggleChildPin
+            !childrenDisabled && child.kind === "terminal" && onToggleChildPin
               ? () => onToggleChildPin(child.id)
               : undefined
           }
-          onClick={() => onSelectChild?.(project.id, worktree.id, child.id)}
+          onClick={
+            childrenDisabled
+              ? undefined
+              : () => onSelectChild?.(project.id, worktree.id, child.id)
+          }
         />
       ))}
     </div>

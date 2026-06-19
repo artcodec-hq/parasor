@@ -73,6 +73,10 @@ export function WorktreeRow({
   // the row. Render a plain folder so the sidebar matches the `root` label.
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
+  const orphan = worktree.orphan === true;
+  const labelClassName = orphan
+    ? "text-text-secondary line-through decoration-danger"
+    : "text-text-secondary";
   const dirtyTitle =
     worktree.dirty > 0
       ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
@@ -127,7 +131,7 @@ export function WorktreeRow({
             title={dirtyTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
-            className="text-text-secondary"
+            className={labelClassName}
           >
             {label}
           </SidebarRowLabel>

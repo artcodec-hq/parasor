@@ -177,6 +177,18 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
     expect(getByLabelText("Orphan worktree").textContent).toBe("orphan");
   });
 
+  it("strikes through the worktree label when orphan flag is set", () => {
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), orphan: true }}
+        selection={selection}
+      />,
+    );
+
+    expect(screen.getByText("main").className).toContain("line-through");
+  });
+
   it("renders a linked pill when lineage metadata is present", () => {
     const { getByLabelText } = render(
       <WorktreeRow

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -72,6 +72,7 @@ vi.mock("@dnd-kit/utilities", () => ({
 }));
 
 afterEach(() => {
+  cleanup();
   vi.clearAllMocks();
 });
 
@@ -146,5 +147,42 @@ describe("WorktreeChildren pane reorder", () => {
       "terminal:s1",
     ]);
     expect(rowLabels()).toEqual(["browser", "terminal"]);
+  });
+
+  it("disables orphan child rows without selection, pinning, or reorder controls", () => {
+    const onSelectChild = vi.fn();
+    const onToggleChildPin = vi.fn();
+    const onReorderPanes = vi.fn();
+
+    render(
+      <WorktreeChildren
+        project={project}
+        worktree={{ ...worktree, orphan: true }}
+        selection={{
+          ...selection,
+          selectedWorktreeId: worktree.id,
+          selectedChildId: "terminal:s1",
+        }}
+        onSelectChild={onSelectChild}
+        onToggleChildPin={onToggleChildPin}
+        onReorderPanes={onReorderPanes}
+      />,
+    );
+
+    const terminalLabel = screen.getByText("terminal");
+    const terminalRow = terminalLabel.closest("[aria-disabled='true']");
+    expect(terminalRow).not.toBeNull();
+    expect(terminalRow?.className).toContain("opacity-50");
+    expect(terminalRow?.getAttribute("aria-current")).toBeNull();
+
+    fireEvent.click(terminalLabel);
+
+    expect(onSelectChild).not.toHaveBeenCalled();
+    expect(onToggleChildPin).not.toHaveBeenCalled();
+    expect(onReorderPanes).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Pin to Monitor" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Simulate child reorder" }),
+    ).toBeNull();
   });
 });
