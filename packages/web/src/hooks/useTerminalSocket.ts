@@ -50,6 +50,13 @@ const INIT_ACK_TIMEOUT_MS = 10_000;
  */
 const MAX_SEND_QUEUE = 1000;
 
+function detectTerminalClientKind(): "desktop" | "mobile" {
+  if (typeof window === "undefined") return "desktop";
+  return window.matchMedia?.("(pointer: coarse)").matches
+    ? "mobile"
+    : "desktop";
+}
+
 export type TerminalSocketStatus =
   | "connecting"
   // Browser WebSocket is OPEN, but init-ack has not attached the PTY yet.
@@ -326,10 +333,12 @@ export function useTerminalSocket({
     const buildInit = (): WsTerminalClientMessage | null => {
       const dims = lastDimsRef.current;
       if (!dims) return null;
+      const clientKind = detectTerminalClientKind();
       const init: WsTerminalClientMessage = {
         type: "init",
         cols: dims.cols,
         rows: dims.rows,
+        ...(clientKind === "mobile" && { clientKind }),
         capabilities: {
           binary: true,
           chunkedReplay: true,

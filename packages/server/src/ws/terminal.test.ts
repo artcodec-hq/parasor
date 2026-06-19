@@ -16,6 +16,7 @@ import type {
   CreateSessionInput,
   PtyHost,
 } from "../pty/host.js";
+import { TerminalPresenceManager } from "../pty/terminal-presence-manager.js";
 import {
   cleanupTerminalRelay,
   handleTerminalMessage,
@@ -478,6 +479,129 @@ describe("ws/terminal -- capability negotiation", () => {
     expect(host.resizes).toEqual([{ id: "sess", cols: 120, rows: 40 }]);
     expect(host.pauses).toEqual([{ id: "sess", clientId: "client" }]);
     expect(host.resumes).toEqual([{ id: "sess", clientId: "client" }]);
+  });
+
+  it("blocks desktop input and resize while a mobile client owns the terminal", async () => {
+    const manager = new TerminalPresenceManager({
+      onEffects: (effects) => {
+        for (const effect of effects) {
+          if (effect.type === "resize") {
+            host.resize(effect.sessionId, effect.cols, effect.rows);
+          }
+        }
+      },
+    });
+    const phone = new FakeWs();
+    const desktop = new FakeWs();
+    setupTerminalRelay(phone, "sess", "phone", host);
+    await handleTerminalMessage(
+      phone,
+      "sess",
+      "phone",
+      host,
+      strEvent(
+        JSON.stringify({
+          type: "init",
+          cols: 44,
+          rows: 18,
+          clientKind: "mobile",
+          capabilities: { binary: true, chunkedReplay: true },
+        }),
+      ),
+      undefined,
+      manager,
+    );
+    setupTerminalRelay(desktop, "sess", "desktop", host);
+    await handleTerminalMessage(
+      desktop,
+      "sess",
+      "desktop",
+      host,
+      strEvent(
+        JSON.stringify({
+          type: "init",
+          cols: 100,
+          rows: 30,
+          capabilities: { binary: true, chunkedReplay: true },
+        }),
+      ),
+      undefined,
+      manager,
+    );
+    host.writes = [];
+    host.resizes = [];
+
+    await handleTerminalMessage(
+      desktop,
+      "sess",
+      "desktop",
+      host,
+      binEvent(encodeInputFrame(1, new TextEncoder().encode("blocked"))),
+      undefined,
+      manager,
+    );
+    await handleTerminalMessage(
+      desktop,
+      "sess",
+      "desktop",
+      host,
+      binEvent(encodeResizeFrame(120, 40)),
+      undefined,
+      manager,
+    );
+
+    expect(host.writes).toEqual([]);
+    expect(host.resizes).toEqual([]);
+
+    manager.reclaimForDesktop("sess");
+    await handleTerminalMessage(
+      desktop,
+      "sess",
+      "desktop",
+      host,
+      binEvent(encodeInputFrame(1, new TextEncoder().encode("allowed"))),
+      undefined,
+      manager,
+    );
+
+    expect(host.resizes).toEqual([{ id: "sess", cols: 120, rows: 40 }]);
+    expect(host.writes).toEqual([
+      { id: "sess", data: "allowed", generation: 1 },
+    ]);
+  });
+
+  it("uses desktop layout when a mobile client attaches passively", async () => {
+    const manager = new TerminalPresenceManager();
+    manager.recordDesktopGeometry("sess", { cols: 120, rows: 40 });
+    const phone = new FakeWs();
+    setupTerminalRelay(phone, "sess", "phone", host);
+
+    await handleTerminalMessage(
+      phone,
+      "sess",
+      "phone",
+      host,
+      strEvent(
+        JSON.stringify({
+          type: "init",
+          cols: 44,
+          rows: 18,
+          clientKind: "mobile",
+          mobileMode: "desktop",
+          capabilities: { binary: true, chunkedReplay: true },
+        }),
+      ),
+      undefined,
+      manager,
+    );
+
+    expect(host.attachCalls.at(-1)).toMatchObject({
+      id: "sess",
+      clientId: "phone",
+      cols: 120,
+      rows: 40,
+    });
+    expect(manager.get("sess").driver).toEqual({ kind: "idle" });
   });
 
   it("records sanitized terminal relay trace events when enabled", async () => {

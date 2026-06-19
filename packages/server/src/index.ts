@@ -60,6 +60,7 @@ import {
   markerFileFor,
 } from "./pty/host-daemon/mode-marker.js";
 import { ScrollbackLog } from "./pty/scrollback-log.js";
+import { TerminalPresenceManager } from "./pty/terminal-presence-manager.js";
 import { RuntimeServiceAdvertisedUrlWatcher } from "./runtime-services/advertised-url-watcher.js";
 import { RuntimeServiceRegistry } from "./runtime-services/service-registry.js";
 import { CaffeinateController } from "./service/caffeinate.js";
@@ -290,6 +291,21 @@ ptyManager.setPtyEnv(buildStaticPtyEnv(shims, configDir));
 // own subdir (upload staging isolation reviewed for correctness 1).
 
 const eventBus = new EventBus();
+const terminalPresenceManager = new TerminalPresenceManager({
+  onEffects: (effects) => {
+    for (const effect of effects) {
+      if (effect.type === "resize") {
+        ptyManager.resize(effect.sessionId, effect.cols, effect.rows);
+      } else if (effect.type === "presence-changed") {
+        eventBus.broadcast({
+          type: "terminal-presence-changed",
+          sessionId: effect.snapshot.sessionId,
+          presence: effect.snapshot,
+        });
+      }
+    }
+  },
+});
 // Persistent JSONL debug logging is opt-in because hook/debug payloads and
 // detector samples can contain snippets of terminal output. Set
 // PARASOR_AGENT_STATUS_LOG=default to write under configDir, or set it to an
@@ -381,6 +397,7 @@ wireRuntime({
   sessionActivityStore,
   serviceRegistry,
   advertisedUrlWatcher,
+  terminalPresenceManager,
   ptyManager,
   agentDetector,
   agentStateStore,
@@ -505,6 +522,7 @@ const { app, injectWebSocket } = createAppServer({
     agentStateStore.getStates({ liveSessionIds: liveAgentSessionIds() }),
   debugRecorder,
   terminalTraceRecorder,
+  terminalPresenceManager,
   eventBus,
   projectManager,
   appStateStore,

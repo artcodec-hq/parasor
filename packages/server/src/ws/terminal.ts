@@ -1,11 +1,13 @@
 import {
   decodeBinaryFrame,
   MALFORMED_FRAME_CLOSE_THRESHOLD,
+  type TerminalClientKind,
   type WsTerminalClientMessage,
 } from "@parasor/shared";
 import type { WSMessageReceive } from "hono/ws";
 import type { TerminalTraceRecorder } from "../debug/terminal-trace-recorder.js";
 import type { PtyHost } from "../pty/host.js";
+import type { TerminalPresenceManager } from "../pty/terminal-presence-manager.js";
 import { attachClient } from "./terminal-attach.js";
 import { syncPtyFlow } from "./terminal-flow.js";
 
@@ -53,6 +55,7 @@ export interface TerminalRelayState {
    */
   clientPaused: boolean;
   serverPaused: boolean;
+  clientKind: TerminalClientKind;
   /** Active drain poll while {@link serverPaused}; unref'd so it never holds the process. */
   drainTimer?: ReturnType<typeof setInterval>;
 }
@@ -126,6 +129,7 @@ export function setupTerminalRelay(
     lastMalformedWarnAt: 0,
     clientPaused: false,
     serverPaused: false,
+    clientKind: "desktop",
   });
   traceRecorder?.record(
     "ws-setup",
@@ -140,6 +144,7 @@ export function cleanupTerminalRelay(
   clientId: string,
   ptyManager: PtyHost,
   traceRecorder?: TerminalTraceRecorder,
+  terminalPresenceManager?: TerminalPresenceManager,
 ): void {
   const state = wsState.get(ws);
   if (state?.drainTimer) {
@@ -163,6 +168,9 @@ export function cleanupTerminalRelay(
     return;
   }
   ptyManager.detachClient(sessionId, clientId, state.attachToken);
+  if (state.clientKind === "mobile") {
+    terminalPresenceManager?.unsubscribeMobile(sessionId, clientId);
+  }
   traceRecorder?.record(
     "ws-cleanup",
     { attachToken: state.attachToken },
@@ -216,6 +224,7 @@ export async function handleTerminalMessage(
   ptyManager: PtyHost,
   event: MessageEvent<WSMessageReceive>,
   traceRecorder?: TerminalTraceRecorder,
+  terminalPresenceManager?: TerminalPresenceManager,
 ): Promise<void> {
   try {
     await handleTerminalMessageUnsafe(
@@ -225,6 +234,7 @@ export async function handleTerminalMessage(
       ptyManager,
       event,
       traceRecorder,
+      terminalPresenceManager,
     );
   } catch (err) {
     // A daemon-mode PTY host can disappear independently of the HTTP server.
@@ -260,6 +270,7 @@ export interface RelayContext {
   sessionId: string;
   clientId: string;
   ptyManager: PtyHost;
+  terminalPresenceManager?: TerminalPresenceManager;
   traceRecorder?: TerminalTraceRecorder;
 }
 
@@ -275,6 +286,7 @@ async function handleTerminalMessageUnsafe(
   ptyManager: PtyHost,
   event: MessageEvent<WSMessageReceive>,
   traceRecorder?: TerminalTraceRecorder,
+  terminalPresenceManager?: TerminalPresenceManager,
 ): Promise<void> {
   const state = wsState.get(ws);
   if (!state) return;
@@ -284,6 +296,7 @@ async function handleTerminalMessageUnsafe(
     sessionId,
     clientId,
     ptyManager,
+    terminalPresenceManager,
     traceRecorder,
   };
 
@@ -377,6 +390,7 @@ function handleBinaryFrame(
       }),
       { sessionId, clientId },
     );
+    if (!allowPtyWrite(ctx)) return;
     ptyManager.write(sessionId, Buffer.from(frame.data).toString("utf8"), gen);
   } else if (frame.kind === "resize") {
     traceRecorder?.record(
@@ -384,6 +398,7 @@ function handleBinaryFrame(
       { cols: frame.cols, rows: frame.rows },
       { sessionId, clientId },
     );
+    if (!applyPresenceResize(ctx, frame.cols, frame.rows)) return;
     ptyManager.resize(sessionId, frame.cols, frame.rows);
   } else if (frame.kind === "refresh") {
     traceRecorder?.record("pty-refresh", {}, { sessionId, clientId });
@@ -435,6 +450,7 @@ async function handleInitFrame(
     return;
   }
   state.initialized = true;
+  state.clientKind = msg.clientKind === "mobile" ? "mobile" : "desktop";
   traceRecorder?.record(
     "ws-init",
     {
@@ -443,11 +459,36 @@ async function handleInitFrame(
       binary: !!msg.capabilities?.binary,
       chunkedReplay: !!msg.capabilities?.chunkedReplay,
       hasLastSeen: !!msg.capabilities?.lastSeen,
+      clientKind: state.clientKind,
     },
     { sessionId, clientId },
   );
 
-  await attachClient(ctx, msg);
+  const presence = ctx.terminalPresenceManager?.get(sessionId);
+  const attachLayout =
+    state.clientKind === "mobile" && msg.mobileMode === "desktop"
+      ? presence?.layout
+      : null;
+  const attachMsg =
+    attachLayout && "cols" in attachLayout && "rows" in attachLayout
+      ? { ...msg, cols: attachLayout.cols, rows: attachLayout.rows }
+      : msg;
+
+  await attachClient(ctx, attachMsg);
+  if (state.attachToken === undefined || ws.readyState !== 1) return;
+  if (state.clientKind === "mobile") {
+    ctx.terminalPresenceManager?.subscribeMobile(
+      sessionId,
+      clientId,
+      { cols: msg.cols, rows: msg.rows },
+      msg.mobileMode ?? "auto",
+    );
+  } else {
+    ctx.terminalPresenceManager?.recordDesktopGeometry(sessionId, {
+      cols: msg.cols,
+      rows: msg.rows,
+    });
+  }
 }
 
 /**
@@ -488,6 +529,7 @@ function handleJsonCommand(
       }),
       { sessionId, clientId },
     );
+    if (!allowPtyWrite(ctx)) return;
     ptyManager.write(sessionId, msg.data, gen);
   } else if (msg.type === "resize") {
     traceRecorder?.record(
@@ -495,6 +537,7 @@ function handleJsonCommand(
       { cols: msg.cols, rows: msg.rows },
       { sessionId, clientId },
     );
+    if (!applyPresenceResize(ctx, msg.cols, msg.rows)) return;
     ptyManager.resize(sessionId, msg.cols, msg.rows);
   } else if (msg.type === "refresh") {
     traceRecorder?.record("pty-refresh", {}, { sessionId, clientId });
@@ -516,4 +559,55 @@ function handleJsonCommand(
     state.clientPaused = false;
     syncPtyFlow(state, sessionId, clientId, ptyManager);
   }
+}
+
+function allowPtyWrite(ctx: RelayContext): boolean {
+  const { state, sessionId, clientId, terminalPresenceManager, traceRecorder } =
+    ctx;
+  if (!terminalPresenceManager) return true;
+  if (state.clientKind === "mobile") {
+    terminalPresenceManager.markMobileActed(sessionId, clientId);
+  }
+  const allowed = terminalPresenceManager.canWrite(sessionId, {
+    kind: state.clientKind,
+    clientId,
+  });
+  if (!allowed) {
+    traceRecorder?.record(
+      "pty-write",
+      { blockedByPresence: true, clientKind: state.clientKind },
+      { sessionId, clientId },
+    );
+  }
+  return allowed;
+}
+
+function applyPresenceResize(
+  ctx: RelayContext,
+  cols: number,
+  rows: number,
+): boolean {
+  const { state, sessionId, clientId, terminalPresenceManager, traceRecorder } =
+    ctx;
+  if (!terminalPresenceManager) return true;
+  if (state.clientKind === "mobile") {
+    terminalPresenceManager.updateMobileViewport(sessionId, clientId, {
+      cols,
+      rows,
+    });
+    return false;
+  }
+  terminalPresenceManager.recordDesktopGeometry(sessionId, { cols, rows });
+  const allowed = terminalPresenceManager.canResize(sessionId, {
+    kind: "desktop",
+    clientId,
+  });
+  if (!allowed) {
+    traceRecorder?.record(
+      "pty-resize",
+      { blockedByPresence: true, clientKind: state.clientKind, cols, rows },
+      { sessionId, clientId },
+    );
+  }
+  return allowed;
 }

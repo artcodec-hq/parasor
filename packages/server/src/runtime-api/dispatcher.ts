@@ -46,6 +46,7 @@ import { fenceWorktreePathWith } from "../application/workspace/worktree-command
 import type { ProjectRuntime } from "../bootstrap/project-runtime.js";
 import { buildHeadlessReplaySnapshot } from "../pty/headless-replay-snapshot.js";
 import type { PtyHost } from "../pty/host.js";
+import type { TerminalPresenceManager } from "../pty/terminal-presence-manager.js";
 import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
@@ -67,6 +68,7 @@ export interface RuntimeApiDeps {
   projectManager: ProjectManager;
   projectRuntime: ProjectRuntime;
   ptyManager: PtyHost;
+  terminalPresenceManager?: TerminalPresenceManager;
   runGit?: (projectPath: string, args: string[]) => Promise<string>;
   serverVersion?: string;
   worktreeCache: WorktreeCache;
@@ -305,7 +307,7 @@ async function terminalRead(
 }
 
 function terminalSend(
-  { ptyManager }: RuntimeApiDeps,
+  { ptyManager, terminalPresenceManager }: RuntimeApiDeps,
   params: TerminalSendParams,
 ): TerminalSendResult {
   const session = ptyManager.get(params.sessionId);
@@ -328,6 +330,18 @@ function terminalSend(
           received: params.generation,
         },
       },
+    );
+  }
+  if (
+    terminalPresenceManager &&
+    !terminalPresenceManager.canWrite(params.sessionId, {
+      kind: "desktop",
+      clientId: "runtime-api",
+    })
+  ) {
+    throw new RuntimeApiError(
+      "terminal_unavailable",
+      "Terminal is currently controlled by a mobile client",
     );
   }
   ptyManager.write(params.sessionId, params.data, params.generation);

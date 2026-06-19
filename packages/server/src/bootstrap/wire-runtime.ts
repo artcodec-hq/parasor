@@ -19,8 +19,10 @@ import { createProjectQueries } from "../application/workspace/project-queries.j
 import type { AgentStatusRecorder } from "../debug/agent-status-recorder.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import type { IpcServer } from "../ipc/socket-server.js";
+import { buildMobileSessionSnapshots } from "../mobile-session-snapshots.js";
 import type { PtyHost } from "../pty/host.js";
 import { Osc7Lifecycle } from "../pty/osc7-lifecycle.js";
+import { TerminalPresenceManager } from "../pty/terminal-presence-manager.js";
 import type { RuntimeServiceAdvertisedUrlWatcher } from "../runtime-services/advertised-url-watcher.js";
 import {
   projectServicesToPorts,
@@ -39,6 +41,7 @@ export interface WireRuntimeDeps {
   sessionActivityStore: SessionActivityStore;
   serviceRegistry: RuntimeServiceRegistry;
   advertisedUrlWatcher: RuntimeServiceAdvertisedUrlWatcher;
+  terminalPresenceManager?: TerminalPresenceManager;
   ptyManager: PtyHost;
   agentDetector: AgentDetector;
   agentStateStore: AgentStateStore;
@@ -87,6 +90,7 @@ export function wireRuntime({
   sessionActivityStore,
   serviceRegistry,
   advertisedUrlWatcher,
+  terminalPresenceManager = new TerminalPresenceManager(),
   ptyManager,
   agentDetector,
   agentStateStore,
@@ -111,6 +115,15 @@ export function wireRuntime({
     getAgentStates: () =>
       agentStateStore.getStates({ liveSessionIds: getLiveSessionIds() }),
     getActivityHistory: () => sessionActivityStore.getRecent(100),
+    getTerminalPresences: () => terminalPresenceManager.getAll(),
+    getMobileSessionSnapshots: () =>
+      buildMobileSessionSnapshots({
+        state: buildHydrationStateSnapshot({ appStateStore, ptyManager }),
+        agentStates: agentStateStore.getStates({
+          liveSessionIds: getLiveSessionIds(),
+        }),
+        terminalPresences: terminalPresenceManager.getAll(),
+      }),
     getNotifications: () => eventBus.getNotifications(),
     getPorts: () => {
       const out: Record<string, PortInfo[]> = {};
@@ -178,6 +191,7 @@ export function wireRuntime({
       });
     } else if (message.type === "session-ended") {
       const session = ptyManager.get(message.sessionId);
+      terminalPresenceManager.resetSession(message.sessionId);
       activityRecord = createActivityRecord(message.sessionId, {
         kind: "session-ended",
         source: "daemon",
@@ -186,6 +200,7 @@ export function wireRuntime({
         summary: "Session ended",
       });
     } else if (message.type === "session-closed") {
+      terminalPresenceManager.resetSession(message.sessionId);
       activityRecord = createActivityRecord(message.sessionId, {
         kind: "session-closed",
         source: "daemon",
@@ -200,6 +215,10 @@ export function wireRuntime({
         projectId: ptyManager.get(message.state.sessionId)?.projectId,
         summary: `Agent: ${message.state.lifecycle}`,
       });
+    }
+
+    if (message.type === "session-restarted") {
+      terminalPresenceManager.resetSession(message.session.id);
     }
 
     // Cache mutations must happen BEFORE broadcast so that a client
@@ -245,6 +264,54 @@ export function wireRuntime({
         type: "activity-recorded",
         record: activityRecord,
       });
+    }
+    if (
+      message.type === "panes-updated" ||
+      message.type === "session-created" ||
+      message.type === "session-restarted" ||
+      message.type === "session-ended" ||
+      message.type === "session-closed" ||
+      message.type === "agent-state"
+    ) {
+      const snapshots = buildMobileSessionSnapshots({
+        state: buildHydrationStateSnapshot({ appStateStore, ptyManager }),
+        agentStates: agentStateStore.getStates({
+          liveSessionIds: getLiveSessionIds(),
+        }),
+        terminalPresences: terminalPresenceManager.getAll(),
+      });
+      if (message.type === "panes-updated") {
+        for (const snapshot of snapshots[message.projectId] ?? []) {
+          originalBroadcast({
+            type: "mobile-session-snapshot",
+            projectId: snapshot.projectId,
+            worktreePath: snapshot.worktreePath,
+            snapshot,
+          });
+        }
+      } else {
+        const sessionId =
+          message.type === "session-created" ||
+          message.type === "session-restarted"
+            ? message.session.id
+            : message.type === "agent-state"
+              ? message.state.sessionId
+              : message.sessionId;
+        const projectId =
+          message.type === "session-closed"
+            ? message.projectId
+            : ptyManager.get(sessionId)?.projectId;
+        if (projectId) {
+          for (const snapshot of snapshots[projectId] ?? []) {
+            originalBroadcast({
+              type: "mobile-session-snapshot",
+              projectId: snapshot.projectId,
+              worktreePath: snapshot.worktreePath,
+              snapshot,
+            });
+          }
+        }
+      }
     }
     if (message.type === "session-closed") {
       osc7Lifecycle.removeSession(message.sessionId);

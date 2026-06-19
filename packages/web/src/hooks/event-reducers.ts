@@ -3,6 +3,7 @@ import type {
   GitState,
   HydrationPayload,
   IdeCommandConfig,
+  MobileSessionSnapshot,
   Notification,
   PaneCommandConfig,
   PortInfo,
@@ -12,6 +13,7 @@ import type {
   ServiceConfig,
   Session,
   SessionActivityRecord,
+  TerminalPresenceSnapshot,
   Worktree,
   WsEventMessage,
 } from "@parasor/shared";
@@ -64,6 +66,8 @@ export interface AppStore {
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
   sessionActivityHistory: SessionActivityRecord[];
+  terminalPresences: Record<string, TerminalPresenceSnapshot>;
+  mobileSessionSnapshots: Record<string, MobileSessionSnapshot[]>;
   ports: Record<string, PortInfo[]>;
   services: Record<string, RuntimeServiceInfo[]>;
   /**
@@ -97,6 +101,8 @@ export const EMPTY_STORE: AppStore = {
   agentStates: {},
   notifications: [],
   sessionActivityHistory: [],
+  terminalPresences: {},
+  mobileSessionSnapshots: {},
   ports: {},
   services: {},
   gitStates: {},
@@ -124,11 +130,14 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
 
     case "session-closed": {
       const agentStates = { ...store.agentStates };
+      const terminalPresences = { ...store.terminalPresences };
       delete agentStates[msg.sessionId];
+      delete terminalPresences[msg.sessionId];
       return {
         ...store,
         sessions: store.sessions.filter((s) => s.id !== msg.sessionId),
         agentStates,
+        terminalPresences,
       };
     }
 
@@ -146,8 +155,11 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
     case "session-ended": {
       const existing = store.sessions.find((s) => s.id === msg.sessionId);
       if (existing && msg.generation < existing.generation) return store;
+      const terminalPresences = { ...store.terminalPresences };
+      delete terminalPresences[msg.sessionId];
       return {
         ...store,
+        terminalPresences,
         sessions: store.sessions.map((s) =>
           s.id === msg.sessionId
             ? {
@@ -159,6 +171,32 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
               }
             : s,
         ),
+      };
+    }
+
+    case "terminal-presence-changed":
+      return {
+        ...store,
+        terminalPresences: {
+          ...store.terminalPresences,
+          [msg.sessionId]: msg.presence,
+        },
+      };
+
+    case "mobile-session-snapshot": {
+      const current = store.mobileSessionSnapshots[msg.projectId] ?? [];
+      const next = [
+        ...current.filter(
+          (snapshot) => snapshot.worktreePath !== msg.worktreePath,
+        ),
+        msg.snapshot,
+      ];
+      return {
+        ...store,
+        mobileSessionSnapshots: {
+          ...store.mobileSessionSnapshots,
+          [msg.projectId]: next,
+        },
       };
     }
 
@@ -221,6 +259,8 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
       const { [msg.projectId]: _gs, ...gitStates } = store.gitStates;
       const { [msg.projectId]: _ports, ...ports } = store.ports;
       const { [msg.projectId]: _services, ...services } = store.services;
+      const { [msg.projectId]: _mobileSnapshots, ...mobileSessionSnapshots } =
+        store.mobileSessionSnapshots;
       return {
         ...store,
         projects: store.projects.filter((p) => p.id !== msg.projectId),
@@ -229,6 +269,7 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
         agentStates,
         ports,
         services,
+        mobileSessionSnapshots,
         gitStates,
         worktrees,
       };
@@ -421,6 +462,8 @@ export function applySnapshot(payload: HydrationPayload): AppStore {
       .slice()
       .reverse()
       .slice(0, ACTIVITY_HISTORY_LIMIT),
+    terminalPresences: payload.terminalPresences ?? {},
+    mobileSessionSnapshots: payload.mobileSessionSnapshots ?? {},
     serviceConfig: payload.state.serviceConfig,
     paneCommands: payload.state.paneCommands ?? [],
     ideCommands: payload.state.ideCommands ?? [],
