@@ -274,6 +274,57 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     ]);
   });
 
+  it("does not attach stale browser child panes to session-created orphan rows", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+      ],
+    };
+    const sessions: Session[] = [
+      session({
+        id: "stale",
+        projectId: "p1",
+        cwd: "/repos/p1.worktrees/deleted",
+      }),
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions,
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+      inactiveChildPanesByProject: {
+        p1: {
+          "/repos/p1.worktrees/deleted": [
+            {
+              id: "browser:p1-stale",
+              kind: "browser",
+              url: "https://stale.example.com",
+            },
+          ],
+        },
+      },
+    });
+
+    const orphan = result[0]?.worktrees.find(
+      (w) => w.path === "/repos/p1.worktrees/deleted",
+    );
+    expect(orphan).toMatchObject({ orphan: true });
+    expect(orphan?.children.map((c) => c.id)).toEqual([
+      terminalPaneId("stale"),
+    ]);
+  });
+
   it("inactive-project terminal child ids match the active path's pane id format", () => {
     // Regression guard: clicking a terminal under an inactive project in the
     // sidebar feeds child.id straight into `setFocusedPaneId`. After the

@@ -388,22 +388,24 @@ function buildInactiveWorktrees({
         agentType: agentTypeForSession(session),
       });
     }
-    for (const pane of childPanes[cwd] ?? []) {
-      const baseLabel = browserLabel(pane.url);
-      const seen = labelCounts.get(baseLabel) ?? 0;
-      labelCounts.set(baseLabel, seen + 1);
-      children.push({
-        id: pane.id,
-        kind: "browser",
-        label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
-        hint: pane.url,
-        status: "idle",
-        pinned: false,
-      });
-    }
     const meta = counters.lookup(cwd);
     const isRoot = cwd === project.path;
     const isSyntheticOrphan = syntheticOrphanPaths.has(cwd);
+    if (!isSyntheticOrphan) {
+      for (const pane of childPanes[cwd] ?? []) {
+        const baseLabel = browserLabel(pane.url);
+        const seen = labelCounts.get(baseLabel) ?? 0;
+        labelCounts.set(baseLabel, seen + 1);
+        children.push({
+          id: pane.id,
+          kind: "browser",
+          label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
+          hint: pane.url,
+          status: "idle",
+          pinned: false,
+        });
+      }
+    }
     return {
       id: `wt:${cwd}`,
       name: isRoot ? (isNotRepo ? "root" : "main") : lastSegment(cwd),
