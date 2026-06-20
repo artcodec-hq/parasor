@@ -2,6 +2,7 @@ import {
   type AgentLifecycle,
   type AgentState,
   deriveAgentStatusContext,
+  type GitChangeEntry,
   type GitState,
   type Project,
   type RuntimeServiceInfo,
@@ -92,7 +93,19 @@ interface InactiveChildPane {
  * supplied path, falling back to direct equality.
  */
 interface CounterIndex {
-  lookup(path: string): Worktree | undefined;
+  lookup(path: string): SidebarWorktreeCounters | undefined;
+}
+
+interface SidebarWorktreeCounters {
+  path: string;
+  ahead?: number;
+  behind?: number;
+  dirtyCount?: number;
+  dirtyAdded?: number;
+  dirtyDeleted?: number;
+  origin?: Worktree["origin"];
+  lineage?: Worktree["lineage"];
+  orphan?: Worktree["orphan"];
 }
 
 interface ServiceCountIndex {
@@ -107,11 +120,36 @@ function normalizePath(p: string): string {
 
 function counterLookup(
   worktreesByProject: Record<string, Worktree[]> | undefined,
+  gitStates: Record<string, Record<string, GitState | null>> | undefined,
   projectId: string,
 ): CounterIndex {
+  const projectGitStates = gitStates?.[projectId] ?? {};
+  const gitStateByNormalizedPath = new Map(
+    Object.entries(projectGitStates).map(([path, state]) => [
+      normalizePath(path),
+      state,
+    ]),
+  );
   const list = worktreesByProject?.[projectId] ?? [];
-  const byNormalizedPath = new Map<string, Worktree>();
-  for (const w of list) byNormalizedPath.set(normalizePath(w.path), w);
+  const byNormalizedPath = new Map<string, SidebarWorktreeCounters>();
+  for (const w of list) {
+    const key = normalizePath(w.path);
+    byNormalizedPath.set(key, {
+      ...w,
+      ...dirtyDeltaFromGitState(gitStateByNormalizedPath.get(key)),
+    });
+  }
+  for (const [path, state] of Object.entries(projectGitStates)) {
+    const key = normalizePath(path);
+    if (byNormalizedPath.has(key)) continue;
+    byNormalizedPath.set(key, {
+      path,
+      ahead: state?.ahead,
+      behind: state?.behind,
+      dirtyCount: state?.dirtyCount,
+      ...dirtyDeltaFromGitState(state),
+    });
+  }
   // Sort descending by length so prefix-matching picks the deepest worktree
   // (e.g. /repo/wt-a wins over /repo when cwd is /repo/wt-a/sub).
   const keys = [...byNormalizedPath.keys()].sort((a, b) => b.length - a.length);
@@ -126,6 +164,32 @@ function counterLookup(
       return undefined;
     },
   };
+}
+
+function dirtyDeltaFromGitState(
+  state: GitState | null | undefined,
+): Pick<SidebarWorktreeCounters, "dirtyAdded" | "dirtyDeleted"> {
+  if (!state?.changes) return {};
+  return countDirtyDelta(state.changes);
+}
+
+function countDirtyDelta(
+  changes: GitChangeEntry[],
+): Pick<SidebarWorktreeCounters, "dirtyAdded" | "dirtyDeleted"> {
+  let dirtyAdded = 0;
+  let dirtyDeleted = 0;
+  for (const change of changes) {
+    if (
+      change.status === "added" ||
+      change.status === "untracked" ||
+      change.status === "copied"
+    ) {
+      dirtyAdded += 1;
+    } else if (change.status === "deleted") {
+      dirtyDeleted += 1;
+    }
+  }
+  return { dirtyAdded, dirtyDeleted };
 }
 
 function serviceCountLookup(
@@ -167,7 +231,7 @@ export function buildSidebarProjects({
   const dismissed = attentionDismissed ?? {};
   return sortProjects(projects).map((project) => {
     const isActive = project.id === activeProjectId;
-    const counters = counterLookup(worktreesByProject, project.id);
+    const counters = counterLookup(worktreesByProject, gitStates, project.id);
     const serviceCounts = serviceCountLookup(servicesByProject, project.id);
     const rootGit = gitStates?.[project.id]?.[project.path];
     const isNotRepo = rootGit?.isRepo === false;
@@ -258,6 +322,8 @@ function buildActiveWorktrees({
       path: wt.path,
       active: isRoot,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(wt.path),
@@ -285,6 +351,8 @@ function buildPlaceholderWorktrees(
       path: project.path,
       active: true,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(project.path),
@@ -410,6 +478,8 @@ function buildInactiveWorktrees({
       path: cwd,
       active: isRoot,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(cwd),

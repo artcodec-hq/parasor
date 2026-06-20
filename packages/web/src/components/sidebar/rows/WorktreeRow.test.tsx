@@ -58,7 +58,7 @@ const selection: SidebarSelection = {
 };
 
 describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
-  it("uses compact numeric git metrics and keeps the normal label color when dirty > 0", () => {
+  it("uses compact added/deleted dirty metrics and keeps the normal label color", () => {
     render(
       <WorktreeRow
         project={project}
@@ -66,21 +66,22 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
           ...makeWorktree(3),
           ahead: 2,
           behind: 1,
+          dirtyAdded: 2,
+          dirtyDeleted: 1,
           serviceCount: 4,
         }}
         selection={selection}
       />,
     );
     const row = screen.getByRole("button", {
-      name: "main, 3 uncommitted changes, 2 commits ahead, 1 commit behind, 4 live ports",
+      name: "main, 2 added changes, 1 deleted change, 4 live ports",
     });
     const label = screen.getByText("main");
     expect(row).not.toBeNull();
     expect(label.getAttribute("title")).toBe(
-      "3 uncommitted changes, 2 commits ahead, 1 commit behind, 4 live ports",
+      "2 added changes, 1 deleted change, 4 live ports",
     );
     expect(label.className).toContain("text-text-secondary");
-    expect(screen.getByText("+/-3")).toBeTruthy();
     expect(screen.getByText("+2")).toBeTruthy();
     expect(screen.getByText("-1")).toBeTruthy();
     expect(screen.getByText("4")).toBeTruthy();
@@ -101,7 +102,7 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     ).toBeNull();
   });
 
-  it("uses singular 'change' in title when dirty === 1", () => {
+  it("does not show a dirty metric when only dirtyCount is available", () => {
     render(
       <WorktreeRow
         project={project}
@@ -109,12 +110,8 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
         selection={selection}
       />,
     );
-    expect(screen.getByText("main").getAttribute("title")).toBe(
-      "1 uncommitted change",
-    );
-    expect(
-      screen.getByRole("button", { name: "main, 1 uncommitted change" }),
-    ).not.toBeNull();
+    expect(screen.getByText("main").getAttribute("title")).toBeNull();
+    expect(screen.queryByText("+/-1")).toBeNull();
   });
 
   it("uses the normal worktree label color when dirty === 0", () => {

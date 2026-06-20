@@ -1,5 +1,6 @@
 import {
   type AgentState,
+  type GitState,
   makeTerminalPane,
   type Project,
   type Session,
@@ -33,6 +34,15 @@ function session(overrides: Partial<Session>): Session {
     cwd: "/repos/p1",
     shell: "/bin/zsh",
     createdAt: 0,
+    ...overrides,
+  };
+}
+
+function gitState(overrides: Partial<GitState> = {}): GitState {
+  return {
+    branch: "main",
+    dirty: false,
+    lastChecked: 1,
     ...overrides,
   };
 }
@@ -781,10 +791,56 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
       worktreesByProject,
+      gitStates: {
+        p1: {
+          "/repos/p1": gitState({
+            dirty: true,
+            dirtyCount: 3,
+            changes: [
+              {
+                path: "added.ts",
+                area: "staged",
+                status: "added",
+                code: "A",
+              },
+              {
+                path: "new.ts",
+                area: "untracked",
+                status: "untracked",
+                code: "?",
+              },
+              {
+                path: "deleted.ts",
+                area: "unstaged",
+                status: "deleted",
+                code: "D",
+              },
+              {
+                path: "modified.ts",
+                area: "unstaged",
+                status: "modified",
+                code: "M",
+              },
+            ],
+          }),
+        },
+      },
     });
     const [main, branch] = result[0]?.worktrees ?? [];
-    expect(main).toMatchObject({ dirty: 3, ahead: 1, behind: 0 });
-    expect(branch).toMatchObject({ dirty: 0, ahead: 5, behind: 2 });
+    expect(main).toMatchObject({
+      dirty: 3,
+      dirtyAdded: 2,
+      dirtyDeleted: 1,
+      ahead: 1,
+      behind: 0,
+    });
+    expect(branch).toMatchObject({
+      dirty: 0,
+      dirtyAdded: 0,
+      dirtyDeleted: 0,
+      ahead: 5,
+      behind: 2,
+    });
   });
 
   it("matches counters across macOS /private aliasing", () => {
@@ -811,9 +867,26 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
       worktreesByProject,
+      gitStates: {
+        p1: {
+          "/tmp/proj": gitState({
+            dirty: true,
+            changes: [
+              {
+                path: "new.ts",
+                area: "untracked",
+                status: "untracked",
+                code: "?",
+              },
+            ],
+          }),
+        },
+      },
     });
     expect(result[0]?.worktrees[0]).toMatchObject({
       dirty: 7,
+      dirtyAdded: 1,
+      dirtyDeleted: 0,
       ahead: 4,
       behind: 0,
     });

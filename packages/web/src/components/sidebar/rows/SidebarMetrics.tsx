@@ -1,7 +1,6 @@
 export interface SidebarRowMetrics {
-  dirty: number;
-  ahead: number;
-  behind: number;
+  dirtyAdded?: number;
+  dirtyDeleted?: number;
   serviceCount?: number;
 }
 
@@ -17,17 +16,14 @@ export function SidebarMetricsView({
       title={formatSidebarMetricsTitle(metrics)}
       className="flex shrink-0 items-center gap-1 text-xs leading-none tabular-nums"
     >
-      {metrics.dirty > 0 && (
-        <span className="text-[var(--theme-git-modified)]">
-          +/-{metrics.dirty}
+      {(metrics.dirtyAdded ?? 0) > 0 && (
+        <span className="text-[var(--theme-git-added)]">
+          +{metrics.dirtyAdded}
         </span>
       )}
-      {metrics.ahead > 0 && (
-        <span className="text-[var(--theme-git-added)]">+{metrics.ahead}</span>
-      )}
-      {metrics.behind > 0 && (
-        <span className="text-[var(--theme-git-modified)]">
-          -{metrics.behind}
+      {(metrics.dirtyDeleted ?? 0) > 0 && (
+        <span className="text-[var(--theme-git-deleted)]">
+          -{metrics.dirtyDeleted}
         </span>
       )}
       {(metrics.serviceCount ?? 0) > 0 && (
@@ -42,28 +38,22 @@ export function SidebarMetricsView({
 
 export function hasVisibleMetrics(metrics: SidebarRowMetrics): boolean {
   return (
-    metrics.dirty > 0 ||
-    metrics.ahead > 0 ||
-    metrics.behind > 0 ||
+    (metrics.dirtyAdded ?? 0) > 0 ||
+    (metrics.dirtyDeleted ?? 0) > 0 ||
     (metrics.serviceCount ?? 0) > 0
   );
 }
 
 export function formatSidebarMetricsTitle(metrics: SidebarRowMetrics): string {
   const parts: string[] = [];
-  if (metrics.dirty > 0) {
-    parts.push(
-      `${metrics.dirty} uncommitted change${metrics.dirty === 1 ? "" : "s"}`,
-    );
+  const dirtyAdded = metrics.dirtyAdded ?? 0;
+  if (dirtyAdded > 0) {
+    parts.push(`${dirtyAdded} added change${dirtyAdded === 1 ? "" : "s"}`);
   }
-  if (metrics.ahead > 0) {
+  const dirtyDeleted = metrics.dirtyDeleted ?? 0;
+  if (dirtyDeleted > 0) {
     parts.push(
-      `${metrics.ahead} commit${metrics.ahead === 1 ? "" : "s"} ahead`,
-    );
-  }
-  if (metrics.behind > 0) {
-    parts.push(
-      `${metrics.behind} commit${metrics.behind === 1 ? "" : "s"} behind`,
+      `${dirtyDeleted} deleted change${dirtyDeleted === 1 ? "" : "s"}`,
     );
   }
   const serviceCount = metrics.serviceCount ?? 0;

@@ -199,9 +199,8 @@ export function WorktreeRow({
 
 function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
   return {
-    dirty: worktree.dirty,
-    ahead: worktree.ahead,
-    behind: worktree.behind,
+    dirtyAdded: worktree.dirtyAdded,
+    dirtyDeleted: worktree.dirtyDeleted,
     serviceCount: worktree.serviceCount,
   };
 }
