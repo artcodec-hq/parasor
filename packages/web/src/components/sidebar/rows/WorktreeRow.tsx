@@ -11,6 +11,11 @@ import {
   SidebarRowIcon,
   SidebarRowLabel,
 } from "../primitives/index.js";
+import {
+  formatSidebarMetricsTitle,
+  SidebarMetricsView,
+  type SidebarRowMetrics,
+} from "./SidebarMetrics.js";
 import { WorktreeChildren } from "./WorktreeChildren.js";
 import { WorktreeRowActions } from "./WorktreeRowActions.js";
 import { useWorktreeDisclosure } from "./worktree-disclosure.js";
@@ -77,12 +82,8 @@ export function WorktreeRow({
   const labelClassName = orphan
     ? "text-text-secondary line-through decoration-danger"
     : "text-text-secondary";
-  const dirtyTitle =
-    worktree.dirty > 0
-      ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
-      : undefined;
-  const dirtyDotClass =
-    worktree.dirty > 0 ? "bg-[var(--theme-git-modified)]" : "";
+  const rowMetrics = metricsForWorktree(worktree);
+  const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
   const lineageTitle = worktree.lineage
     ? formatLineageTitle(worktree.lineage)
     : null;
@@ -124,11 +125,11 @@ export function WorktreeRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1 text-left"
-          aria-label={dirtyTitle ? `${label}, ${dirtyTitle}` : undefined}
+          aria-label={metricsTitle ? `${label}, ${metricsTitle}` : undefined}
           onClick={() => onSelectWorktree?.(project.id, worktree.id)}
         >
           <SidebarRowLabel
-            title={dirtyTitle}
+            title={metricsTitle || undefined}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
             className={labelClassName}
@@ -171,13 +172,7 @@ export function WorktreeRow({
             </span>
           )}
         </button>
-        {dirtyDotClass && (
-          <span
-            aria-hidden
-            title={dirtyTitle}
-            className={`h-1.5 w-1.5 shrink-0 rounded-tag ${dirtyDotClass}`}
-          />
-        )}
+        <SidebarMetricsView metrics={rowMetrics} />
         <WorktreeRowActions
           label={label}
           onOpenContainer={
@@ -200,6 +195,15 @@ export function WorktreeRow({
       )}
     </div>
   );
+}
+
+function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
+  return {
+    dirty: worktree.dirty,
+    ahead: worktree.ahead,
+    behind: worktree.behind,
+    serviceCount: worktree.serviceCount,
+  };
 }
 
 function formatLineageTitle(

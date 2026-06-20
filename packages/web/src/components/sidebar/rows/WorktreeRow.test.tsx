@@ -58,27 +58,32 @@ const selection: SidebarSelection = {
 };
 
 describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
-  it("uses a standalone Git modified dot and keeps the normal label color when dirty > 0", () => {
-    const { container } = render(
+  it("uses compact numeric git metrics and keeps the normal label color when dirty > 0", () => {
+    render(
       <WorktreeRow
         project={project}
-        worktree={makeWorktree(3)}
+        worktree={{
+          ...makeWorktree(3),
+          ahead: 2,
+          behind: 1,
+          serviceCount: 4,
+        }}
         selection={selection}
       />,
     );
     const row = screen.getByRole("button", {
-      name: "main, 3 uncommitted changes",
+      name: "main, 3 uncommitted changes, 2 commits ahead, 1 commit behind, 4 live ports",
     });
     const label = screen.getByText("main");
     expect(row).not.toBeNull();
-    expect(label.getAttribute("title")).toBe("3 uncommitted changes");
-    expect(label.className).toContain("text-text-secondary");
-    const dot = container.querySelector(
-      ".bg-\\[var\\(--theme-git-modified\\)\\]",
+    expect(label.getAttribute("title")).toBe(
+      "3 uncommitted changes, 2 commits ahead, 1 commit behind, 4 live ports",
     );
-    expect(dot).not.toBeNull();
-    expect(dot?.className).not.toContain("absolute");
-    expect(dot?.className).toContain("shrink-0");
+    expect(label.className).toContain("text-text-secondary");
+    expect(screen.getByText("+/-3")).toBeTruthy();
+    expect(screen.getByText("+2")).toBeTruthy();
+    expect(screen.getByText("-1")).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
     expect(screen.queryByLabelText("Modified")).toBeNull();
   });
 

@@ -5,10 +5,15 @@ import {
   SidebarRowActionButton,
   SidebarRowLabel,
 } from "../primitives/index.js";
+import {
+  SidebarMetricsView,
+  type SidebarRowMetrics,
+} from "./SidebarMetrics.js";
 
 interface ChildRowProps {
   child: SidebarChild;
   selected: boolean;
+  metrics?: SidebarRowMetrics;
   disabled?: boolean;
   unavailable?: boolean;
   onClick?: () => void;
@@ -44,6 +49,7 @@ function SidebarChildStatus({ child }: { child: SidebarChild }) {
 export function ChildRow({
   child,
   selected,
+  metrics,
   disabled = false,
   unavailable = false,
   onClick,
@@ -76,18 +82,18 @@ export function ChildRow({
       {accessibleStatus && (
         <span className="sr-only">, {accessibleStatus}</span>
       )}
+      <SidebarMetricsView metrics={metrics} />
       {canTogglePin ? (
         <SidebarRowActionButton
           aria-label={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
           aria-pressed={child.pinned}
           title={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          tone={child.pinned ? "accent" : "default"}
           onClick={(event) => {
             event.stopPropagation();
             onTogglePin();
           }}
         >
-          <PaGlyph.pin />
+          <MonitorSwitch pressed={child.pinned} />
         </SidebarRowActionButton>
       ) : !disabled && !unavailable && child.pinned ? (
         <span
@@ -100,5 +106,24 @@ export function ChildRow({
         </span>
       ) : null}
     </SidebarRow>
+  );
+}
+
+function MonitorSwitch({ pressed }: { pressed: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`relative h-3.5 w-7 rounded-full transition-colors ${
+        pressed ? "bg-accent/25" : "bg-bg-primary/80"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-2.5 w-2.5 rounded-full transition-transform ${
+          pressed
+            ? "translate-x-3.5 bg-accent"
+            : "translate-x-0.5 bg-text-secondary/60"
+        }`}
+      />
+    </span>
   );
 }
