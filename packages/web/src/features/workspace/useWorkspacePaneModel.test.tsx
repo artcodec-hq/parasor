@@ -67,7 +67,7 @@ describe("useWorkspacePaneModel", () => {
     ]);
   });
 
-  it("does not let stale session cwd paths resurrect deleted worktree rows", () => {
+  it("keeps stale session cwd paths as orphan rows when a worktree snapshot exists", () => {
     const model = renderModel({
       projectId: "p1",
       projectPath: "/repo",
@@ -79,15 +79,40 @@ describe("useWorkspacePaneModel", () => {
       focusedPaneId: null,
     });
 
-    expect(model.worktrees.map((wt) => wt.path)).toEqual(["/repo"]);
-    expect(
-      model.worktrees.some(
-        (wt) => wt.path === "/repo.worktrees/feature/newmenu",
-      ),
-    ).toBe(false);
-    expect(model.allPanes.some((pane) => pane.id === "terminal:external")).toBe(
-      false,
+    expect(model.worktrees.map((wt) => wt.path)).toEqual([
+      "/repo",
+      "/repo.worktrees/feature/newmenu",
+    ]);
+    const orphan = model.worktrees.find(
+      (wt) => wt.path === "/repo.worktrees/feature/newmenu",
     );
+    expect(orphan).toMatchObject({ orphan: true });
+    expect(orphan?.panes.some((pane) => pane.id === "terminal:external")).toBe(
+      true,
+    );
+  });
+
+  it("limits orphan rows to the remaining terminal panes", () => {
+    const model = renderModel({
+      projectId: "p1",
+      projectPath: "/repo",
+      worktrees: [worktree("/repo")],
+      sessions: [
+        session({ id: "external", cwd: "/repo.worktrees/feature/deleted" }),
+      ],
+      focusedPaneId: null,
+      clientBrowserPanes: {
+        "/repo.worktrees/feature/deleted": [
+          { id: "browser:stale", url: "http://localhost:5173" },
+        ],
+      },
+    });
+
+    const orphan = model.worktrees.find(
+      (wt) => wt.path === "/repo.worktrees/feature/deleted",
+    );
+    expect(orphan).toMatchObject({ orphan: true });
+    expect(orphan?.panes.map((pane) => pane.id)).toEqual(["terminal:external"]);
   });
 
   it("keeps sessions outside the project root while no worktree snapshot exists", () => {

@@ -163,21 +163,11 @@ export function WorktreeRow({
           {worktree.orphan && (
             <span
               role="img"
-              aria-label="Orphan worktree"
-              title="Path is missing on disk -- use force remove to prune"
+              aria-label="Missing worktree"
+              title="Path is missing on disk - prune the stale worktree entry"
               className="shrink-0 rounded-tag border border-danger/40 bg-danger/10 px-1 text-[10px] font-medium leading-tight text-danger"
             >
-              orphan
-            </span>
-          )}
-          {(worktree.serviceCount ?? 0) > 0 && (
-            <span
-              role="img"
-              aria-label={`${worktree.serviceCount} live service${worktree.serviceCount === 1 ? "" : "s"}`}
-              title={`${worktree.serviceCount} live service${worktree.serviceCount === 1 ? "" : "s"}`}
-              className="shrink-0 rounded-tag border border-accent/40 bg-accent/10 px-1 text-[10px] font-medium leading-tight text-accent"
-            >
-              {worktree.serviceCount}
+              missing
             </span>
           )}
         </button>

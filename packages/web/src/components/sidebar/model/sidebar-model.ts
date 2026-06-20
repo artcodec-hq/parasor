@@ -266,7 +266,7 @@ function buildActiveWorktrees({
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
       ...(meta?.lineage ? { lineage: meta.lineage } : {}),
-      ...(meta?.orphan ? { orphan: true } : {}),
+      ...(wt.orphan || meta?.orphan ? { orphan: true } : {}),
     };
   });
 }
@@ -311,9 +311,11 @@ interface BuildInactiveWorktreesOptions {
 }
 
 // Union of project.path ("main"), server worktree snapshot, and distinct
-// session cwds only while no server worktree snapshot exists. Client-side
-// child panes may attach to those rows, but do not seed rows on their own
-// because their persisted paths can be stale.
+// session cwds. When a session cwd no longer belongs to the authoritative
+// snapshot, keep it as an orphan row so the user can close the remaining
+// session without presenting the path as a live worktree. Client-side child
+// panes may attach to known rows, but do not seed rows on their own because
+// their persisted paths can be stale.
 function buildInactiveWorktrees({
   project,
   sessions,
@@ -328,17 +330,21 @@ function buildInactiveWorktrees({
 }: BuildInactiveWorktreesOptions): SidebarWorktree[] {
   const projectSessions = sessions.filter((s) => s.projectId === project.id);
   const byCwd = new Map<string, Session[]>();
+  const syntheticOrphanPaths = new Set<string>();
   byCwd.set(project.path, []);
   const hasAuthoritativeWorktrees = projectWorktrees.length > 0;
   for (const wt of projectWorktrees) {
     if (!byCwd.has(wt.path)) byCwd.set(wt.path, []);
   }
   for (const s of projectSessions) {
-    const cwd =
-      inactiveSessionWorktreePath(s.cwd, project.path, projectWorktrees) ??
-      (hasAuthoritativeWorktrees ? null : s.cwd);
+    let cwd = inactiveSessionWorktreePath(
+      s.cwd,
+      project.path,
+      projectWorktrees,
+    );
     if (!cwd) {
-      continue;
+      cwd = s.cwd;
+      if (hasAuthoritativeWorktrees) syntheticOrphanPaths.add(cwd);
     }
     const list = byCwd.get(cwd) ?? [];
     list.push(s);
@@ -397,6 +403,7 @@ function buildInactiveWorktrees({
     }
     const meta = counters.lookup(cwd);
     const isRoot = cwd === project.path;
+    const isSyntheticOrphan = syntheticOrphanPaths.has(cwd);
     return {
       id: `wt:${cwd}`,
       name: isRoot ? (isNotRepo ? "root" : "main") : lastSegment(cwd),
@@ -411,7 +418,7 @@ function buildInactiveWorktrees({
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
       ...(meta?.lineage ? { lineage: meta.lineage } : {}),
-      ...(meta?.orphan ? { orphan: true } : {}),
+      ...(meta?.orphan || isSyntheticOrphan ? { orphan: true } : {}),
     };
   });
 }

@@ -17,13 +17,14 @@
   filesystem changes.
 - Improved source-control views to surface richer Git state without adding
   heavier interaction patterns.
-- Marked orphan worktrees more clearly in the sidebar and disabled unavailable
-  child rows while keeping worktree cleanup actions available.
+- Marked missing worktree paths more clearly in the sidebar while keeping
+  remaining terminal sessions selectable and worktree cleanup actions
+  available.
 
 ### Fixed
 
 - Fixed desktop terminal reclaim behavior after mobile handoff.
-- Guarded unavailable orphan worktree children from selection, pinning, and
-  pane reorder actions.
-- Prevented stale terminal sessions from recreating sidebar rows for worktrees
-  that no longer exist in the server worktree snapshot.
+- Guarded children under missing worktree paths from pinning and pane reorder
+  actions while still allowing users to open and close remaining sessions.
+- Kept stale terminal-session worktree rows visible as missing paths instead of
+  treating them as live worktrees.

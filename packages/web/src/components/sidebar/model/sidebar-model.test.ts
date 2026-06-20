@@ -231,7 +231,7 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     );
   });
 
-  it("does not create inactive worktree rows from stale session cwd paths when a worktree snapshot exists", () => {
+  it("keeps stale session cwd paths as orphan rows when a worktree snapshot exists", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const worktreesByProject: Record<string, Worktree[]> = {
       p1: [
@@ -263,10 +263,15 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     });
 
     const wts = result[0]?.worktrees ?? [];
-    expect(wts.map((w) => w.path)).toEqual(["/repos/p1"]);
-    expect(wts.flatMap((w) => w.children.map((c) => c.id))).not.toContain(
+    expect(wts.map((w) => w.path)).toEqual([
+      "/repos/p1",
+      "/repos/p1.worktrees/deleted",
+    ]);
+    const orphan = wts.find((w) => w.path === "/repos/p1.worktrees/deleted");
+    expect(orphan).toMatchObject({ orphan: true });
+    expect(orphan?.children.map((c) => c.id)).toEqual([
       terminalPaneId("stale"),
-    );
+    ]);
   });
 
   it("inactive-project terminal child ids match the active path's pane id format", () => {
@@ -633,7 +638,7 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(result[0]?.worktrees[1]?.lineage).toBe(lineage);
   });
 
-  it("merges projectWorktrees with matching session-derived cwds without resurrecting missing paths", () => {
+  it("merges projectWorktrees with matching session-derived cwds and marks missing paths orphan", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const sessions: Session[] = [
       session({ id: "s1", projectId: "p1", cwd: "/repos/p1/wt-a" }),
@@ -681,14 +686,15 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
       "/repos/p1",
       "/repos/p1/wt-a",
       "/repos/p1/wt-b",
+      "/repos/p1/wt-c",
     ]);
     const wtA = wts.find((w) => w.path === "/repos/p1/wt-a");
     expect(wtA?.children).toHaveLength(1);
     const wtB = wts.find((w) => w.path === "/repos/p1/wt-b");
     expect(wtB?.children).toHaveLength(0);
-    expect(wts.flatMap((w) => w.children.map((c) => c.id))).not.toContain(
-      terminalPaneId("s2"),
-    );
+    const wtC = wts.find((w) => w.path === "/repos/p1/wt-c");
+    expect(wtC).toMatchObject({ orphan: true });
+    expect(wtC?.children.map((c) => c.id)).toEqual([terminalPaneId("s2")]);
   });
 
   it("propagates pinned flag from session to child", () => {

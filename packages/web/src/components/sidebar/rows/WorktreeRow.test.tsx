@@ -126,18 +126,6 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(screen.queryByLabelText("Modified")).toBeNull();
   });
 
-  it("renders a live service count pill", () => {
-    render(
-      <WorktreeRow
-        project={project}
-        worktree={{ ...makeWorktree(0), serviceCount: 2 }}
-        selection={selection}
-      />,
-    );
-
-    expect(screen.getByLabelText("2 live services").textContent).toBe("2");
-  });
-
   it("uses secondary text for the project root label", () => {
     render(
       <WorktreeRow
@@ -154,7 +142,7 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
   });
 });
 
-describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
+describe("WorktreeRow agent / missing-path pills", () => {
   it("renders an 'agent' pill when origin is agent", () => {
     const { getByLabelText } = render(
       <WorktreeRow
@@ -166,7 +154,7 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
     expect(getByLabelText("Agent worktree").textContent).toBe("agent");
   });
 
-  it("renders an 'orphan' pill when orphan flag is set", () => {
+  it("renders a 'missing' pill when orphan flag is set", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -174,7 +162,7 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
         selection={selection}
       />,
     );
-    expect(getByLabelText("Orphan worktree").textContent).toBe("orphan");
+    expect(getByLabelText("Missing worktree").textContent).toBe("missing");
   });
 
   it("strikes through the worktree label when orphan flag is set", () => {
@@ -226,7 +214,7 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
     );
     expect(queryByLabelText("Agent worktree")).toBeNull();
     expect(queryByLabelText("Linked worktree")).toBeNull();
-    expect(queryByLabelText("Orphan worktree")).toBeNull();
+    expect(queryByLabelText("Missing worktree")).toBeNull();
   });
 });
 

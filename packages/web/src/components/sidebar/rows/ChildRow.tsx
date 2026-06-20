@@ -10,6 +10,7 @@ interface ChildRowProps {
   child: SidebarChild;
   selected: boolean;
   disabled?: boolean;
+  unavailable?: boolean;
   onClick?: () => void;
   onTogglePin?: () => void;
 }
@@ -44,13 +45,17 @@ export function ChildRow({
   child,
   selected,
   disabled = false,
+  unavailable = false,
   onClick,
   onTogglePin,
 }: ChildRowProps) {
   const accessibleStatus = ACCESSIBLE_STATUS_LABEL[child.status];
   const rowSelected = !disabled && selected;
   const canTogglePin =
-    !disabled && child.kind === "terminal" && onTogglePin !== undefined;
+    !disabled &&
+    !unavailable &&
+    child.kind === "terminal" &&
+    onTogglePin !== undefined;
 
   return (
     <SidebarRow
@@ -58,7 +63,7 @@ export function ChildRow({
       selected={rowSelected}
       hint={child.hint}
       onClick={disabled ? undefined : onClick}
-      className={disabled ? "opacity-50" : undefined}
+      className={disabled || unavailable ? "opacity-50" : undefined}
       rootProps={disabled ? { "aria-disabled": true } : undefined}
     >
       <SidebarChildStatus child={child} />
@@ -84,7 +89,7 @@ export function ChildRow({
         >
           <PaGlyph.pin />
         </SidebarRowActionButton>
-      ) : !disabled && child.pinned ? (
+      ) : !disabled && !unavailable && child.pinned ? (
         <span
           role="img"
           aria-label="pinned to Monitor"

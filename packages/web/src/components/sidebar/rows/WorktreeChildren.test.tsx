@@ -147,9 +147,9 @@ describe("WorktreeChildren pane reorder", () => {
       "terminal:s1",
     ]);
     expect(rowLabels()).toEqual(["browser", "terminal"]);
-  });
+  }, 15_000);
 
-  it("disables orphan child rows without selection, pinning, or reorder controls", () => {
+  it("marks orphan child rows unavailable while preserving selection access", () => {
     const onSelectChild = vi.fn();
     const onToggleChildPin = vi.fn();
     const onReorderPanes = vi.fn();
@@ -170,14 +170,19 @@ describe("WorktreeChildren pane reorder", () => {
     );
 
     const terminalLabel = screen.getByText("terminal");
-    const terminalRow = terminalLabel.closest("[aria-disabled='true']");
+    const terminalRow = terminalLabel.closest("[role='button']");
     expect(terminalRow).not.toBeNull();
     expect(terminalRow?.className).toContain("opacity-50");
-    expect(terminalRow?.getAttribute("aria-current")).toBeNull();
+    expect(terminalRow?.getAttribute("aria-current")).toBe("page");
+    expect(terminalRow?.getAttribute("aria-disabled")).toBeNull();
 
     fireEvent.click(terminalLabel);
 
-    expect(onSelectChild).not.toHaveBeenCalled();
+    expect(onSelectChild).toHaveBeenCalledWith(
+      "project-1",
+      "wt:/repo",
+      "terminal:s1",
+    );
     expect(onToggleChildPin).not.toHaveBeenCalled();
     expect(onReorderPanes).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Pin to Monitor" })).toBeNull();

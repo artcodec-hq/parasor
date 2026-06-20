@@ -46,6 +46,8 @@ export interface PaneEntry {
 
 export interface WorktreePanes {
   path: string;
+  /** true when this pane group represents a worktree path that disappeared. */
+  orphan?: boolean;
   panes: PaneEntry[];
 }
 
