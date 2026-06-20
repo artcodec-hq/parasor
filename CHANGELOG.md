@@ -25,3 +25,5 @@
 - Fixed desktop terminal reclaim behavior after mobile handoff.
 - Guarded unavailable orphan worktree children from selection, pinning, and
   pane reorder actions.
+- Prevented stale terminal sessions from recreating sidebar rows for worktrees
+  that no longer exist in the server worktree snapshot.

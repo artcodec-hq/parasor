@@ -67,11 +67,34 @@ describe("useWorkspacePaneModel", () => {
     ]);
   });
 
-  it("keeps sessions outside the known worktree list in their own active worktree row", () => {
+  it("does not let stale session cwd paths resurrect deleted worktree rows", () => {
     const model = renderModel({
       projectId: "p1",
       projectPath: "/repo",
       worktrees: [worktree("/repo")],
+      sessions: [
+        session({ id: "root", cwd: "/repo" }),
+        session({ id: "external", cwd: "/repo.worktrees/feature/newmenu" }),
+      ],
+      focusedPaneId: null,
+    });
+
+    expect(model.worktrees.map((wt) => wt.path)).toEqual(["/repo"]);
+    expect(
+      model.worktrees.some(
+        (wt) => wt.path === "/repo.worktrees/feature/newmenu",
+      ),
+    ).toBe(false);
+    expect(model.allPanes.some((pane) => pane.id === "terminal:external")).toBe(
+      false,
+    );
+  });
+
+  it("keeps sessions outside the project root while no worktree snapshot exists", () => {
+    const model = renderModel({
+      projectId: "p1",
+      projectPath: "/repo",
+      worktrees: [],
       sessions: [
         session({ id: "root", cwd: "/repo" }),
         session({ id: "external", cwd: "/repo.worktrees/feature/newmenu" }),

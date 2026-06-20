@@ -17,10 +17,10 @@ import { useMemo } from "react";
  *
  * Derivation rules:
  * - one `WorktreePanes` per entry from the AppStore-hydrated worktrees
- *   map (fallback: a single group at `projectPath` when empty), plus
- *   session cwd rows that are outside the known worktree list so active and
- *   inactive project sidebar projections do not disagree while worktree
- *   discovery is stale.
+ *   map (fallback: a single group at `projectPath` when empty). Session cwd
+ *   rows are used only while no worktree snapshot exists; once the server has
+ *   reported worktrees, stale session cwd paths must not resurrect deleted
+ *   worktrees.
  * - `files`/`git` singletons are auto-inserted per worktree via
  *   `ensureSingletons`
  * - each live session -> one `terminal` pane with deterministic id
@@ -167,8 +167,10 @@ function resolveWorktreePaths(
     return 0;
   });
   const paths = ordered.map((w) => w.path);
+  const hasAuthoritativeWorktrees = worktrees.length > 0;
   for (const session of sessions) {
     if (findContainingWorktreePath(session.cwd, paths)) continue;
+    if (hasAuthoritativeWorktrees) continue;
     if (!paths.includes(session.cwd)) paths.push(session.cwd);
   }
   return paths;

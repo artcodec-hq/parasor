@@ -311,8 +311,9 @@ interface BuildInactiveWorktreesOptions {
 }
 
 // Union of project.path ("main"), server worktree snapshot, and distinct
-// session cwds. Client-side child panes may attach to those rows, but do not
-// seed rows on their own because their persisted paths can be stale.
+// session cwds only while no server worktree snapshot exists. Client-side
+// child panes may attach to those rows, but do not seed rows on their own
+// because their persisted paths can be stale.
 function buildInactiveWorktrees({
   project,
   sessions,
@@ -328,13 +329,17 @@ function buildInactiveWorktrees({
   const projectSessions = sessions.filter((s) => s.projectId === project.id);
   const byCwd = new Map<string, Session[]>();
   byCwd.set(project.path, []);
+  const hasAuthoritativeWorktrees = projectWorktrees.length > 0;
   for (const wt of projectWorktrees) {
     if (!byCwd.has(wt.path)) byCwd.set(wt.path, []);
   }
   for (const s of projectSessions) {
     const cwd =
       inactiveSessionWorktreePath(s.cwd, project.path, projectWorktrees) ??
-      s.cwd;
+      (hasAuthoritativeWorktrees ? null : s.cwd);
+    if (!cwd) {
+      continue;
+    }
     const list = byCwd.get(cwd) ?? [];
     list.push(s);
     byCwd.set(cwd, list);

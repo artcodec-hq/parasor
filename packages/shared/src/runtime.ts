@@ -138,10 +138,10 @@ export interface Worktree {
   /** Product-level provenance for explicitly created worktrees. */
   lineage?: WorktreeLineageMetadata;
   /**
-   * `true` when `git worktree list --porcelain` enumerates the path but the
-   * directory is missing on disk (`git status` returns `ENOENT`). Lets the
-   * sidebar default the remove-dialog to `--force` so users can prune a
-   * stranded entry in one click.
+   * `true` when `git worktree list --porcelain` enumerates the path as
+   * prunable, or the directory is missing on disk (`git status` returns
+   * `ENOENT`). Lets the sidebar default the remove-dialog to `--force` so users
+   * can prune a stranded entry in one click.
    */
   orphan?: boolean;
 }

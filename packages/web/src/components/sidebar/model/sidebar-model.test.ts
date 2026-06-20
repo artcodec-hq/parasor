@@ -231,6 +231,44 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     );
   });
 
+  it("does not create inactive worktree rows from stale session cwd paths when a worktree snapshot exists", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+      ],
+    };
+    const sessions: Session[] = [
+      session({
+        id: "stale",
+        projectId: "p1",
+        cwd: "/repos/p1.worktrees/deleted",
+      }),
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions,
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    const wts = result[0]?.worktrees ?? [];
+    expect(wts.map((w) => w.path)).toEqual(["/repos/p1"]);
+    expect(wts.flatMap((w) => w.children.map((c) => c.id))).not.toContain(
+      terminalPaneId("stale"),
+    );
+  });
+
   it("inactive-project terminal child ids match the active path's pane id format", () => {
     // Regression guard: clicking a terminal under an inactive project in the
     // sidebar feeds child.id straight into `setFocusedPaneId`. After the
@@ -595,7 +633,7 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(result[0]?.worktrees[1]?.lineage).toBe(lineage);
   });
 
-  it("merges projectWorktrees with session-derived cwds without duplicates", () => {
+  it("merges projectWorktrees with matching session-derived cwds without resurrecting missing paths", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const sessions: Session[] = [
       session({ id: "s1", projectId: "p1", cwd: "/repos/p1/wt-a" }),
@@ -643,12 +681,14 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
       "/repos/p1",
       "/repos/p1/wt-a",
       "/repos/p1/wt-b",
-      "/repos/p1/wt-c",
     ]);
     const wtA = wts.find((w) => w.path === "/repos/p1/wt-a");
     expect(wtA?.children).toHaveLength(1);
     const wtB = wts.find((w) => w.path === "/repos/p1/wt-b");
     expect(wtB?.children).toHaveLength(0);
+    expect(wts.flatMap((w) => w.children.map((c) => c.id))).not.toContain(
+      terminalPaneId("s2"),
+    );
   });
 
   it("propagates pinned flag from session to child", () => {

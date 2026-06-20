@@ -53,6 +53,8 @@ export function parseWorktreeList(porcelain: string): Worktree[] {
       current.head = line.slice(5);
     } else if (line.startsWith("branch ") && current) {
       current.branch = line.slice(7).replace("refs/heads/", "");
+    } else if (line.startsWith("prunable ") && current) {
+      current.orphan = true;
     }
   }
 
@@ -142,6 +144,7 @@ async function enrichWithCounters(
   runGit: (projectPath: string, args: string[]) => Promise<string>,
 ): Promise<Worktree[]> {
   return mapWithLimit(entries, ENRICH_CONCURRENCY, async (wt) => {
+    if (wt.orphan) return wt;
     try {
       const raw = await runGit(wt.path, ["status", "--porcelain=v2", "-b"]);
       const { ahead, behind, dirtyCount } = parseGitStatusV2(raw);
