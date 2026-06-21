@@ -27,6 +27,7 @@ interface WorktreeRowProps {
   displayName?: string;
   forceOpen?: boolean;
   isProjectRoot?: boolean;
+  showTopBorder?: boolean;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
   onSelectWorktree?: (projectId: string, worktreeId: string) => void;
   onSelectChild?: (
@@ -56,6 +57,7 @@ export function WorktreeRow({
   displayName,
   forceOpen = false,
   isProjectRoot = false,
+  showTopBorder = false,
   dragHandleProps,
   onSelectWorktree,
   onSelectChild,
@@ -89,7 +91,7 @@ export function WorktreeRow({
     : null;
 
   return (
-    <div>
+    <div className={showTopBorder ? "border-t border-border" : undefined}>
       <SidebarRow
         selected={worktreeFocused}
         rootProps={dragHandleProps}
