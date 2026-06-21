@@ -142,6 +142,21 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(label.className).toContain("text-text-secondary");
     expect(label.className).not.toContain("text-text-primary");
   });
+
+  it("does not render a top border separator on the worktree wrapper", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={makeWorktree(0)}
+        selection={selection}
+      />,
+    );
+
+    expect(container.firstElementChild?.className).not.toContain("border-t");
+    expect(container.firstElementChild?.className).not.toContain(
+      "border-border",
+    );
+  });
 });
 
 describe("WorktreeRow agent / missing-path pills", () => {

@@ -89,7 +89,7 @@ export function WorktreeRow({
     : null;
 
   return (
-    <div className="border-t border-border">
+    <div>
       <SidebarRow
         selected={worktreeFocused}
         rootProps={dragHandleProps}
