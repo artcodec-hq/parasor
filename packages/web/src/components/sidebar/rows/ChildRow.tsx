@@ -1,10 +1,6 @@
 import { AgentDot, PaGlyph } from "../../primitives/index.js";
 import type { SidebarChild } from "../model/types.js";
-import {
-  SidebarRow,
-  SidebarRowActionButton,
-  SidebarRowLabel,
-} from "../primitives/index.js";
+import { SidebarRow, SidebarRowLabel } from "../primitives/index.js";
 import {
   SidebarMetricsView,
   type SidebarRowMetrics,
@@ -84,17 +80,7 @@ export function ChildRow({
       )}
       <SidebarMetricsView metrics={metrics} />
       {canTogglePin ? (
-        <SidebarRowActionButton
-          aria-label={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          aria-pressed={child.pinned}
-          title={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTogglePin();
-          }}
-        >
-          <MonitorSwitch pressed={child.pinned} />
-        </SidebarRowActionButton>
+        <MonitorSwitchButton pressed={child.pinned} onToggle={onTogglePin} />
       ) : !disabled && !unavailable && child.pinned ? (
         <span
           role="img"
@@ -109,12 +95,37 @@ export function ChildRow({
   );
 }
 
+function MonitorSwitchButton({
+  pressed,
+  onToggle,
+}: {
+  pressed: boolean;
+  onToggle: () => void;
+}) {
+  const label = pressed ? "Remove from Monitor" : "Pin to Monitor";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={pressed}
+      title={label}
+      className="relative flex h-5 w-9 shrink-0 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <MonitorSwitch pressed={pressed} />
+    </button>
+  );
+}
+
 function MonitorSwitch({ pressed }: { pressed: boolean }) {
   return (
     <span
       aria-hidden
-      className={`relative h-3.5 w-7 rounded-full transition-colors ${
-        pressed ? "bg-accent/25" : "bg-bg-primary/80"
+      className={`relative block h-3.5 w-7 rounded-full transition-colors ${
+        pressed ? "bg-accent/35" : "bg-bg-primary/80"
       }`}
     >
       <span
