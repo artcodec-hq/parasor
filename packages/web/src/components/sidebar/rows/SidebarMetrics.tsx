@@ -14,7 +14,7 @@ export function SidebarMetricsView({
     <span
       aria-hidden
       title={formatSidebarMetricsTitle(metrics)}
-      className="flex shrink-0 items-center gap-1 text-xs leading-none tabular-nums"
+      className="flex shrink-0 items-center gap-0.5 text-[10px] leading-none tabular-nums"
     >
       {(metrics.dirtyAdded ?? 0) > 0 && (
         <span className="text-[var(--theme-git-added)]">
@@ -28,7 +28,7 @@ export function SidebarMetricsView({
       )}
       {(metrics.serviceCount ?? 0) > 0 && (
         <span className="flex items-center gap-0.5 text-accent">
-          <span className="h-1.5 w-1.5 rounded-full border border-current" />
+          <span className="h-1 w-1 rounded-full border border-current" />
           {metrics.serviceCount}
         </span>
       )}
