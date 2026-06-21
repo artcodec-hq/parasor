@@ -74,12 +74,12 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
       />,
     );
     const row = screen.getByRole("button", {
-      name: "main, 2 added changes, 1 deleted change, 4 live ports",
+      name: "main, 2 added lines, 1 deleted line, 4 live ports",
     });
     const label = screen.getByText("main");
     expect(row).not.toBeNull();
     expect(label.getAttribute("title")).toBe(
-      "2 added changes, 1 deleted change, 4 live ports",
+      "2 added lines, 1 deleted line, 4 live ports",
     );
     expect(label.className).toContain("text-text-secondary");
     expect(screen.getByText("+2")).toBeTruthy();
@@ -102,16 +102,61 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     ).toBeNull();
   });
 
-  it("does not show a dirty metric when only dirtyCount is available", () => {
-    render(
+  it("falls back to the modified dot when only dirtyCount is available", () => {
+    const { container } = render(
       <WorktreeRow
         project={project}
         worktree={makeWorktree(1)}
         selection={selection}
       />,
     );
-    expect(screen.getByText("main").getAttribute("title")).toBeNull();
-    expect(screen.queryByText("+/-1")).toBeNull();
+    expect(screen.getByText("main").getAttribute("title")).toBe(
+      "1 uncommitted change",
+    );
+    expect(
+      screen.getByRole("button", { name: "main, 1 uncommitted change" }),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
+    ).not.toBeNull();
+  });
+
+  it("shows tracked line stats instead of the modified dot when available", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(3), dirtyAdded: 12, dirtyDeleted: 4 }}
+        selection={selection}
+      />,
+    );
+    expect(screen.getByText("+12")).not.toBeNull();
+    expect(screen.getByText("-4")).not.toBeNull();
+    expect(screen.getByText("main").getAttribute("title")).toBe(
+      "12 added lines, 4 deleted lines",
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "main, 12 added lines, 4 deleted lines",
+      }),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
+    ).toBeNull();
+  });
+
+  it("falls back to the modified dot when dirty has no tracked line stats", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(2), dirtyAdded: 0, dirtyDeleted: 0 }}
+        selection={selection}
+      />,
+    );
+    expect(screen.queryByText("+0")).toBeNull();
+    expect(screen.queryByText("-0")).toBeNull();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
+    ).not.toBeNull();
   });
 
   it("uses the normal worktree label color when dirty === 0", () => {

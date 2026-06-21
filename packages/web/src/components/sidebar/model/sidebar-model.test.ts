@@ -796,6 +796,8 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
           "/repos/p1": gitState({
             dirty: true,
             dirtyCount: 3,
+            addedLines: 8,
+            deletedLines: 2,
             changes: [
               {
                 path: "added.ts",
@@ -829,8 +831,8 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
     const [main, branch] = result[0]?.worktrees ?? [];
     expect(main).toMatchObject({
       dirty: 3,
-      dirtyAdded: 2,
-      dirtyDeleted: 1,
+      dirtyAdded: 8,
+      dirtyDeleted: 2,
       ahead: 1,
       behind: 0,
     });
@@ -840,6 +842,53 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       dirtyDeleted: 0,
       ahead: 5,
       behind: 2,
+    });
+  });
+
+  it("propagates tracked line stats from gitStates without worktree enrichment", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      { path: "/repos/p1", panes: [] },
+      { path: "/repos/p1/wt-a", panes: [] },
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      gitStates: {
+        p1: {
+          "/repos/p1": {
+            branch: "main",
+            dirty: true,
+            dirtyCount: 1,
+            addedLines: 8,
+            deletedLines: 2,
+            lastChecked: 0,
+          },
+          "/repos/p1/wt-a": {
+            branch: "feature",
+            dirty: true,
+            dirtyCount: 1,
+            addedLines: 0,
+            deletedLines: 5,
+            lastChecked: 0,
+          },
+        },
+      },
+    });
+    const [main, branch] = result[0]?.worktrees ?? [];
+    expect(main).toMatchObject({
+      dirty: 1,
+      dirtyAdded: 8,
+      dirtyDeleted: 2,
+    });
+    expect(branch).toMatchObject({
+      dirty: 1,
+      dirtyAdded: 0,
+      dirtyDeleted: 5,
     });
   });
 
@@ -871,6 +920,8 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
         p1: {
           "/tmp/proj": gitState({
             dirty: true,
+            addedLines: 1,
+            deletedLines: 0,
             changes: [
               {
                 path: "new.ts",

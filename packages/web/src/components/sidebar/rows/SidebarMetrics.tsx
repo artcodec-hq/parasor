@@ -1,4 +1,5 @@
 export interface SidebarRowMetrics {
+  /** Added/deleted line counts for compact dirty diffstat display. */
   dirtyAdded?: number;
   dirtyDeleted?: number;
   serviceCount?: number;
@@ -48,13 +49,11 @@ export function formatSidebarMetricsTitle(metrics: SidebarRowMetrics): string {
   const parts: string[] = [];
   const dirtyAdded = metrics.dirtyAdded ?? 0;
   if (dirtyAdded > 0) {
-    parts.push(`${dirtyAdded} added change${dirtyAdded === 1 ? "" : "s"}`);
+    parts.push(`${dirtyAdded} added line${dirtyAdded === 1 ? "" : "s"}`);
   }
   const dirtyDeleted = metrics.dirtyDeleted ?? 0;
   if (dirtyDeleted > 0) {
-    parts.push(
-      `${dirtyDeleted} deleted change${dirtyDeleted === 1 ? "" : "s"}`,
-    );
+    parts.push(`${dirtyDeleted} deleted line${dirtyDeleted === 1 ? "" : "s"}`);
   }
   const serviceCount = metrics.serviceCount ?? 0;
   if (serviceCount > 0) {

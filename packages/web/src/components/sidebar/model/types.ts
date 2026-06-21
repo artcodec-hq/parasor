@@ -40,9 +40,9 @@ export interface SidebarWorktree {
   active: boolean;
   /** Total dirty entries; kept for non-visual counters and fallback state. */
   dirty: number;
-  /** Added/untracked/copied dirty entries for compact `+N` display. */
+  /** Added lines for compact `+N` display. */
   dirtyAdded?: number;
-  /** Deleted dirty entries for compact `-N` display. */
+  /** Deleted lines for compact `-N` display. */
   dirtyDeleted?: number;
   ahead: number;
   behind: number;

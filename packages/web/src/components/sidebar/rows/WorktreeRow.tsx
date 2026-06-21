@@ -86,6 +86,11 @@ export function WorktreeRow({
     : "text-text-secondary";
   const rowMetrics = metricsForWorktree(worktree);
   const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
+  const dirtyFallbackTitle =
+    !metricsTitle && worktree.dirty > 0
+      ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
+      : undefined;
+  const rowTitle = metricsTitle || dirtyFallbackTitle;
   const lineageTitle = worktree.lineage
     ? formatLineageTitle(worktree.lineage)
     : null;
@@ -127,11 +132,11 @@ export function WorktreeRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1 text-left"
-          aria-label={metricsTitle ? `${label}, ${metricsTitle}` : undefined}
+          aria-label={rowTitle ? `${label}, ${rowTitle}` : undefined}
           onClick={() => onSelectWorktree?.(project.id, worktree.id)}
         >
           <SidebarRowLabel
-            title={metricsTitle || undefined}
+            title={rowTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
             className={labelClassName}
@@ -175,6 +180,13 @@ export function WorktreeRow({
           )}
         </button>
         <SidebarMetricsView metrics={rowMetrics} />
+        {dirtyFallbackTitle && (
+          <span
+            aria-hidden
+            title={dirtyFallbackTitle}
+            className="h-1.5 w-1.5 shrink-0 rounded-tag bg-[var(--theme-git-modified)]"
+          />
+        )}
         <WorktreeRowActions
           label={label}
           onOpenContainer={
