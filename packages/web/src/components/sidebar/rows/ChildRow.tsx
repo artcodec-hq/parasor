@@ -1,15 +1,10 @@
 import { AgentDot, PaGlyph } from "../../primitives/index.js";
 import type { SidebarChild } from "../model/types.js";
 import { SidebarRow, SidebarRowLabel } from "../primitives/index.js";
-import {
-  SidebarMetricsView,
-  type SidebarRowMetrics,
-} from "./SidebarMetrics.js";
 
 interface ChildRowProps {
   child: SidebarChild;
   selected: boolean;
-  metrics?: SidebarRowMetrics;
   disabled?: boolean;
   unavailable?: boolean;
   onClick?: () => void;
@@ -45,7 +40,6 @@ function SidebarChildStatus({ child }: { child: SidebarChild }) {
 export function ChildRow({
   child,
   selected,
-  metrics,
   disabled = false,
   unavailable = false,
   onClick,
@@ -78,7 +72,6 @@ export function ChildRow({
       {accessibleStatus && (
         <span className="sr-only">, {accessibleStatus}</span>
       )}
-      <SidebarMetricsView metrics={metrics} />
       {canTogglePin ? (
         <MonitorSwitchButton pressed={child.pinned} onToggle={onTogglePin} />
       ) : !disabled && !unavailable && child.pinned ? (

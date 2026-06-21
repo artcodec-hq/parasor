@@ -24,7 +24,6 @@ import type {
   SidebarWorktree,
 } from "../model/types.js";
 import { ChildRow } from "./ChildRow.js";
-import type { SidebarRowMetrics } from "./SidebarMetrics.js";
 
 interface WorktreeChildrenProps {
   project: SidebarProject;
@@ -54,7 +53,6 @@ export function WorktreeChildren({
   if (worktree.children.length === 0) return null;
 
   const childrenUnavailable = worktree.orphan === true;
-  const metrics = metricsForWorktree(worktree);
 
   if (onReorderPanes && !childrenUnavailable) {
     return (
@@ -75,7 +73,6 @@ export function WorktreeChildren({
         <ChildRow
           key={child.id}
           child={child}
-          metrics={metrics}
           unavailable={childrenUnavailable}
           selected={
             selection.selectedWorktreeId === worktree.id &&
@@ -142,7 +139,6 @@ function SortableChildren({
   const ordered = orderedIds
     .map((id) => byId.get(id))
     .filter((c): c is SidebarChild => Boolean(c));
-  const metrics = metricsForWorktree(worktree);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -180,7 +176,6 @@ function SortableChildren({
             <SortableChildRow
               key={child.id}
               child={child}
-              metrics={metrics}
               selected={
                 selection.selectedWorktreeId === worktree.id &&
                 selection.selectedChildId === child.id
@@ -201,7 +196,6 @@ function SortableChildren({
 
 interface SortableChildRowProps {
   child: SidebarChild;
-  metrics: SidebarRowMetrics;
   selected: boolean;
   onClick?: () => void;
   onTogglePin?: () => void;
@@ -209,7 +203,6 @@ interface SortableChildRowProps {
 
 function SortableChildRow({
   child,
-  metrics,
   selected,
   onClick,
   onTogglePin,
@@ -243,21 +236,12 @@ function SortableChildRow({
     >
       <ChildRow
         child={child}
-        metrics={metrics}
         selected={selected}
         onTogglePin={onTogglePin}
         onClick={onClick}
       />
     </div>
   );
-}
-
-function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
-  return {
-    dirtyAdded: worktree.dirtyAdded,
-    dirtyDeleted: worktree.dirtyDeleted,
-    serviceCount: worktree.serviceCount,
-  };
 }
 
 // Pointer/touch activations on a nested pane must not arm the outer project
