@@ -91,6 +91,7 @@ export function ProjectGroup({
             displayName={root ? project.name : wt.name}
             forceOpen={forceOpen}
             isProjectRoot={root}
+            showTopBorder={index === 0}
             dragHandleProps={root && index === 0 ? dragHandleProps : undefined}
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}

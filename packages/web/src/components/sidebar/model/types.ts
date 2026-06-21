@@ -38,8 +38,12 @@ export interface SidebarWorktree {
   path: string;
   /** Current HEAD (active worktree in `git worktree list`). */
   active: boolean;
-  /** Numbers we don't yet surface (`dirty` / `ahead` / `behind`) stay 0. */
+  /** Total dirty entries; kept for non-visual counters and fallback state. */
   dirty: number;
+  /** Added lines for compact `+N` display. */
+  dirtyAdded?: number;
+  /** Deleted lines for compact `-N` display. */
+  dirtyDeleted?: number;
   ahead: number;
   behind: number;
   children: SidebarChild[];

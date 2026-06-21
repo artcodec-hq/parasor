@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   GitWatcher,
   parseGitPorcelain,
+  parseGitShortstat,
   parseGitStatusV2,
   parseGitStatusV2WithFiles,
 } from "./git-watcher.js";
@@ -70,6 +71,37 @@ describe("GitWatcher", () => {
 
     const state = await watcher.check(root);
     expect(state?.dirty).toBe(true);
+  });
+
+  it("returns tracked line stats for modified dirty repo", async () => {
+    execFileSync("git", ["init"], { cwd: root });
+    execFileSync("git", ["checkout", "-b", "main"], { cwd: root });
+    writeFileSync(join(root, "file.txt"), "hello\nworld\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "init", "--no-gpg-sign"], {
+      cwd: root,
+    });
+    writeFileSync(join(root, "file.txt"), "hello\nworld\nagain\n");
+
+    const state = await watcher.check(root);
+    expect(state?.dirty).toBe(true);
+    expect(state?.addedLines).toBe(1);
+    expect(state?.deletedLines).toBe(0);
+  });
+
+  it("does not expose line stats for clean repo", async () => {
+    execFileSync("git", ["init"], { cwd: root });
+    execFileSync("git", ["checkout", "-b", "main"], { cwd: root });
+    writeFileSync(join(root, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "init", "--no-gpg-sign"], {
+      cwd: root,
+    });
+
+    const state = await watcher.check(root);
+    expect(state?.dirty).toBe(false);
+    expect(state?.addedLines).toBeUndefined();
+    expect(state?.deletedLines).toBeUndefined();
   });
 
   it("detects branch after switch", async () => {
@@ -189,6 +221,21 @@ describe("GitWatcher.checkAndDiff", () => {
     writeFileSync(join(root, "another.txt"), "new");
     const { changed } = await watcher.checkAndDiff("proj1", root);
     expect(changed).toBe(true);
+  });
+
+  it("returns changed=true when line stats change without status count changes", async () => {
+    writeFileSync(join(root, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "newline", "--no-gpg-sign"], {
+      cwd: root,
+    });
+    writeFileSync(join(root, "file.txt"), "hello\none\n");
+    await watcher.checkAndDiff("proj1", root);
+    writeFileSync(join(root, "file.txt"), "hello\none\ntwo\n");
+    const { state, changed } = await watcher.checkAndDiff("proj1", root);
+    expect(changed).toBe(true);
+    expect(state?.addedLines).toBe(2);
+    expect(state?.deletedLines).toBe(0);
   });
 
   it("caches state per projectId independently", async () => {
@@ -426,6 +473,32 @@ describe("parseGitStatusV2", () => {
       behind: undefined,
       dirtyCount: 0,
     });
+  });
+});
+
+describe("parseGitShortstat", () => {
+  it("parses additions and deletions", () => {
+    expect(
+      parseGitShortstat("2 files changed, 10 insertions(+), 3 deletions(-)"),
+    ).toEqual({ addedLines: 10, deletedLines: 3 });
+  });
+
+  it("parses singular insertion and deletion", () => {
+    expect(
+      parseGitShortstat("1 file changed, 1 insertion(+), 1 deletion(-)"),
+    ).toEqual({ addedLines: 1, deletedLines: 1 });
+  });
+
+  it("defaults missing additions or deletions to zero", () => {
+    expect(parseGitShortstat("1 file changed, 4 insertions(+)")).toEqual({
+      addedLines: 4,
+      deletedLines: 0,
+    });
+    expect(parseGitShortstat("1 file changed, 2 deletions(-)")).toEqual({
+      addedLines: 0,
+      deletedLines: 2,
+    });
+    expect(parseGitShortstat("")).toEqual({ addedLines: 0, deletedLines: 0 });
   });
 });
 

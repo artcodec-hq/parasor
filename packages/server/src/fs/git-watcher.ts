@@ -152,6 +152,26 @@ export interface GitStatusV2Snapshot {
   changes: GitChangeEntry[];
 }
 
+export interface GitShortstat {
+  addedLines: number;
+  deletedLines: number;
+}
+
+/**
+ * Parse `git diff --shortstat` output. Examples:
+ *   `1 file changed, 2 insertions(+), 3 deletions(-)`
+ *   `1 file changed, 1 insertion(+)`
+ *   `1 file changed, 1 deletion(-)`
+ */
+export function parseGitShortstat(raw: string): GitShortstat {
+  const added = raw.match(/(\d+)\s+insertions?\(\+\)/);
+  const deleted = raw.match(/(\d+)\s+deletions?\(-\)/);
+  return {
+    addedLines: added ? parseInt(added[1], 10) : 0,
+    deletedLines: deleted ? parseInt(deleted[1], 10) : 0,
+  };
+}
+
 /**
  * Parse `git status --porcelain=v2 -b -z` output into both the file-status
  * map (used by the filetree diff badges) and the ahead/behind/dirtyCount
@@ -338,6 +358,9 @@ export class GitWatcher {
 
       const snap = parseGitStatusV2WithFiles(stdout);
       const dirty = snap.dirtyCount > 0;
+      const shortstat = dirty
+        ? await this.checkShortstat(worktreePath, env)
+        : undefined;
       return {
         branch: snap.branch,
         dirty,
@@ -346,6 +369,8 @@ export class GitWatcher {
         ahead: snap.ahead,
         behind: snap.behind,
         dirtyCount: snap.dirtyCount,
+        addedLines: shortstat?.addedLines,
+        deletedLines: shortstat?.deletedLines,
         lastChecked: Date.now(),
       };
     } catch (err) {
@@ -363,6 +388,26 @@ export class GitWatcher {
         };
       }
       return null;
+    }
+  }
+
+  private async checkShortstat(
+    worktreePath: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<GitShortstat | undefined> {
+    try {
+      const { stdout } = await execFileAsync(
+        "git",
+        ["-C", worktreePath, "diff", "HEAD", "--shortstat"],
+        {
+          timeout: 5000,
+          env,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+      return parseGitShortstat(stdout);
+    } catch {
+      return undefined;
     }
   }
 
@@ -385,6 +430,8 @@ export class GitWatcher {
       state?.ahead !== cached?.ahead ||
       state?.behind !== cached?.behind ||
       state?.dirtyCount !== cached?.dirtyCount ||
+      state?.addedLines !== cached?.addedLines ||
+      state?.deletedLines !== cached?.deletedLines ||
       // The repo/non-repo transition (`git init` flipping isRepo from false
       // to undefined+populated) usually shows up as a branch change, but the
       // sidebar gates `root` label / folder icon / `Initialize git…` menu

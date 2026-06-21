@@ -11,6 +11,11 @@ import {
   SidebarRowIcon,
   SidebarRowLabel,
 } from "../primitives/index.js";
+import {
+  formatSidebarMetricsTitle,
+  SidebarMetricsView,
+  type SidebarRowMetrics,
+} from "./SidebarMetrics.js";
 import { WorktreeChildren } from "./WorktreeChildren.js";
 import { WorktreeRowActions } from "./WorktreeRowActions.js";
 import { useWorktreeDisclosure } from "./worktree-disclosure.js";
@@ -22,6 +27,7 @@ interface WorktreeRowProps {
   displayName?: string;
   forceOpen?: boolean;
   isProjectRoot?: boolean;
+  showTopBorder?: boolean;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
   onSelectWorktree?: (projectId: string, worktreeId: string) => void;
   onSelectChild?: (
@@ -51,6 +57,7 @@ export function WorktreeRow({
   displayName,
   forceOpen = false,
   isProjectRoot = false,
+  showTopBorder = false,
   dragHandleProps,
   onSelectWorktree,
   onSelectChild,
@@ -77,18 +84,19 @@ export function WorktreeRow({
   const labelClassName = orphan
     ? "text-text-secondary line-through decoration-danger"
     : "text-text-secondary";
-  const dirtyTitle =
-    worktree.dirty > 0
+  const rowMetrics = metricsForWorktree(worktree);
+  const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
+  const dirtyFallbackTitle =
+    !metricsTitle && worktree.dirty > 0
       ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
       : undefined;
-  const dirtyDotClass =
-    worktree.dirty > 0 ? "bg-[var(--theme-git-modified)]" : "";
+  const rowTitle = metricsTitle || dirtyFallbackTitle;
   const lineageTitle = worktree.lineage
     ? formatLineageTitle(worktree.lineage)
     : null;
 
   return (
-    <div className="border-t border-border">
+    <div className={showTopBorder ? "border-t border-border" : undefined}>
       <SidebarRow
         selected={worktreeFocused}
         rootProps={dragHandleProps}
@@ -124,11 +132,11 @@ export function WorktreeRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1 text-left"
-          aria-label={dirtyTitle ? `${label}, ${dirtyTitle}` : undefined}
+          aria-label={rowTitle ? `${label}, ${rowTitle}` : undefined}
           onClick={() => onSelectWorktree?.(project.id, worktree.id)}
         >
           <SidebarRowLabel
-            title={dirtyTitle}
+            title={rowTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
             className={labelClassName}
@@ -171,11 +179,12 @@ export function WorktreeRow({
             </span>
           )}
         </button>
-        {dirtyDotClass && (
+        <SidebarMetricsView metrics={rowMetrics} />
+        {dirtyFallbackTitle && (
           <span
             aria-hidden
-            title={dirtyTitle}
-            className={`h-1.5 w-1.5 shrink-0 rounded-tag ${dirtyDotClass}`}
+            title={dirtyFallbackTitle}
+            className="h-1.5 w-1.5 shrink-0 rounded-tag bg-[var(--theme-git-modified)]"
           />
         )}
         <WorktreeRowActions
@@ -200,6 +209,14 @@ export function WorktreeRow({
       )}
     </div>
   );
+}
+
+function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
+  return {
+    dirtyAdded: worktree.dirtyAdded,
+    dirtyDeleted: worktree.dirtyDeleted,
+    serviceCount: worktree.serviceCount,
+  };
 }
 
 function formatLineageTitle(
