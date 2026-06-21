@@ -117,14 +117,14 @@ function MonitorSwitch({ pressed }: { pressed: boolean }) {
   return (
     <span
       aria-hidden
-      className={`relative block h-3 w-6 rounded-full transition-colors ${
+      className={`relative block h-3.5 w-6 rounded-full transition-colors ${
         pressed ? "bg-accent/35" : "bg-bg-primary/80"
       }`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 h-2 w-2 rounded-full transition-transform ${
+        className={`absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full transition-transform ${
           pressed
-            ? "translate-x-3 bg-accent"
+            ? "translate-x-2.5 bg-accent"
             : "translate-x-0 bg-text-secondary/60"
         }`}
       />
