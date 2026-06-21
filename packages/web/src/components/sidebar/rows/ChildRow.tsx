@@ -129,10 +129,10 @@ function MonitorSwitch({ pressed }: { pressed: boolean }) {
       }`}
     >
       <span
-        className={`absolute top-0.5 h-2.5 w-2.5 rounded-full transition-transform ${
+        className={`absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full transition-transform ${
           pressed
             ? "translate-x-3.5 bg-accent"
-            : "translate-x-0.5 bg-text-secondary/60"
+            : "translate-x-0 bg-text-secondary/60"
         }`}
       />
     </span>
