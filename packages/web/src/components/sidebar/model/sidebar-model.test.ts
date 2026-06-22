@@ -1,5 +1,6 @@
 import {
   type AgentState,
+  type GitState,
   makeTerminalPane,
   type Project,
   type Session,
@@ -33,6 +34,15 @@ function session(overrides: Partial<Session>): Session {
     cwd: "/repos/p1",
     shell: "/bin/zsh",
     createdAt: 0,
+    ...overrides,
+  };
+}
+
+function gitState(overrides: Partial<GitState> = {}): GitState {
+  return {
+    branch: "main",
+    dirty: false,
+    lastChecked: 1,
     ...overrides,
   };
 }
@@ -832,10 +842,76 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
       worktreesByProject,
+      gitStates: {
+        p1: {
+          "/repos/p1": gitState({
+            dirty: true,
+            dirtyCount: 3,
+            addedLines: 8,
+            deletedLines: 2,
+          }),
+        },
+      },
     });
     const [main, branch] = result[0]?.worktrees ?? [];
-    expect(main).toMatchObject({ dirty: 3, ahead: 1, behind: 0 });
-    expect(branch).toMatchObject({ dirty: 0, ahead: 5, behind: 2 });
+    expect(main).toMatchObject({
+      dirty: 3,
+      dirtyAdded: 8,
+      dirtyDeleted: 2,
+      ahead: 1,
+      behind: 0,
+    });
+    expect(branch).toMatchObject({
+      dirty: 0,
+      dirtyAdded: 0,
+      dirtyDeleted: 0,
+      ahead: 5,
+      behind: 2,
+    });
+  });
+
+  it("propagates tracked line stats from gitStates without worktree enrichment", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      { path: "/repos/p1", panes: [] },
+      { path: "/repos/p1/wt-a", panes: [] },
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      gitStates: {
+        p1: {
+          "/repos/p1": gitState({
+            dirty: true,
+            dirtyCount: 1,
+            addedLines: 8,
+            deletedLines: 2,
+          }),
+          "/repos/p1/wt-a": gitState({
+            branch: "feature",
+            dirty: true,
+            dirtyCount: 1,
+            addedLines: 0,
+            deletedLines: 5,
+          }),
+        },
+      },
+    });
+    const [main, branch] = result[0]?.worktrees ?? [];
+    expect(main).toMatchObject({
+      dirty: 1,
+      dirtyAdded: 8,
+      dirtyDeleted: 2,
+    });
+    expect(branch).toMatchObject({
+      dirty: 1,
+      dirtyAdded: 0,
+      dirtyDeleted: 5,
+    });
   });
 
   it("matches counters across macOS /private aliasing", () => {

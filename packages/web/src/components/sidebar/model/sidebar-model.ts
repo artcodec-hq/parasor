@@ -92,11 +92,28 @@ interface InactiveChildPane {
  * supplied path, falling back to direct equality.
  */
 interface CounterIndex {
-  lookup(path: string): Worktree | undefined;
+  lookup(path: string): SidebarWorktreeCounters | undefined;
+}
+
+interface SidebarWorktreeCounters {
+  path: string;
+  ahead?: number;
+  behind?: number;
+  dirtyCount?: number;
+  /** Added/deleted line counts from the live git watcher. */
+  dirtyAdded?: number;
+  dirtyDeleted?: number;
+  origin?: Worktree["origin"];
+  lineage?: Worktree["lineage"];
+  orphan?: Worktree["orphan"];
 }
 
 interface ServiceCountIndex {
   lookup(path: string): number;
+}
+
+interface GitStateIndex {
+  lookup(path: string): GitState | null | undefined;
 }
 
 function normalizePath(p: string): string {
@@ -107,11 +124,36 @@ function normalizePath(p: string): string {
 
 function counterLookup(
   worktreesByProject: Record<string, Worktree[]> | undefined,
+  gitStates: Record<string, Record<string, GitState | null>> | undefined,
   projectId: string,
 ): CounterIndex {
+  const projectGitStates = gitStates?.[projectId] ?? {};
+  const gitStateByNormalizedPath = new Map(
+    Object.entries(projectGitStates).map(([path, state]) => [
+      normalizePath(path),
+      state,
+    ]),
+  );
   const list = worktreesByProject?.[projectId] ?? [];
-  const byNormalizedPath = new Map<string, Worktree>();
-  for (const w of list) byNormalizedPath.set(normalizePath(w.path), w);
+  const byNormalizedPath = new Map<string, SidebarWorktreeCounters>();
+  for (const w of list) {
+    const key = normalizePath(w.path);
+    byNormalizedPath.set(key, {
+      ...w,
+      ...lineStatsFromGitState(gitStateByNormalizedPath.get(key)),
+    });
+  }
+  for (const [path, state] of Object.entries(projectGitStates)) {
+    const key = normalizePath(path);
+    if (byNormalizedPath.has(key)) continue;
+    byNormalizedPath.set(key, {
+      path,
+      ahead: state?.ahead,
+      behind: state?.behind,
+      dirtyCount: state?.dirtyCount,
+      ...lineStatsFromGitState(state),
+    });
+  }
   // Sort descending by length so prefix-matching picks the deepest worktree
   // (e.g. /repo/wt-a wins over /repo when cwd is /repo/wt-a/sub).
   const keys = [...byNormalizedPath.keys()].sort((a, b) => b.length - a.length);
@@ -120,6 +162,39 @@ function counterLookup(
       const t = normalizePath(target);
       const direct = byNormalizedPath.get(t);
       if (direct) return direct;
+      for (const k of keys) {
+        if (t === k || t.startsWith(`${k}/`)) return byNormalizedPath.get(k);
+      }
+      return undefined;
+    },
+  };
+}
+
+function lineStatsFromGitState(
+  state: GitState | null | undefined,
+): Pick<SidebarWorktreeCounters, "dirtyAdded" | "dirtyDeleted"> {
+  if (!state) return {};
+  return {
+    dirtyAdded: state.addedLines ?? 0,
+    dirtyDeleted: state.deletedLines ?? 0,
+  };
+}
+
+function gitStateLookup(
+  gitStates: Record<string, Record<string, GitState | null>> | undefined,
+  projectId: string,
+): GitStateIndex {
+  const states = gitStates?.[projectId] ?? {};
+  const byNormalizedPath = new Map<string, GitState | null>();
+  for (const [path, state] of Object.entries(states)) {
+    byNormalizedPath.set(normalizePath(path), state);
+  }
+  const keys = [...byNormalizedPath.keys()].sort((a, b) => b.length - a.length);
+  return {
+    lookup(target) {
+      const t = normalizePath(target);
+      const direct = byNormalizedPath.get(t);
+      if (direct !== undefined) return direct;
       for (const k of keys) {
         if (t === k || t.startsWith(`${k}/`)) return byNormalizedPath.get(k);
       }
@@ -167,9 +242,10 @@ export function buildSidebarProjects({
   const dismissed = attentionDismissed ?? {};
   return sortProjects(projects).map((project) => {
     const isActive = project.id === activeProjectId;
-    const counters = counterLookup(worktreesByProject, project.id);
+    const counters = counterLookup(worktreesByProject, gitStates, project.id);
+    const gitStateIndex = gitStateLookup(gitStates, project.id);
     const serviceCounts = serviceCountLookup(servicesByProject, project.id);
-    const rootGit = gitStates?.[project.id]?.[project.path];
+    const rootGit = gitStateIndex.lookup(project.path);
     const isNotRepo = rootGit?.isRepo === false;
     const worktrees = isActive
       ? buildActiveWorktrees({
@@ -258,6 +334,8 @@ function buildActiveWorktrees({
       path: wt.path,
       active: isRoot,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(wt.path),
@@ -285,6 +363,8 @@ function buildPlaceholderWorktrees(
       path: project.path,
       active: true,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(project.path),
@@ -412,6 +492,8 @@ function buildInactiveWorktrees({
       path: cwd,
       active: isRoot,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(cwd),

@@ -58,6 +58,38 @@ const selection: SidebarSelection = {
 };
 
 describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
+  it("uses compact added/deleted dirty metrics and keeps the normal label color", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{
+          ...makeWorktree(3),
+          ahead: 2,
+          behind: 1,
+          dirtyAdded: 2,
+          dirtyDeleted: 1,
+          serviceCount: 4,
+        }}
+        selection={selection}
+      />,
+    );
+    const row = screen.getByRole("button", {
+      name: "main, 2 added lines, 1 deleted line, 4 live ports",
+    });
+    const label = screen.getByText("main");
+    expect(row).not.toBeNull();
+    expect(label.getAttribute("title")).toBe(
+      "2 added lines, 1 deleted line, 4 live ports",
+    );
+    expect(label.className).toContain("text-text-secondary");
+    expect(screen.getByText("+2")).toBeTruthy();
+    expect(screen.getByText("-1")).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
+    ).toBeNull();
+  });
+
   it("uses a standalone Git modified dot and keeps the normal label color when dirty > 0", () => {
     const { container } = render(
       <WorktreeRow

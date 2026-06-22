@@ -194,6 +194,10 @@ export interface GitState {
    * `git status --porcelain=v2`.
    */
   dirtyCount?: number;
+  /** Added lines in tracked working-tree diff. Omitted when clean/unavailable. */
+  addedLines?: number;
+  /** Deleted lines in tracked working-tree diff. Omitted when clean/unavailable. */
+  deletedLines?: number;
   /**
    * `false` when the worktree path is not a git repository (no `.git`).
    * Omitted (≡ `true`) for repos. Lets the Git pane render a `git init`

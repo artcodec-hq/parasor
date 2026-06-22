@@ -123,7 +123,7 @@ export const HeaderTerminal: Story = {
   },
   play: async ({ canvasElement }) => {
     const pin = canvasElement.querySelector<HTMLButtonElement>(
-      'button[aria-label="Unpin from Monitor"]',
+      'button[aria-label="Remove from Monitor"]',
     );
     pin?.click();
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
