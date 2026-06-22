@@ -849,6 +849,32 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
             dirtyCount: 3,
             addedLines: 8,
             deletedLines: 2,
+            changes: [
+              {
+                path: "added.ts",
+                area: "staged",
+                status: "added",
+                code: "A",
+              },
+              {
+                path: "new.ts",
+                area: "untracked",
+                status: "untracked",
+                code: "?",
+              },
+              {
+                path: "deleted.ts",
+                area: "unstaged",
+                status: "deleted",
+                code: "D",
+              },
+              {
+                path: "modified.ts",
+                area: "unstaged",
+                status: "modified",
+                code: "M",
+              },
+            ],
           }),
         },
       },
@@ -938,9 +964,28 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
       worktreesByProject,
+      gitStates: {
+        p1: {
+          "/tmp/proj": gitState({
+            dirty: true,
+            addedLines: 1,
+            deletedLines: 0,
+            changes: [
+              {
+                path: "new.ts",
+                area: "untracked",
+                status: "untracked",
+                code: "?",
+              },
+            ],
+          }),
+        },
+      },
     });
     expect(result[0]?.worktrees[0]).toMatchObject({
       dirty: 7,
+      dirtyAdded: 1,
+      dirtyDeleted: 0,
       ahead: 4,
       behind: 0,
     });

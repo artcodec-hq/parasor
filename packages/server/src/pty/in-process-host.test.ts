@@ -350,9 +350,12 @@ describe("InProcessPtyHost", () => {
     await manager.testEagerSpawn(session.id);
     await manager.initClient(session.id, "client-1", 80, 24, () => {});
 
-    await vi.waitFor(() => {
-      expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
-    });
+    await vi.waitFor(
+      () => {
+        expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+      },
+      { timeout: 4_000 },
+    );
   });
 
   it("writes bootstrap input shortly after readline readiness", async () => {

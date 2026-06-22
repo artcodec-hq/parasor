@@ -79,6 +79,7 @@ export function ChildRow({
       {canTogglePin ? (
         <MonitorSwitchButton
           pressed={child.pinned}
+          trackSurface="sidebar"
           onClick={(event) => {
             event.stopPropagation();
             onTogglePin();
