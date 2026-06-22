@@ -470,6 +470,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       restoreExpandedReplay,
       restoreCachedReplay,
       resetOutputPipeline,
+      flushPendingOutput,
     } = useTerminalOutputPipeline({
       sessionId,
       xtermRef,
@@ -1065,6 +1066,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         xtermRef,
         fitRef,
         refreshVisibleRows,
+        flushPendingOutput,
         keyboardSettling,
         isTouch,
         firstDataTimerRef,

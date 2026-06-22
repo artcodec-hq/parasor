@@ -1467,6 +1467,72 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
+  it("waits for queued TUI output before capturing the resize scroll anchor", () => {
+    vi.useFakeTimers();
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const term = MockXTerm.mock.results[0]?.value as {
+      buffer: { active: { viewportY: number; baseY: number } };
+    };
+
+    const writeCompletions: Array<() => void> = [];
+    term.buffer.active.baseY = 100;
+    term.buffer.active.viewportY = 80;
+    mockTermWrite.mockClear();
+    mockTermResize.mockClear();
+    mockTermScrollToBottom.mockClear();
+    mockTermScrollToLine.mockClear();
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 42, rows: 18 });
+    mockTermWrite.mockImplementation((data: string, callback?: () => void) => {
+      expect(["queued-tui-output", "next-tui-output"]).toContain(data);
+      const nextBaseY = data === "queued-tui-output" ? 120 : 125;
+      writeCompletions.push(() => {
+        term.buffer.active.baseY = nextBaseY;
+        term.buffer.active.viewportY = 80;
+        callback?.();
+      });
+    });
+    mockTermResize.mockImplementationOnce(() => {
+      term.buffer.active.baseY = 140;
+      term.buffer.active.viewportY = 0;
+    });
+
+    act(() => {
+      roCallbacks[0]([] as ResizeObserverEntry[]);
+      vi.advanceTimersByTime(99);
+      socketOptionsRef.onData?.("queued-tui-output");
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(mockTermWrite).toHaveBeenCalledWith(
+      "queued-tui-output",
+      expect.any(Function),
+    );
+    expect(mockTermResize).not.toHaveBeenCalled();
+
+    act(() => {
+      writeCompletions.shift()?.();
+      socketOptionsRef.onData?.("next-tui-output");
+      vi.advanceTimersByTime(16);
+    });
+
+    expect(mockTermWrite).toHaveBeenCalledWith(
+      "next-tui-output",
+      expect.any(Function),
+    );
+    expect(mockTermResize).not.toHaveBeenCalled();
+
+    act(() => {
+      writeCompletions.shift()?.();
+      vi.advanceTimersByTime(16);
+    });
+
+    expect(mockTermResize).toHaveBeenCalledWith(42, 18);
+    expect(mockTermScrollToBottom).not.toHaveBeenCalled();
+    expect(mockTermScrollToLine).toHaveBeenCalledWith(95);
+    vi.useRealTimers();
+  });
+
   it("scrolls to the input line and resizes the PTY when a touch keyboard shrinks the terminal", () => {
     // On touch, a row-shrinking resize is the on-screen keyboard opening =
     // input mode: jump to the live tail (cursor) regardless of prior scroll
@@ -2224,9 +2290,10 @@ describe("Terminal", () => {
       viewportY: 5,
       baseY: 5,
       renderer: {
-        requestedWebgl: true,
-        effectiveRenderer: "webgl",
-        webglStatus: "attached",
+        requestedWebgl: false,
+        effectiveRenderer: "dom",
+        webglStatus: "disabled",
+        webglFailureReason: "disabled",
         contextLossCount: 0,
         fontLoadingDoneCount: 0,
         atlasRebuildCount: 0,
@@ -2275,11 +2342,12 @@ describe("Terminal", () => {
     expect(window.parasorTerminalTrace?.dump()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "terminal-renderer-webgl-attach",
+          type: "terminal-renderer-webgl-skip",
           sessionId: "s-renderer-trace",
-          requestedWebgl: true,
-          effectiveRenderer: "webgl",
-          webglStatus: "attached",
+          requestedWebgl: false,
+          effectiveRenderer: "dom",
+          webglStatus: "disabled",
+          webglFailureReason: "disabled",
           unicodeVersion: "11",
           isTouch: false,
           isIos: false,

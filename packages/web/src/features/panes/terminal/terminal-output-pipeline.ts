@@ -69,6 +69,7 @@ export function useTerminalOutputPipeline({
   ) => void;
   restoreCachedReplay: (term: XTerm, data: string) => void;
   resetOutputPipeline: (resumeIfPaused: boolean) => void;
+  flushPendingOutput: (onFlushed?: () => void) => boolean;
 } {
   const replayRefreshPendingRef = useRef(false);
   const replayStartAtRef = useRef<number | null>(null);
@@ -139,27 +140,31 @@ export function useTerminalOutputPipeline({
     [maybeResumeOutput, sendRef, sessionId],
   );
 
-  const flushOutputBatch = useCallback(() => {
-    const batch = outputBatchRef.current;
-    if (batch.timer !== null) {
-      cancelAnimationFrame(batch.timer);
-      batch.timer = null;
-    }
-    if (batch.chunks.length === 0) return;
-    const term = xtermRef.current;
-    const chunks = batch.chunks;
-    batch.chunks = [];
-    if (!term) return;
-    const data = chunks.length === 1 ? chunks[0] : chunks.join("");
-    if (chunks.length >= OUTPUT_BATCH_TRACE_CHUNK_THRESHOLD) {
-      traceTerminalEvent("xterm-output-batch", {
-        sessionId,
-        dataLength: data.length,
-        queueLength: chunks.length,
-      });
-    }
-    writeTerminalOutput(term, data);
-  }, [sessionId, writeTerminalOutput, xtermRef]);
+  const flushOutputBatch = useCallback(
+    (onFlushed?: () => void): boolean => {
+      const batch = outputBatchRef.current;
+      if (batch.timer !== null) {
+        cancelAnimationFrame(batch.timer);
+        batch.timer = null;
+      }
+      if (batch.chunks.length === 0) return false;
+      const term = xtermRef.current;
+      const chunks = batch.chunks;
+      batch.chunks = [];
+      if (!term) return false;
+      const data = chunks.length === 1 ? chunks[0] : chunks.join("");
+      if (chunks.length >= OUTPUT_BATCH_TRACE_CHUNK_THRESHOLD) {
+        traceTerminalEvent("xterm-output-batch", {
+          sessionId,
+          dataLength: data.length,
+          queueLength: chunks.length,
+        });
+      }
+      writeTerminalOutput(term, data, onFlushed);
+      return true;
+    },
+    [sessionId, writeTerminalOutput, xtermRef],
+  );
 
   const clearOutputBatch = useCallback(() => {
     const batch = outputBatchRef.current;
@@ -391,5 +396,6 @@ export function useTerminalOutputPipeline({
     restoreExpandedReplay,
     restoreCachedReplay,
     resetOutputPipeline,
+    flushPendingOutput: flushOutputBatch,
   };
 }

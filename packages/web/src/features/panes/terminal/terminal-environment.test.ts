@@ -70,9 +70,9 @@ describe("resolveTerminalWebglEnabled", () => {
     vi.stubGlobal("window", { location: { search } });
   }
 
-  it("defaults to enabled on desktop and disabled on touch", () => {
+  it("defaults to disabled on desktop and touch", () => {
     stubSearch("");
-    expect(resolveTerminalWebglEnabled(false)).toBe(true);
+    expect(resolveTerminalWebglEnabled(false)).toBe(false);
     expect(resolveTerminalWebglEnabled(true)).toBe(false);
   });
 
@@ -93,6 +93,6 @@ describe("resolveTerminalWebglEnabled", () => {
   it("falls back to the default for an unrecognized override value", () => {
     stubSearch("?terminalWebgl=maybe");
     expect(resolveTerminalWebglEnabled(true)).toBe(false);
-    expect(resolveTerminalWebglEnabled(false)).toBe(true);
+    expect(resolveTerminalWebglEnabled(false)).toBe(false);
   });
 });
