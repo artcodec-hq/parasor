@@ -1,10 +1,10 @@
-import { AgentDot, PaGlyph } from "../../primitives/index.js";
-import type { SidebarChild } from "../model/types.js";
 import {
-  SidebarRow,
-  SidebarRowActionButton,
-  SidebarRowLabel,
-} from "../primitives/index.js";
+  AgentDot,
+  MonitorPinSwitchButton,
+  PaGlyph,
+} from "../../primitives/index.js";
+import type { SidebarChild } from "../model/types.js";
+import { SidebarRow, SidebarRowLabel } from "../primitives/index.js";
 
 interface ChildRowProps {
   child: SidebarChild;
@@ -77,18 +77,13 @@ export function ChildRow({
         <span className="sr-only">, {accessibleStatus}</span>
       )}
       {canTogglePin ? (
-        <SidebarRowActionButton
-          aria-label={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          aria-pressed={child.pinned}
-          title={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          tone={child.pinned ? "accent" : "default"}
+        <MonitorPinSwitchButton
+          pressed={child.pinned}
           onClick={(event) => {
             event.stopPropagation();
             onTogglePin();
           }}
-        >
-          <PaGlyph.pin />
-        </SidebarRowActionButton>
+        />
       ) : !disabled && !unavailable && child.pinned ? (
         <span
           role="img"

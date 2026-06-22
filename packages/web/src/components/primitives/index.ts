@@ -15,6 +15,7 @@ export {
   DialogHeader,
   DialogRoot,
 } from "./DialogShell.js";
+export { MonitorPinSwitchButton } from "./MonitorPinSwitchButton.js";
 export { PaButton, type PaButtonKind } from "./PaButton.js";
 export { PaGlyph } from "./PaGlyph.js";
 export { PaKbd } from "./PaKbd.js";
