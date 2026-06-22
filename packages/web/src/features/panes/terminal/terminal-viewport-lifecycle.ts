@@ -16,6 +16,7 @@ import { terminalBufferTrace } from "./terminal-trace-snapshot.js";
 const FIT_MIN_COLS = 2;
 const FIT_MIN_ROWS = 1;
 const RESIZE_DEBOUNCE_MS = 100;
+const RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS = 120;
 // How long to keep the viewport pinned to the tail after the keyboard opens,
 // so a TUI's SIGWINCH repaint settles on the input line instead of the top.
 const KEYBOARD_BOTTOM_PIN_MS = 500;
@@ -35,6 +36,7 @@ type UseTerminalViewportLifecycleArgs = {
   xtermRef: RefObject<XTerm | null>;
   fitRef: RefObject<FitAddon | null>;
   refreshVisibleRows: (term: XTerm) => void;
+  flushPendingOutput: (onFlushed?: () => void) => boolean;
   keyboardSettling: boolean;
   /** Touch-primary device -- a row-shrinking resize there is the keyboard. */
   isTouch: boolean;
@@ -81,6 +83,7 @@ export function useTerminalViewportLifecycle({
   xtermRef,
   fitRef,
   refreshVisibleRows,
+  flushPendingOutput,
   keyboardSettling,
   isTouch,
   firstDataTimerRef,
@@ -192,6 +195,7 @@ export function useTerminalViewportLifecycle({
       }
 
       let resizeTimer: number | null = null;
+      let resizeAfterFlushFrame: number | null = null;
       let keyboardResizeDeferred = false;
       // After a foreground/keyboard resize claim, a full-screen TUI
       // (codex/claude) repaints on SIGWINCH -- it clears and redraws from the
@@ -224,11 +228,19 @@ export function useTerminalViewportLifecycle({
         clearTimeout(resizeTimer);
         resizeTimer = null;
       };
+      const clearResizeAfterFlushFrame = () => {
+        if (resizeAfterFlushFrame === null) return;
+        cancelAnimationFrame(resizeAfterFlushFrame);
+        resizeAfterFlushFrame = null;
+      };
       // forceClaim: push this device's size to the shared PTY even if the local
       // xterm is already that size. Needed on engagement (cursor-enter /
       // foreground) because the PTY may currently hold ANOTHER device's width --
       // the local "unchanged" check alone would never reclaim it.
-      const applyResize = (forceClaim = false) => {
+      const applyResize = (
+        forceClaim = false,
+        outputFlushStartedAt: number | null = null,
+      ) => {
         const startedAt = performance.now();
         resizeTimer = null;
         if (container.clientWidth <= 0 || container.clientHeight <= 0) {
@@ -261,6 +273,29 @@ export function useTerminalViewportLifecycle({
           });
           commitInit();
           return;
+        }
+        const flushStartedAt = outputFlushStartedAt ?? startedAt;
+        if (
+          performance.now() - flushStartedAt <
+          RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS
+        ) {
+          const flushedOutput = flushPendingOutput(() => {
+            clearResizeAfterFlushFrame();
+            resizeAfterFlushFrame = requestAnimationFrame(() => {
+              resizeAfterFlushFrame = null;
+              applyResize(forceClaim, flushStartedAt);
+            });
+          });
+          if (flushedOutput) {
+            traceTerminalEvent("terminal-resize-flush-output", {
+              sessionId,
+              proposedCols: proposed.cols,
+              proposedRows: proposed.rows,
+              durationMs: performance.now() - startedAt,
+              proposeDurationMs,
+            });
+            return;
+          }
         }
         if (proposed.cols === term.cols && proposed.rows === term.rows) {
           // Local size already matches, but on engagement still (re)claim the
@@ -429,6 +464,7 @@ export function useTerminalViewportLifecycle({
         clearFirstDataTimer();
         clearInitFallbackTimer();
         clearResizeTimer();
+        clearResizeAfterFlushFrame();
         stopTailPin();
         if (flushDeferredResizeRef.current === flushDeferredKeyboardResize) {
           flushDeferredResizeRef.current = null;
@@ -446,6 +482,7 @@ export function useTerminalViewportLifecycle({
       isEnded,
       onResizeApplied,
       refreshVisibleRows,
+      flushPendingOutput,
       send,
       sendInit,
       sessionId,

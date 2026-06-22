@@ -911,22 +911,19 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       reviewPendingSessions: new Set(),
       gitStates: {
         p1: {
-          "/repos/p1": {
-            branch: "main",
+          "/repos/p1": gitState({
             dirty: true,
             dirtyCount: 1,
             addedLines: 8,
             deletedLines: 2,
-            lastChecked: 0,
-          },
-          "/repos/p1/wt-a": {
+          }),
+          "/repos/p1/wt-a": gitState({
             branch: "feature",
             dirty: true,
             dirtyCount: 1,
             addedLines: 0,
             deletedLines: 5,
-            lastChecked: 0,
-          },
+          }),
         },
       },
     });

@@ -1,4 +1,8 @@
-import { AgentDot, PaGlyph } from "../../primitives/index.js";
+import {
+  AgentDot,
+  MonitorSwitchButton,
+  PaGlyph,
+} from "../../primitives/index.js";
 import type { SidebarChild } from "../model/types.js";
 import { SidebarRow, SidebarRowLabel } from "../primitives/index.js";
 
@@ -73,7 +77,14 @@ export function ChildRow({
         <span className="sr-only">, {accessibleStatus}</span>
       )}
       {canTogglePin ? (
-        <MonitorSwitchButton pressed={child.pinned} onToggle={onTogglePin} />
+        <MonitorSwitchButton
+          pressed={child.pinned}
+          trackSurface="sidebar"
+          onClick={(event) => {
+            event.stopPropagation();
+            onTogglePin();
+          }}
+        />
       ) : !disabled && !unavailable && child.pinned ? (
         <span
           role="img"
@@ -85,49 +96,5 @@ export function ChildRow({
         </span>
       ) : null}
     </SidebarRow>
-  );
-}
-
-function MonitorSwitchButton({
-  pressed,
-  onToggle,
-}: {
-  pressed: boolean;
-  onToggle: () => void;
-}) {
-  const label = pressed ? "Remove from Monitor" : "Pin to Monitor";
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={pressed}
-      title={label}
-      className="relative flex h-5 w-8 shrink-0 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']"
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-    >
-      <MonitorSwitch pressed={pressed} />
-    </button>
-  );
-}
-
-function MonitorSwitch({ pressed }: { pressed: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`relative block h-3.5 w-6 rounded-full transition-colors ${
-        pressed ? "bg-accent/35" : "bg-bg-primary/80"
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full transition-transform ${
-          pressed
-            ? "translate-x-2.5 bg-accent"
-            : "translate-x-0 bg-text-secondary/60"
-        }`}
-      />
-    </span>
   );
 }

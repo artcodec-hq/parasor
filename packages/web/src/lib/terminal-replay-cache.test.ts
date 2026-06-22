@@ -13,30 +13,45 @@ describe("terminal replay cache", () => {
     setTerminalReplayCache("s1", {
       data: "snapshot",
       lastSeen: { generation: 3, seq: "9" },
+      cols: 80,
+      rows: 24,
     });
 
     expect(getTerminalReplayCache("s1")).toEqual(
       expect.objectContaining({
         data: "snapshot",
         lastSeen: { generation: 3, seq: "9" },
+        cols: 80,
+        rows: 24,
       }),
     );
   });
 
-  it("drops empty and oversized entries", () => {
+  it("drops empty, oversized, and invalid-dimension entries", () => {
     clearTerminalReplayCache();
 
     setTerminalReplayCache("empty", {
       data: "",
       lastSeen: { generation: 1, seq: "0" },
+      cols: 80,
+      rows: 24,
     });
     setTerminalReplayCache("huge", {
       data: "x".repeat(4 * 1024 * 1024 + 1),
       lastSeen: { generation: 1, seq: "0" },
+      cols: 80,
+      rows: 24,
+    });
+    setTerminalReplayCache("bad-dims", {
+      data: "snapshot",
+      lastSeen: { generation: 1, seq: "0" },
+      cols: 0,
+      rows: 24,
     });
 
     expect(getTerminalReplayCache("empty")).toBeNull();
     expect(getTerminalReplayCache("huge")).toBeNull();
+    expect(getTerminalReplayCache("bad-dims")).toBeNull();
     expect(getTerminalReplayCacheStats()).toEqual({
       entries: 0,
       totalChars: 0,
@@ -51,6 +66,8 @@ describe("terminal replay cache", () => {
       setTerminalReplayCache(`s${i}`, {
         data,
         lastSeen: { generation: 1, seq: String(i) },
+        cols: 80,
+        rows: 24,
       });
     }
 
@@ -66,10 +83,14 @@ describe("terminal replay cache", () => {
     setTerminalReplayCache("s1", {
       data: "one",
       lastSeen: { generation: 1, seq: "1" },
+      cols: 80,
+      rows: 24,
     });
     setTerminalReplayCache("s2", {
       data: "two",
       lastSeen: { generation: 1, seq: "2" },
+      cols: 80,
+      rows: 24,
     });
 
     clearTerminalReplayCache("s1");

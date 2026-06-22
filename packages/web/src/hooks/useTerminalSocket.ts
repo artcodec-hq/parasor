@@ -70,6 +70,10 @@ interface UseTerminalSocketOptions {
   sessionId: string | null;
   onData: (data: string) => void;
   initialLastSeen?: TerminalLastSeen | null;
+  resolveInitialLastSeen?: (dims: {
+    cols: number;
+    rows: number;
+  }) => TerminalLastSeen | null;
   onFullReplay?: (lastSeen: TerminalLastSeen | null) => void;
 }
 
@@ -93,6 +97,7 @@ export function useTerminalSocket({
   sessionId,
   onData,
   initialLastSeen,
+  resolveInitialLastSeen,
   onFullReplay,
 }: UseTerminalSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -167,6 +172,9 @@ export function useTerminalSocket({
    */
   const initialLastSeenRef = useRef(initialLastSeen);
   initialLastSeenRef.current = initialLastSeen;
+  const resolveInitialLastSeenRef = useRef(resolveInitialLastSeen);
+  resolveInitialLastSeenRef.current = resolveInitialLastSeen;
+  const initialLastSeenResolvedRef = useRef(false);
   const resetForReplayRef = useRef(false);
   /*
    * Captured from sendInit so the effect can re-send the init frame on
@@ -280,7 +288,12 @@ export function useTerminalSocket({
     // A fresh hook attach usually means a fresh xterm buffer. When the
     // caller already restored an in-memory replay snapshot, reuse its
     // cursor so the server can validate and send delta output instead.
-    lastSeenRef.current = initialLastSeenRef.current ?? null;
+    // Some callers can only validate that snapshot after xterm has fitted;
+    // those pass resolveInitialLastSeen and we defer seeding until buildInit.
+    initialLastSeenResolvedRef.current = false;
+    lastSeenRef.current = resolveInitialLastSeenRef.current
+      ? null
+      : (initialLastSeenRef.current ?? null);
 
     const clientId = getClientId();
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -333,6 +346,13 @@ export function useTerminalSocket({
     const buildInit = (): WsTerminalClientMessage | null => {
       const dims = lastDimsRef.current;
       if (!dims) return null;
+      if (!initialLastSeenResolvedRef.current) {
+        initialLastSeenResolvedRef.current = true;
+        lastSeenRef.current =
+          resolveInitialLastSeenRef.current?.(dims) ??
+          initialLastSeenRef.current ??
+          null;
+      }
       const clientKind = detectTerminalClientKind();
       const init: WsTerminalClientMessage = {
         type: "init",
