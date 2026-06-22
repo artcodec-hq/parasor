@@ -327,10 +327,16 @@ vi.mock("../../../hooks/useTerminalSocket.js", () => ({
       lastSeen: { generation: number; seq: string } | null,
     ) => void;
     initialLastSeen?: { generation: number; seq: string } | null;
+    resolveInitialLastSeen?: (dims: {
+      cols: number;
+      rows: number;
+    }) => { generation: number; seq: string } | null;
   }) => {
     socketOptionsRef.onData = options.onData;
     socketOptionsRef.onFullReplay = options.onFullReplay;
-    socketOptionsRef.initialLastSeen = options.initialLastSeen;
+    socketOptionsRef.initialLastSeen =
+      options.resolveInitialLastSeen?.({ cols: 80, rows: 24 }) ??
+      options.initialLastSeen;
     return {
       send: mockSend,
       sendInit: mockSendInit,
@@ -859,6 +865,8 @@ describe("Terminal", () => {
       expect.objectContaining({
         data: "snapshot",
         lastSeen: { generation: 2, seq: "42" },
+        cols: 80,
+        rows: 24,
       }),
     );
   });
@@ -979,6 +987,8 @@ describe("Terminal", () => {
     setTerminalReplayCache("s-cached", {
       data: "cached snapshot",
       lastSeen: { generation: 8, seq: "123" },
+      cols: 80,
+      rows: 24,
     });
 
     render(<Terminal sessionId="s-cached" />, { wrapper });
@@ -999,6 +1009,24 @@ describe("Terminal", () => {
     );
     expect(fitOrder).toBeLessThan(cachedWriteOrder ?? Number.POSITIVE_INFINITY);
     expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  it("skips cached replay and lastSeen when the fitted terminal dimensions differ", () => {
+    setTerminalReplayCache("s-cached", {
+      data: "cached snapshot",
+      lastSeen: { generation: 8, seq: "123" },
+      cols: 100,
+      rows: 30,
+    });
+
+    render(<Terminal sessionId="s-cached" />, { wrapper });
+
+    expect(socketOptionsRef.initialLastSeen).toBeUndefined();
+    expect(mockTermReset).not.toHaveBeenCalled();
+    expect(mockTermWrite).not.toHaveBeenCalledWith(
+      "cached snapshot",
+      expect.any(Function),
+    );
   });
 
   it("loads an expanded scrollback snapshot when the user scrolls near the top", async () => {

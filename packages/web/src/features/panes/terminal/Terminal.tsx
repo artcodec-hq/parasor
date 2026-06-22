@@ -136,6 +136,13 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function replayCacheMatchesDimensions(
+  entry: TerminalReplayCacheEntry | null,
+  dims: { cols: number; rows: number },
+): entry is TerminalReplayCacheEntry {
+  return entry?.cols === dims.cols && entry.rows === dims.rows;
+}
+
 function createInitialRendererTrace(input: {
   requestedWebgl: boolean;
   isTouch: boolean;
@@ -411,7 +418,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         });
         historyTopLoadArmedRef.current = false;
         if (!lastSeen) return;
-        setTerminalReplayCache(sessionId, { data, lastSeen });
+        setTerminalReplayCache(sessionId, {
+          data,
+          lastSeen,
+          cols: term.cols,
+          rows: term.rows,
+        });
         cachedReplayRef.current = {
           sessionId,
           entry: getTerminalReplayCache(sessionId),
@@ -557,7 +569,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         restoreExpandedReplay(term, data.text, replayAnchor);
         const lastSeen = cachedReplayRef.current?.entry?.lastSeen ?? null;
         if (lastSeen) {
-          setTerminalReplayCache(sessionId, { data: data.text, lastSeen });
+          setTerminalReplayCache(sessionId, {
+            data: data.text,
+            lastSeen,
+            cols: term.cols,
+            rows: term.rows,
+          });
           cachedReplayRef.current = {
             sessionId,
             entry: getTerminalReplayCache(sessionId),
@@ -588,7 +605,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       endedReason: socketEndedReason,
     } = useTerminalSocket({
       sessionId: showError ? null : sessionId,
-      initialLastSeen: cachedReplayRef.current?.entry?.lastSeen ?? null,
+      resolveInitialLastSeen: (dims) => {
+        const entry = cachedReplayRef.current?.entry ?? null;
+        return replayCacheMatchesDimensions(entry, dims)
+          ? entry.lastSeen
+          : null;
+      },
       onData,
       onFullReplay: handleFullReplay,
     });
@@ -1410,7 +1432,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         cachedReplayRef.current = { sessionId, entry: cachedReplay };
       }
       const restoreInitialCachedReplay = () => {
-        if (cachedReplay) {
+        if (replayCacheMatchesDimensions(cachedReplay, term)) {
           restoreCachedReplay(term, cachedReplay.data);
         }
       };
