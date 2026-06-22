@@ -227,7 +227,7 @@ describe("hook route -- session lookup + dispatch", () => {
     expect(data.lifecycle).toBe("completed");
     expect(mocks.setExternalState).toHaveBeenCalledWith("valid-session", {
       lifecycle: "completed",
-      source: "hook",
+      source: "notify",
       confidence: "high",
     });
   });
@@ -259,7 +259,7 @@ describe("hook route -- session lookup + dispatch", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId: "valid-session",
-        label: "claude-wrapper-exec",
+        label: "parasor-claude-wrapper-exec",
         detail: "--resume",
       }),
     });

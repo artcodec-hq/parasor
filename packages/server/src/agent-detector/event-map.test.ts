@@ -173,67 +173,85 @@ describe("mapEventType -- codex", () => {
   });
 
   it("maps task_started to running", () => {
-    expect(mapEventType("codex", "task_started")).toEqual(hookState("running"));
+    expect(mapEventType("codex", "task_started")).toEqual(
+      notifyState("running"),
+    );
   });
 
   it("maps exec_command_begin and turn_started to running", () => {
     expect(mapEventType("codex", "exec_command_begin")).toEqual(
-      hookState("running"),
+      notifyState("running"),
     );
-    expect(mapEventType("codex", "turn_started")).toEqual(hookState("running"));
+    expect(mapEventType("codex", "turn_started")).toEqual(
+      notifyState("running"),
+    );
+    expect(mapEventType("codex", "turn/started")).toEqual({ kind: "unknown" });
   });
 
   it("maps agent-turn-started (dash form) to running", () => {
     expect(mapEventType("codex", "agent-turn-started")).toEqual(
-      hookState("running"),
+      notifyState("running"),
     );
   });
 
   it("maps agent_turn_complete (underscore) to completed", () => {
     expect(mapEventType("codex", "agent_turn_complete")).toEqual(
-      hookState("completed"),
+      notifyState("completed"),
     );
   });
 
   it("maps agent-turn-complete (dash) to completed", () => {
     expect(mapEventType("codex", "agent-turn-complete")).toEqual(
-      hookState("completed"),
+      notifyState("completed"),
     );
   });
 
   it("maps task_complete to completed", () => {
     expect(mapEventType("codex", "task_complete")).toEqual(
-      hookState("completed"),
+      notifyState("completed"),
     );
   });
 
   it("maps Stop and turn_complete to completed", () => {
     expect(mapEventType("codex", "Stop")).toEqual(hookState("completed"));
     expect(mapEventType("codex", "turn_complete")).toEqual(
-      hookState("completed"),
+      notifyState("completed"),
     );
+    expect(mapEventType("codex", "turn/completed")).toEqual({
+      kind: "unknown",
+    });
   });
 
   it("maps exec_approval_request to waiting", () => {
     expect(mapEventType("codex", "exec_approval_request")).toEqual(
-      hookState("waiting"),
+      notifyState("waiting"),
     );
   });
 
   it("maps apply_patch_approval_request to waiting", () => {
     expect(mapEventType("codex", "apply_patch_approval_request")).toEqual(
-      hookState("waiting"),
+      notifyState("waiting"),
     );
   });
 
   it("maps request_user_input to waiting", () => {
     expect(mapEventType("codex", "request_user_input")).toEqual(
-      hookState("waiting"),
+      notifyState("waiting"),
     );
   });
 
+  it("treats non-actionable Codex warning notifications as noop", () => {
+    expect(mapEventType("codex", "warning")).toEqual({ kind: "noop" });
+    expect(mapEventType("codex", "guardianWarning")).toEqual({ kind: "noop" });
+    expect(mapEventType("codex", "deprecationNotice")).toEqual({
+      kind: "noop",
+    });
+  });
+
   it("is case-insensitive", () => {
-    expect(mapEventType("codex", "TASK_STARTED")).toEqual(hookState("running"));
+    expect(mapEventType("codex", "TASK_STARTED")).toEqual(
+      notifyState("running"),
+    );
   });
 
   it("returns unknown for unrecognized events", () => {
