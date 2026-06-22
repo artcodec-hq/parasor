@@ -48,5 +48,19 @@ describe("native status integrations", () => {
     expect(
       nativeStatusIntegrationForHookAgent("manual")?.hookEvents,
     ).toBeUndefined();
+    expect(
+      nativeStatusIntegrationForHookAgent("codex")?.notifyEvents,
+    ).toMatchObject({
+      task_started: "running",
+      exec_approval_request: "waiting",
+      agent_turn_complete: "completed",
+    });
+    expect(
+      nativeStatusIntegrationForHookAgent("codex")?.hookEvents,
+    ).toMatchObject({
+      userpromptsubmit: "running",
+      permissionrequest: "waiting",
+      stop: "completed",
+    });
   });
 });

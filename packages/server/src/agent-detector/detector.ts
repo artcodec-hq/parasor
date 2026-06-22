@@ -7,8 +7,8 @@ import type {
 const ATTENTION_PATTERNS = [
   /\(y\/n\)\s*$/i,
   /\[Y\/n\]\s*$/,
-  /waiting for input/i,
-  /Press Enter/i,
+  /(?:^|\n)\s*waiting for (?:user )?input\s*\.?\s*$/i,
+  /(?:^|\n)\s*Press Enter(?:\s+to\s+\w+(?:\s+\w+)*)?\s*\.?\s*$/i,
 ];
 const COMPLETED_PATTERNS = [
   /(?:^|\n)\s*❯\s*$/u,
@@ -152,16 +152,6 @@ export class AgentDetector {
       }
       return;
     }
-    if (current && this.isWeakerSource("output", current.source)) {
-      this.onTrace?.({
-        kind: "feed-skip-source",
-        sessionId,
-        current: current.source,
-        currentLifecycle: current.lifecycle,
-      });
-      return;
-    }
-
     const sanitized = sanitizeTerminalOutput(data);
     const lifecycle = detectOutputLifecycle(sanitized);
     const hasMeaningfulOutput = /[^\s]/u.test(sanitized);
@@ -179,6 +169,15 @@ export class AgentDetector {
     this.clearIdleTimer(sessionId);
 
     const observed: AgentState["lifecycle"] = lifecycle ?? "running";
+    if (current && this.isWeakerSource("output", current.source)) {
+      this.onTrace?.({
+        kind: "feed-skip-source",
+        sessionId,
+        current: current.source,
+        currentLifecycle: current.lifecycle,
+      });
+      return;
+    }
     this.applyObservation(sessionId, {
       lifecycle: observed,
       source: "output",
