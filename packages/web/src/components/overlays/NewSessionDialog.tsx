@@ -8,16 +8,13 @@ import type {
   PaneCommand,
 } from "../../lib/pane-command-store.js";
 import {
-  DialogButton,
   DialogCloseButton,
-  DialogFooter,
   DialogRoot,
   PaButton,
   PaGlyph,
-  PaKbd,
 } from "../primitives/index.js";
 
-export interface OpenContainerDialogProps {
+export interface NewSessionDialogProps {
   open: boolean;
   project: { id: string; name: string; path: string };
   worktree: { id: string; name: string; path: string };
@@ -50,7 +47,20 @@ function makeCommandId(): string {
   return `cmd:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function OpenContainerDialog({
+function displayWorktreeName({
+  project,
+  worktree,
+}: {
+  project: { path: string };
+  worktree: { name: string; path: string };
+}): string {
+  if (worktree.path === project.path && worktree.name === "root") {
+    return "Project root";
+  }
+  return worktree.name;
+}
+
+export function NewSessionDialog({
   open,
   project,
   worktree,
@@ -62,7 +72,7 @@ export function OpenContainerDialog({
   onCommandsChange,
   onRunCommand,
   onCreateWorktreeSession,
-}: OpenContainerDialogProps) {
+}: NewSessionDialogProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mode, setMode] = useState<Mode>("launcher");
   const committedRef = useRef(false);
@@ -112,13 +122,15 @@ export function OpenContainerDialog({
 
   if (!open) return null;
 
+  const worktreeDisplayName = displayWorktreeName({ project, worktree });
+
   const body =
     mode === "launcher" ? (
       <CommandLauncherBody
         commands={commands}
         projectName={project.name}
         selectedIndex={selectedIndex}
-        worktreeName={worktree.name}
+        worktreeName={worktreeDisplayName}
         onEdit={() => setMode("editor")}
         onNewWorktree={
           onCreateWorktreeSession ? () => setMode("worktree") : undefined
@@ -151,16 +163,15 @@ export function OpenContainerDialog({
   return (
     <DialogRoot
       open={open}
-      ariaLabel={`New session in ${worktree.name}`}
+      ariaLabel="New session"
       onClose={onClose}
       closeOnEscape={mode === "launcher"}
-      presentation={isMobile ? "sheet" : "modal"}
+      presentation={isMobile ? "fullscreen" : "modal"}
       widthClassName="max-w-surface-md"
-      panelClassName={`flex flex-col ${isMobile ? "h-[calc(80vh-1.5rem)] min-h-0" : "max-h-[82vh]"}`}
+      panelClassName={`flex flex-col ${isMobile ? "min-h-0" : "max-h-[82vh]"}`}
     >
-      <OpenContainerHeader
+      <NewSessionHeader
         mode={mode}
-        title={worktree.name}
         onBack={() => setMode("launcher")}
         onClose={onClose}
       />
@@ -168,51 +179,28 @@ export function OpenContainerDialog({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-4">
         {body}
       </div>
-
-      {isMobile ? (
-        <div className="flex shrink-0 items-center border-t border-border px-3 py-2.5">
-          <DialogFooter layout="stack">
-            <DialogButton onClick={onClose}>Cancel</DialogButton>
-          </DialogFooter>
-        </div>
-      ) : (
-        mode === "launcher" && (
-          <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
-            <div className="cm-mono flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs text-text-secondary">
-              <span className="inline-flex items-center gap-1">
-                <PaKbd>↑↓</PaKbd>
-                <span>navigate</span>
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <PaKbd>↵</PaKbd>
-                <span>run</span>
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <PaKbd>Esc</PaKbd>
-                <span>cancel</span>
-              </span>
-            </div>
-            <DialogButton onClick={onClose}>Cancel</DialogButton>
-          </div>
-        )
-      )}
     </DialogRoot>
   );
 }
 
-function OpenContainerHeader({
+function NewSessionHeader({
   mode,
-  title,
   onBack,
   onClose,
 }: {
   mode: Mode;
-  title: string;
   onBack: () => void;
   onClose: () => void;
 }) {
+  const title =
+    mode === "editor"
+      ? "Commands"
+      : mode === "worktree"
+        ? "New worktree session"
+        : "New session";
+
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+    <div className="flex h-bar shrink-0 items-center gap-2 border-b border-border px-3">
       {mode !== "launcher" && (
         <button
           type="button"
@@ -223,14 +211,7 @@ function OpenContainerHeader({
           <PaGlyph.back />
         </button>
       )}
-      <span className="text-sm text-text-secondary">
-        {mode === "editor"
-          ? "Commands"
-          : mode === "worktree"
-            ? "New session"
-            : "New session in"}
-      </span>
-      <span className="cm-mono flex-1 truncate text-sm font-semibold text-text-primary">
+      <span className="flex-1 truncate text-sm font-semibold text-text-primary">
         {title}
       </span>
       <DialogCloseButton onClick={onClose} />
@@ -259,42 +240,58 @@ function CommandLauncherBody({
 }) {
   return (
     <>
-      <div className="cm-mono mb-2.5 flex items-center gap-1.5 text-xs text-text-secondary">
+      <div className="cm-mono mb-3 flex items-center gap-1.5 text-xs text-text-secondary">
         <span>{projectName}</span>
         <span className="opacity-50">/</span>
         <span>{worktreeName}</span>
       </div>
-      <div className="flex flex-col gap-1.5">
-        {commands.map((command, index) => (
-          <CommandRow
-            command={command}
-            key={command.id}
-            selected={selectedIndex === index}
-            onClick={() => {
-              onSelect(index);
-              onRun(index);
-            }}
-            onFocus={() => onSelect(index)}
-          />
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={onEdit}
-        className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-control border border-border text-sm text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
-      >
-        <PaGlyph.settings />
-        <span>Edit commands</span>
-      </button>
+      <section className="space-y-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 text-xs font-medium text-text-secondary">
+            Current worktree
+          </span>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control border border-border bg-bg-primary px-2 text-xs font-medium text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
+          >
+            <PaGlyph.settings />
+            <span>Manage commands</span>
+          </button>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {commands.map((command, index) => (
+            <CommandRow
+              command={command}
+              key={command.id}
+              selected={selectedIndex === index}
+              onClick={() => {
+                onSelect(index);
+                onRun(index);
+              }}
+              onFocus={() => onSelect(index)}
+            />
+          ))}
+        </div>
+      </section>
       {onNewWorktree && (
-        <button
-          type="button"
-          onClick={onNewWorktree}
-          className="mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-control border border-border text-sm text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
-        >
-          <PaGlyph.worktreeInactive />
-          <span>New worktree session</span>
-        </button>
+        <section className="mt-4 space-y-2 border-t border-border pt-3">
+          <div className="text-xs font-medium text-text-secondary">
+            New worktree
+          </div>
+          <button
+            type="button"
+            onClick={onNewWorktree}
+            className="flex min-h-10 w-full items-center gap-2.5 rounded-control border border-border bg-bg-primary px-3 py-2 text-left text-sm text-text-primary hover:bg-row-hover-bg"
+          >
+            <span className="inline-flex h-7 w-5 shrink-0 items-center justify-center text-text-secondary">
+              <PaGlyph.git />
+            </span>
+            <span className="min-w-0 flex-1 truncate font-medium">
+              Create worktree and start session
+            </span>
+          </button>
+        </section>
       )}
     </>
   );
@@ -584,11 +581,11 @@ function CommandRow({
       onFocus={onFocus}
       aria-pressed={selected}
       className={`
-        flex min-h-14 items-center gap-3 rounded-control border px-3 py-2 text-left
-        ${selected ? "border-accent/65 bg-accent/10 shadow-[0_0_0_2px_rgb(var(--color-accent)/0.22)]" : "border-border bg-bg-primary hover:bg-row-hover-bg"}
+        flex min-h-12 items-center gap-2.5 rounded-control border px-3 py-2 text-left transition-colors
+        ${selected ? "border-accent/60 bg-accent/10" : "border-border bg-bg-primary hover:bg-row-hover-bg"}
       `}
     >
-      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-text-secondary/10 text-text-primary">
+      <span className="inline-flex h-7 w-5 shrink-0 items-center justify-center text-text-secondary">
         <PaGlyph.terminal />
       </span>
       <span className="min-w-0 flex-1">

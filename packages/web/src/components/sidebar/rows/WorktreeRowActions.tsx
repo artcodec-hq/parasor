@@ -3,14 +3,14 @@ import { SidebarRowActionButton } from "../primitives/index.js";
 
 interface WorktreeRowActionsProps {
   label: string;
-  onOpenContainer?: () => void;
+  onNewSession?: () => void;
 }
 
 export function WorktreeRowActions({
   label,
-  onOpenContainer,
+  onNewSession,
 }: WorktreeRowActionsProps) {
-  if (!onOpenContainer) return null;
+  if (!onNewSession) return null;
 
   return (
     <SidebarRowActionButton
@@ -18,7 +18,7 @@ export function WorktreeRowActions({
       tone="accentHover"
       onClick={(event) => {
         event.stopPropagation();
-        onOpenContainer();
+        onNewSession();
       }}
     >
       <PaGlyph.add />

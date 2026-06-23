@@ -5,7 +5,7 @@ import { DialogFooter, DialogRoot } from "./DialogShell.js";
 afterEach(() => cleanup());
 
 describe("DialogRoot", () => {
-  it("animates modal dialogs into the entered state", async () => {
+  it("animates dialogs into the entered state", async () => {
     render(
       <DialogRoot open ariaLabel="Test dialog" onClose={vi.fn()}>
         <button type="button">Action</button>
@@ -22,16 +22,16 @@ describe("DialogRoot", () => {
     expect(dialog.className).toContain("scale-100");
   });
 
-  it("passes dialog role and labelling through sheet presentation", () => {
+  it("passes dialog role and labelling through fullscreen presentation", () => {
     render(
       <DialogRoot
         open
-        presentation="sheet"
+        presentation="fullscreen"
         dialogRole="alertdialog"
-        ariaLabelledBy="sheet-title"
+        ariaLabelledBy="fullscreen-title"
         onClose={vi.fn()}
       >
-        <h2 id="sheet-title">Connection lost</h2>
+        <h2 id="fullscreen-title">Connection lost</h2>
         <button type="button">Retry</button>
       </DialogRoot>,
     );
@@ -40,7 +40,7 @@ describe("DialogRoot", () => {
       name: "Connection lost",
     });
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    expect(dialog.getAttribute("aria-labelledby")).toBe("sheet-title");
+    expect(dialog.getAttribute("aria-labelledby")).toBe("fullscreen-title");
   });
 });
 

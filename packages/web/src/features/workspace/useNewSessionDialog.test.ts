@@ -1,7 +1,7 @@
 import type { GitState, Project } from "@parasor/shared";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { useContainerDialog } from "./useContainerDialog.js";
+import { useNewSessionDialog } from "./useNewSessionDialog.js";
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -26,10 +26,10 @@ const projects: Project[] = [
   makeProject({ id: "p1", name: "demo", path: "/r/demo" }),
 ];
 
-describe("useContainerDialog", () => {
+describe("useNewSessionDialog", () => {
   it("starts with no target and null context", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     expect(result.current.target).toBe(null);
     expect(result.current.context).toBe(null);
@@ -37,7 +37,7 @@ describe("useContainerDialog", () => {
 
   it("open strips a 'wt:' prefix from the worktreeId to derive worktreePath", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     act(() => {
       result.current.open("p1", "wt:/r/demo/feature");
@@ -51,7 +51,7 @@ describe("useContainerDialog", () => {
 
   it("open without a 'wt:' prefix uses the worktreeId verbatim as the path", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     act(() => {
       result.current.open("p1", "/r/demo");
@@ -64,7 +64,7 @@ describe("useContainerDialog", () => {
       p1: { "/r/demo": makeGitState({ isRepo: true }) },
     };
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates }),
+      useNewSessionDialog({ projects, gitStates }),
     );
     act(() => {
       result.current.open("p1", "/r/demo");
@@ -80,7 +80,7 @@ describe("useContainerDialog", () => {
       p1: { "/r/demo": makeGitState({ isRepo: false }) },
     };
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates }),
+      useNewSessionDialog({ projects, gitStates }),
     );
     act(() => {
       result.current.open("p1", "/r/demo");
@@ -90,7 +90,7 @@ describe("useContainerDialog", () => {
 
   it("context treats missing gitStates as a repo (matches the inline `?.isRepo !== false` guard)", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     act(() => {
       result.current.open("p1", "/r/demo");
@@ -100,7 +100,7 @@ describe("useContainerDialog", () => {
 
   it("context uses the worktree dir basename for non-root worktrees", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     act(() => {
       result.current.open("p1", "/r/demo/feature-branch");
@@ -110,7 +110,7 @@ describe("useContainerDialog", () => {
 
   it("context is null when the project cannot be found", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     act(() => {
       result.current.open("missing", "/r/x");
@@ -121,7 +121,7 @@ describe("useContainerDialog", () => {
 
   it("close clears both target and context", () => {
     const { result } = renderHook(() =>
-      useContainerDialog({ projects, gitStates: {} }),
+      useNewSessionDialog({ projects, gitStates: {} }),
     );
     act(() => {
       result.current.open("p1", "/r/demo/feature");
@@ -135,7 +135,7 @@ describe("useContainerDialog", () => {
 
   it("re-derives context when projects change", () => {
     const { result, rerender } = renderHook(
-      ({ projs }) => useContainerDialog({ projects: projs, gitStates: {} }),
+      ({ projs }) => useNewSessionDialog({ projects: projs, gitStates: {} }),
       { initialProps: { projs: projects } },
     );
     act(() => {

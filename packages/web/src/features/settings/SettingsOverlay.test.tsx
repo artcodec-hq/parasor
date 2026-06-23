@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe("SettingsOverlay", () => {
-  it("renders desktop settings as an accessible modal dialog with detail selected", () => {
+  it("renders desktop settings as an accessible dialog with detail selected", () => {
     renderOverlay({ desktop: true });
 
     const dialog = document.body.querySelector(

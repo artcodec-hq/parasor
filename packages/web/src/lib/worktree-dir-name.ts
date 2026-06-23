@@ -1,6 +1,6 @@
 /**
  * Worktree directory name shown as crumb[1] in `SessionPaneHeader` and as
- * the worktree label in `OpenContainerDialog`. Always derived from the
+ * the worktree label in `NewSessionDialog`. Always derived from the
  * path, never the branch -- distinct from `focusedWorktreeName` which
  * prefers the live `gitState.branch` and falls back to the dir name only
  * when no branch is known.

@@ -31,7 +31,7 @@ interface UseGitWorkflowResult {
   submitCommit: (input: { message: string; paths: string[] }) => Promise<void>;
   /**
    * Inline equivalent of {@link submitCommit} for the in-pane
-   * UncommittedPane. Skips the modal lifecycle (no dialog open/close), so
+   * UncommittedPane. Skips the dialog lifecycle (no dialog open/close), so
    * the same workflow can drive both surfaces.
    */
   submitInlineCommit: (input: {

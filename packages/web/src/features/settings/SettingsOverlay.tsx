@@ -16,7 +16,7 @@ interface SettingsOverlayProps {
  * Mobile-first settings overlay.
  *
  * < md: drill-down. Layer 1 = section list with inline search,
- *   Layer 2 = section detail (back ← + label). Modal fills the
+ *   Layer 2 = section detail (back ← + label). Dialog fills the
  *   viewport and respects safe-area insets for iOS notch/home bar.
  * ≥ md: persistent dual-pane (200px section rail + content).
  */

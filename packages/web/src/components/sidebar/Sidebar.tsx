@@ -32,7 +32,7 @@ interface SidebarProps {
     worktreeId: string,
     childId: string,
   ) => void;
-  onOpenContainer?: (projectId: string, worktreeId: string) => void;
+  onNewSession?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -98,7 +98,7 @@ export function Sidebar({
   onSelectMonitor,
   onSelectWorktree,
   onSelectChild,
-  onOpenContainer,
+  onNewSession,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -168,7 +168,7 @@ export function Sidebar({
                   forceOpen
                   onSelectWorktree={onSelectWorktree}
                   onSelectChild={onSelectChild}
-                  onOpenContainer={onOpenContainer}
+                  onNewSession={onNewSession}
                   onToggleChildPin={onToggleChildPin}
                   worktreeOpen={worktreeOpenByProject?.[project.id]}
                   onWorktreeOpenChange={onWorktreeOpenChange}
@@ -185,7 +185,7 @@ export function Sidebar({
             onReorderProjects={onReorderProjects ?? (() => {})}
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
-            onOpenContainer={onOpenContainer}
+            onNewSession={onNewSession}
             onToggleChildPin={onToggleChildPin}
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}

@@ -6,11 +6,10 @@ import type {
 } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../../hooks/use-focus-trap.js";
-import { BottomSheet } from "./BottomSheet.js";
 import { DialogCloseButton } from "./DialogCloseButton.js";
 import { PaButton, type PaButtonKind } from "./PaButton.js";
 
-type DialogPresentation = "fullscreen" | "modal" | "sheet";
+type DialogPresentation = "fullscreen" | "modal";
 
 interface DialogRootProps {
   open: boolean;
@@ -47,10 +46,10 @@ export function DialogRoot({
 }: DialogRootProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [entered, setEntered] = useState(false);
-  useFocusTrap(open && presentation !== "sheet", panelRef);
+  useFocusTrap(open, panelRef);
 
   useEffect(() => {
-    if (!open || presentation === "sheet") {
+    if (!open) {
       setEntered(false);
       return;
     }
@@ -59,10 +58,10 @@ export function DialogRoot({
       cancelAnimationFrame(frame);
       setEntered(false);
     };
-  }, [open, presentation]);
+  }, [open]);
 
   useEffect(() => {
-    if (!open || presentation === "sheet" || !closeOnEscape) return;
+    if (!open || !closeOnEscape) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -71,26 +70,9 @@ export function DialogRoot({
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [closeOnEscape, open, onClose, presentation]);
+  }, [closeOnEscape, open, onClose]);
 
   if (!open) return null;
-
-  if (presentation === "sheet") {
-    return (
-      <BottomSheet
-        open={open}
-        onDismiss={onClose}
-        ariaLabel={ariaLabel}
-        ariaLabelledBy={ariaLabelledBy}
-        dialogRole={dialogRole}
-        closeOnScrim={closeOnBackdrop}
-        closeOnEscape={closeOnEscape}
-        contentClassName={`flex flex-col ${panelClassName}`}
-      >
-        {children}
-      </BottomSheet>
-    );
-  }
 
   if (presentation === "fullscreen") {
     return (
@@ -158,7 +140,7 @@ interface DialogHeaderProps {
 
 export function DialogHeader({ title, subject, onClose }: DialogHeaderProps) {
   return (
-    <div className="flex min-w-0 items-center gap-2 border-b border-border px-4 py-3">
+    <div className="flex h-bar min-w-0 shrink-0 items-center gap-2 border-b border-border px-3">
       <span
         className={`min-w-0 truncate text-sm ${
           subject ? "text-text-secondary" : "font-semibold text-text-primary"

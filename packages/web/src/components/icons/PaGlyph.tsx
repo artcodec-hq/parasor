@@ -195,8 +195,8 @@ function Terminal({ className, ...p }: GlyphProps) {
       aria-hidden
       {...p}
     >
-      <circle cx="12" cy="12" r="10" />
-      <path d="m10 8 4 4-4 4" />
+      <path d="m4 17 6-6-6-6" />
+      <path d="M12 19h8" />
     </svg>
   );
 }

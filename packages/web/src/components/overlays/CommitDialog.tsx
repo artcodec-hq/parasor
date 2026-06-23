@@ -72,7 +72,7 @@ export interface CommitBodyProps {
    * Layout density. `inline` lets the file list grow to fill available
    * height and removes the message-textarea min-height clamp.
    */
-  layout: "modal" | "sheet" | "inline";
+  layout: "modal" | "mobile" | "inline";
   /**
    * Optional per-path diff data. When supplied, each file row shows a
    * caret that toggles inline diff display below the row. Caller is
@@ -123,7 +123,7 @@ export function CommitBody({
         style={
           layout === "inline"
             ? undefined
-            : { maxHeight: layout === "sheet" ? 180 : 220 }
+            : { maxHeight: layout === "mobile" ? 180 : 220 }
         }
       >
         <label className="flex h-7 cursor-pointer items-center gap-2.5 border-b border-border bg-bg-tertiary px-3 text-xs font-medium tracking-[0.04em] text-text-secondary uppercase">
@@ -220,7 +220,8 @@ export function CommitBody({
           placeholder={"Subject line\n\nDetails…"}
           className="cm-mono flex-1 resize-none rounded-control border border-border bg-bg-primary px-2.5 py-2 text-sm leading-snug text-text-primary outline-none focus:border-accent/60"
           style={{
-            minHeight: layout === "sheet" ? 110 : layout === "modal" ? 150 : 96,
+            minHeight:
+              layout === "mobile" ? 110 : layout === "modal" ? 150 : 96,
           }}
         />
       </div>
@@ -301,11 +302,11 @@ export function CommitDialog({
     return (
       <DialogRoot
         open={open}
-        presentation="sheet"
+        presentation="fullscreen"
         onClose={onClose}
         ariaLabel={title}
       >
-        <div className="flex h-[calc(80vh-1.5rem)] min-h-0 flex-col">
+        <div className="flex h-full min-h-0 flex-col">
           <div className="flex h-8 flex-none items-center gap-2 border-b border-border px-3">
             <span className="cm-mono flex-1 truncate text-sm font-semibold">
               {title}
@@ -319,7 +320,7 @@ export function CommitDialog({
             toggleAll={toggleAll}
             message={message}
             setMessage={setMessage}
-            layout="sheet"
+            layout="mobile"
           />
           {error && (
             <div className="border-t border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">

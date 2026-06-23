@@ -4,7 +4,7 @@ import {
   paneCommandsWithBuiltins,
 } from "../../lib/pane-command-store.js";
 import { MOBILE_VIEWPORT_GLOBALS } from "../../stories/storybook-viewports.js";
-import { OpenContainerDialog } from "./OpenContainerDialog.js";
+import { NewSessionDialog } from "./NewSessionDialog.js";
 
 const project = {
   id: "project-1",
@@ -39,7 +39,7 @@ function StoryDialog({
   emptyCommands?: boolean;
 }) {
   return (
-    <OpenContainerDialog
+    <NewSessionDialog
       open
       project={project}
       worktree={worktree}
@@ -62,7 +62,7 @@ function StoryDialog({
 }
 
 const meta = {
-  title: "Patterns/Dialogs/Container launch",
+  title: "Patterns/Dialogs/New session",
   parameters: {
     layout: "fullscreen",
     controls: {

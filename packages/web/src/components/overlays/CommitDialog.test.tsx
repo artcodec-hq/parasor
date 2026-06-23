@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe("CommitDialog", () => {
-  it("renders the desktop modal as an accessible dialog", () => {
+  it("renders the desktop dialog as an accessible dialog", () => {
     renderDialog();
 
     const dialog = screen.getByRole("dialog", { name: "Commit · main" });
@@ -47,7 +47,7 @@ describe("CommitDialog", () => {
     expect(screen.getByRole("textbox")).toBeTruthy();
   });
 
-  it("closes the desktop modal from Escape, backdrop, and Cancel", () => {
+  it("closes the desktop dialog from Escape, backdrop, and Cancel", () => {
     const onClose = vi.fn();
     const { container } = renderDialog({ onClose });
 
@@ -58,7 +58,7 @@ describe("CommitDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(3);
   });
 
-  it("does not close the desktop modal from Escape, backdrop, or Cancel while busy", () => {
+  it("does not close the desktop dialog from Escape, backdrop, or Cancel while busy", () => {
     const onClose = vi.fn();
     const { container } = renderDialog({ busy: true, onClose });
 
@@ -95,11 +95,12 @@ describe("CommitDialog", () => {
     });
   });
 
-  it("renders the mobile path as a shared bottom sheet", () => {
+  it("renders the mobile path as a fullscreen dialog", () => {
     renderDialog({ isMobile: true });
 
-    expect(screen.getByRole("dialog", { name: "Commit · main" })).toBeTruthy();
-    expect(document.body.querySelector(".rounded-t-xl")).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Commit · main" });
+    expect(dialog.className).toContain("h-full");
+    expect(document.body.querySelector(".rounded-t-xl")).toBeNull();
   });
 });
 

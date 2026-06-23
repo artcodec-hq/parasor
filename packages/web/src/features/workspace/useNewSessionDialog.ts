@@ -2,23 +2,23 @@ import type { GitState, Project } from "@parasor/shared";
 import { useCallback, useMemo, useState } from "react";
 import { resolveWorktreeDirName } from "../../lib/worktree-dir-name.js";
 
-export interface ContainerDialogTarget {
+export interface NewSessionDialogTarget {
   projectId: string;
   worktreeId: string;
   worktreePath: string;
 }
 
-export interface ContainerDialogContext {
+export interface NewSessionDialogContext {
   project: { id: string; name: string; path: string };
   worktree: { id: string; name: string; path: string };
 }
 
-export interface ContainerDialogControl {
+export interface NewSessionDialogControl {
   /** Raw target -- non-null while the dialog should be visible. */
-  target: ContainerDialogTarget | null;
+  target: NewSessionDialogTarget | null;
   /** Resolved project + worktree dir-name context, or `null` when the
    * target's project cannot be found (treat as "do not render"). */
-  context: ContainerDialogContext | null;
+  context: NewSessionDialogContext | null;
   /** Open the dialog for the given worktree. `worktreeId` may carry a
    * `wt:` prefix from sidebar IDs -- the prefix is stripped before
    * setting `worktreePath`, matching the inline implementation. */
@@ -27,27 +27,27 @@ export interface ContainerDialogControl {
   close: () => void;
 }
 
-interface UseContainerDialogInput {
+interface UseNewSessionDialogInput {
   projects: readonly Project[];
   gitStates: Record<string, Record<string, GitState | null>>;
 }
 
 /**
- * "Open container" dialog state plus the project/worktree derivation that
- * feeds {@link OpenContainerDialog}. Pure aside from the {@link useState}
+ * "New session" dialog state plus the project/worktree derivation that
+ * feeds {@link NewSessionDialog}. Pure aside from the {@link useState}
  * hook -- the project lookup and `isRepo` resolution are reactive on the
- * passed {@link UseContainerDialogInput.projects} / `gitStates`.
+ * passed {@link UseNewSessionDialogInput.projects} / `gitStates`.
  *
  * The mobile sidebar-search close side-effect (visible at the original
  * call site) is intentionally NOT folded in here -- the caller drives it
  * after a successful {@link open} because it touches the sibling
  * `useSidebarSearch` hook.
  */
-export function useContainerDialog({
+export function useNewSessionDialog({
   projects,
   gitStates,
-}: UseContainerDialogInput): ContainerDialogControl {
-  const [target, setTarget] = useState<ContainerDialogTarget | null>(null);
+}: UseNewSessionDialogInput): NewSessionDialogControl {
+  const [target, setTarget] = useState<NewSessionDialogTarget | null>(null);
 
   const open = useCallback((projectId: string, worktreeId: string) => {
     const path = worktreeId.startsWith("wt:")
@@ -60,7 +60,7 @@ export function useContainerDialog({
     setTarget(null);
   }, []);
 
-  const context = useMemo<ContainerDialogContext | null>(() => {
+  const context = useMemo<NewSessionDialogContext | null>(() => {
     if (!target) return null;
     const project = projects.find((p) => p.id === target.projectId);
     if (!project) return null;

@@ -52,7 +52,7 @@ interface SortableProjectsProps {
     worktreeId: string,
     childId: string,
   ) => void;
-  onOpenContainer?: (projectId: string, worktreeId: string) => void;
+  onNewSession?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -75,7 +75,7 @@ export function SortableProjects({
   onReorderProjects,
   onSelectWorktree,
   onSelectChild,
-  onOpenContainer,
+  onNewSession,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -153,7 +153,7 @@ export function SortableProjects({
             selection={selection}
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
-            onOpenContainer={onOpenContainer}
+            onNewSession={onNewSession}
             onToggleChildPin={onToggleChildPin}
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}
@@ -174,7 +174,7 @@ interface SortableProjectItemProps {
     worktreeId: string,
     childId: string,
   ) => void;
-  onOpenContainer?: (projectId: string, worktreeId: string) => void;
+  onNewSession?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -194,7 +194,7 @@ function SortableProjectItem({
   selection,
   onSelectWorktree,
   onSelectChild,
-  onOpenContainer,
+  onNewSession,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -223,7 +223,7 @@ function SortableProjectItem({
         selection={selection}
         onSelectWorktree={onSelectWorktree}
         onSelectChild={onSelectChild}
-        onOpenContainer={onOpenContainer}
+        onNewSession={onNewSession}
         onToggleChildPin={onToggleChildPin}
         worktreeOpen={worktreeOpenByProject?.[project.id]}
         onWorktreeOpenChange={onWorktreeOpenChange}

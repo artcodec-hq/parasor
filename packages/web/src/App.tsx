@@ -17,8 +17,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommitDialog } from "./components/overlays/CommitDialog.js";
 import { MissingSessionRouteState } from "./components/overlays/MissingSessionRouteState.js";
-import { OpenContainerDialog } from "./components/overlays/OpenContainerDialog.js";
-import { ProjectModal } from "./components/overlays/ProjectModal.js";
+import { NewProjectDialog } from "./components/overlays/NewProjectDialog.js";
+import { NewSessionDialog } from "./components/overlays/NewSessionDialog.js";
 import { RemoveWorktreeDialog } from "./components/overlays/RemoveWorktreeDialog.js";
 import { RenameWorktreeDialog } from "./components/overlays/RenameWorktreeDialog.js";
 import { SessionErrorState } from "./components/overlays/SessionErrorState.js";
@@ -58,13 +58,13 @@ import {
   type ClosePaneTarget,
   useClosePaneDialog,
 } from "./features/workspace/useClosePaneDialog.js";
-import { useContainerDialog } from "./features/workspace/useContainerDialog.js";
 import { useErrorToast } from "./features/workspace/useErrorToast.js";
 import { useGitGraphSelectionForFocus } from "./features/workspace/useGitGraphSelectionForFocus.js";
 import { useGitWorkflow } from "./features/workspace/useGitWorkflow.js";
 import { useLegacyPaneCommandsMigration } from "./features/workspace/useLegacyPaneCommandsMigration.js";
 import { useLegacySidebarStateMigration } from "./features/workspace/useLegacySidebarStateMigration.js";
 import { useLocalIdeCapability } from "./features/workspace/useLocalIdeCapability.js";
+import { useNewSessionDialog } from "./features/workspace/useNewSessionDialog.js";
 import { useProjectReorder } from "./features/workspace/useProjectReorder.js";
 import { useReviewPendingSessions } from "./features/workspace/useReviewPendingSessions.js";
 import { useSidebarSearch } from "./features/workspace/useSidebarSearch.js";
@@ -119,7 +119,7 @@ export function App() {
     setFocusedPaneId,
   } = useWorkspacePreferences();
   const { navigate, route } = useWorkspaceRoute();
-  const [modalOpen, setModalOpen] = useState(false);
+  const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [monitorActive, setMonitorActive] = useState(false);
   const [errorToast, setErrorToast] = useErrorToast();
@@ -818,7 +818,7 @@ export function App() {
   });
 
   const handleNewProject = useCallback(() => {
-    setModalOpen(true);
+    setNewProjectDialogOpen(true);
   }, []);
 
   const {
@@ -1055,18 +1055,18 @@ export function App() {
     ],
   );
 
-  const containerDialog = useContainerDialog({
+  const newSessionDialog = useNewSessionDialog({
     projects: store.projects,
     gitStates: store.gitStates,
   });
-  const handleOpenContainer = useCallback(
+  const handleNewSession = useCallback(
     (projectId: string, worktreeId: string) => {
-      containerDialog.open(projectId, worktreeId);
+      newSessionDialog.open(projectId, worktreeId);
       if (isMobile) {
         handleCloseSidebarSearch();
       }
     },
-    [containerDialog.open, handleCloseSidebarSearch, isMobile],
+    [newSessionDialog.open, handleCloseSidebarSearch, isMobile],
   );
 
   const handleToggleSidebarChildPin = useCallback(
@@ -1114,7 +1114,7 @@ export function App() {
       onSelectMonitor: handleSelectMonitor,
       onSelectWorktree: handleSelectWorktree,
       onSelectChild: handleSelectChild,
-      onOpenContainer: handleOpenContainer,
+      onNewSession: handleNewSession,
       onToggleChildPin: handleToggleSidebarChildPin,
       worktreeOpenByProject,
       onWorktreeOpenChange: handleWorktreeOpenChange,
@@ -1144,7 +1144,7 @@ export function App() {
       handleSelectMonitor,
       handleSelectWorktree,
       handleSelectChild,
-      handleOpenContainer,
+      handleNewSession,
       handleToggleSidebarChildPin,
       worktreeOpenByProject,
       handleWorktreeOpenChange,
@@ -1165,8 +1165,8 @@ export function App() {
   // Capture into a local so TypeScript narrows it inside the dialog
   // callbacks (the inline arrow handlers below). Property access on the
   // hook object would lose narrowing through the closure boundary.
-  const containerDialogTarget = containerDialog.target;
-  const containerDialogContext = containerDialog.context;
+  const newSessionDialogTarget = newSessionDialog.target;
+  const newSessionDialogContext = newSessionDialog.context;
 
   const navigationSurface = <Sidebar {...sidebarProps} fill />;
   const routeSession =
@@ -1297,9 +1297,9 @@ export function App() {
           )}
         </div>
 
-        <ProjectModal
-          open={modalOpen}
-          onClose={() => setModalOpen(false)}
+        <NewProjectDialog
+          open={newProjectDialogOpen}
+          onClose={() => setNewProjectDialogOpen(false)}
           onCreate={(path, name) => {
             setMonitorActive(false);
             return createProject(path, name);
@@ -1348,23 +1348,23 @@ export function App() {
           />
         )}
 
-        {containerDialogTarget && containerDialogContext && (
-          <OpenContainerDialog
+        {newSessionDialogTarget && newSessionDialogContext && (
+          <NewSessionDialog
             open
-            project={containerDialogContext.project}
-            worktree={containerDialogContext.worktree}
+            project={newSessionDialogContext.project}
+            worktree={newSessionDialogContext.worktree}
             commands={paneCommands}
             commandConfigs={store.paneCommands}
             isMobile={isMobile}
             loadLocalFiles={loadWorktreeLocalFiles}
-            onClose={containerDialog.close}
+            onClose={newSessionDialog.close}
             onCommandsChange={updateCustomPaneCommands}
             onCreateWorktreeSession={(input) =>
-              createWorktreeSession(containerDialogTarget.projectId, input)
+              createWorktreeSession(newSessionDialogTarget.projectId, input)
             }
             onRunCommand={(path, command) =>
               runPaneCommandInWorktree(
-                containerDialogTarget.projectId,
+                newSessionDialogTarget.projectId,
                 path,
                 command,
               )

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect } from "react";
 import { MOBILE_VIEWPORT_GLOBALS } from "../../stories/storybook-viewports.js";
-import { ProjectModal } from "./ProjectModal.js";
+import { NewProjectDialog } from "./NewProjectDialog.js";
 
 const noop = () => undefined;
 
@@ -41,7 +41,7 @@ function installStoryFetchMock() {
   };
 }
 
-function ProjectModalStory({ isMobile = false }: { isMobile?: boolean }) {
+function NewProjectDialogStory({ isMobile = false }: { isMobile?: boolean }) {
   installStoryFetchMock();
 
   useEffect(() => {
@@ -49,7 +49,7 @@ function ProjectModalStory({ isMobile = false }: { isMobile?: boolean }) {
   }, []);
 
   return (
-    <ProjectModal open isMobile={isMobile} onClose={noop} onCreate={noop} />
+    <NewProjectDialog open isMobile={isMobile} onClose={noop} onCreate={noop} />
   );
 }
 
@@ -68,10 +68,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Desktop: Story = {
-  render: () => <ProjectModalStory />,
+  render: () => <NewProjectDialogStory />,
 };
 
 export const Mobile: Story = {
-  render: () => <ProjectModalStory isMobile />,
+  render: () => <NewProjectDialogStory isMobile />,
   globals: MOBILE_VIEWPORT_GLOBALS,
 };
