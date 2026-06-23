@@ -481,7 +481,7 @@ describe("ws/terminal -- capability negotiation", () => {
     expect(host.resumes).toEqual([{ id: "sess", clientId: "client" }]);
   });
 
-  it("blocks desktop input and resize while a mobile client owns the terminal", async () => {
+  it("blocks desktop input until a desktop resize claim reclaims the terminal", async () => {
     const manager = new TerminalPresenceManager({
       onEffects: (effects) => {
         for (const effect of effects) {
@@ -551,9 +551,9 @@ describe("ws/terminal -- capability negotiation", () => {
     );
 
     expect(host.writes).toEqual([]);
-    expect(host.resizes).toEqual([]);
+    expect(host.resizes).toEqual([{ id: "sess", cols: 120, rows: 40 }]);
+    expect(manager.get("sess").driver).toEqual({ kind: "desktop" });
 
-    manager.reclaimForDesktop("sess");
     await handleTerminalMessage(
       desktop,
       "sess",
@@ -564,7 +564,6 @@ describe("ws/terminal -- capability negotiation", () => {
       manager,
     );
 
-    expect(host.resizes).toEqual([{ id: "sess", cols: 120, rows: 40 }]);
     expect(host.writes).toEqual([
       { id: "sess", data: "allowed", generation: 1 },
     ]);
