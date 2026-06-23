@@ -697,6 +697,38 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     });
 
     expect(result[0]?.worktrees[1]?.lineage).toBe(lineage);
+    expect(result[0]?.worktrees[1]?.provenance).toBeUndefined();
+  });
+
+  it("marks inactive discovered worktrees without lineage as imported", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+        },
+        {
+          path: "/repos/p1/wt-external",
+          head: "def",
+          branch: "feature",
+        },
+      ],
+    };
+
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(result[0]?.worktrees[0]?.provenance).toBeUndefined();
+    expect(result[0]?.worktrees[1]?.provenance).toBe("imported");
   });
 
   it("merges projectWorktrees with matching session-derived cwds and marks missing paths orphan", () => {
@@ -1028,6 +1060,35 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
     });
 
     expect(result[0]?.worktrees[0]?.lineage).toBe(lineage);
+    expect(result[0]?.worktrees[0]?.provenance).toBeUndefined();
+  });
+
+  it("marks active discovered worktrees without lineage as imported", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      { path: "/repos/p1.worktrees/feat", panes: [] },
+    ];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1.worktrees/feat",
+          head: "abc",
+          branch: "feat",
+        },
+      ],
+    };
+
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(result[0]?.worktrees[0]?.provenance).toBe("imported");
   });
 
   it("falls back to zeroed counters when worktreesByProject omitted", () => {

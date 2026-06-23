@@ -239,8 +239,8 @@ describe("WorktreeRow agent / missing-path pills", () => {
     expect(screen.getByText("main").className).toContain("line-through");
   });
 
-  it("renders a linked pill when lineage metadata is present", () => {
-    const { getByLabelText } = render(
+  it("does not render a provenance pill for Parasor-created lineage metadata", () => {
+    const { queryByLabelText } = render(
       <WorktreeRow
         project={project}
         worktree={{
@@ -260,10 +260,21 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    const pill = getByLabelText("Linked worktree");
-    expect(pill.textContent).toBe("linked");
-    expect(pill.getAttribute("title")).toContain("parent: main");
-    expect(pill.getAttribute("title")).toContain("command: Dev");
+    expect(queryByLabelText("Imported worktree")).toBeNull();
+    expect(queryByLabelText("Linked worktree")).toBeNull();
+  });
+
+  it("renders an imported pill when provenance is imported", () => {
+    const { getByLabelText } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), provenance: "imported" }}
+        selection={selection}
+      />,
+    );
+    const pill = getByLabelText("Imported worktree");
+    expect(pill.textContent).toBe("imported");
+    expect(pill.getAttribute("title")).toBe("Created outside Parasor");
   });
 
   it("omits both pills when neither flag is set", () => {
@@ -275,7 +286,7 @@ describe("WorktreeRow agent / missing-path pills", () => {
       />,
     );
     expect(queryByLabelText("Agent worktree")).toBeNull();
-    expect(queryByLabelText("Linked worktree")).toBeNull();
+    expect(queryByLabelText("Imported worktree")).toBeNull();
     expect(queryByLabelText("Missing worktree")).toBeNull();
   });
 });

@@ -343,6 +343,11 @@ function buildActiveWorktrees({
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
+      ...worktreeProvenance({
+        isRoot,
+        meta,
+        orphan: wt.orphan === true || meta?.orphan === true,
+      }),
       ...(meta?.lineage ? { lineage: meta.lineage } : {}),
       ...(wt.orphan || meta?.orphan ? { orphan: true } : {}),
     };
@@ -501,10 +506,30 @@ function buildInactiveWorktrees({
       hasWorkingChild: children.some((c) => c.status === "working"),
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
+      ...worktreeProvenance({
+        isRoot,
+        meta,
+        orphan: meta?.orphan === true || isSyntheticOrphan,
+      }),
       ...(meta?.lineage ? { lineage: meta.lineage } : {}),
       ...(meta?.orphan || isSyntheticOrphan ? { orphan: true } : {}),
     };
   });
+}
+
+function worktreeProvenance({
+  isRoot,
+  meta,
+  orphan,
+}: {
+  isRoot: boolean;
+  meta: SidebarWorktreeCounters | undefined;
+  orphan: boolean;
+}): Pick<SidebarWorktree, "provenance"> {
+  if (!isRoot && meta && !orphan && !meta.origin && !meta.lineage) {
+    return { provenance: "imported" };
+  }
+  return {};
 }
 
 function inactiveSessionWorktreePath(
