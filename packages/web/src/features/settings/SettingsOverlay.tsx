@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { DialogRoot, PaGlyph } from "../../components/primitives/index.js";
+import {
+  DialogCloseButton,
+  DialogRoot,
+  PaGlyph,
+} from "../../components/primitives/index.js";
 import { useMediaQuery } from "../../hooks/useMediaQuery.js";
 import { useSettings } from "./SettingsProvider.js";
 import { FieldRow, useFilteredSettingsResults } from "./settings-search.js";
@@ -89,34 +93,78 @@ export function SettingsOverlay({
       widthClassName="w-surface-lg max-w-[96vw]"
       panelClassName={
         isDesktop
-          ? "flex h-[560px] max-h-[92vh] flex-row overflow-hidden text-text-primary"
+          ? "flex h-[560px] max-h-[92vh] flex-col overflow-hidden text-text-primary"
           : "min-h-0 flex-col pt-[env(safe-area-inset-top)] text-text-primary"
       }
     >
-      {showListPane && (
-        <ListPane
-          sections={sections}
-          activeId={activeId}
-          onSelect={setActiveId}
-          query={query}
-          onQueryChange={setQuery}
-          isDesktop={isDesktop}
-          isSearching={isSearching}
-          searchResults={searchResults}
-          onClose={onClose}
-        />
-      )}
-      {showDetailPane && (
-        <DetailPane
-          activeSection={activeSection}
-          isSearching={isSearching}
-          searchResults={searchResults}
-          onBack={isDesktop ? null : () => setActiveId(null)}
-          onClose={onClose}
-        />
-      )}
+      <SettingsHeader
+        title={
+          isDesktop
+            ? "Settings"
+            : activeId === null
+              ? "Settings"
+              : isSearching
+                ? "Search results"
+                : (activeSection?.label ?? "Settings")
+        }
+        onBack={
+          !isDesktop && activeId !== null ? () => setActiveId(null) : null
+        }
+        onClose={onClose}
+      />
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {showListPane && (
+          <ListPane
+            sections={sections}
+            activeId={activeId}
+            onSelect={setActiveId}
+            query={query}
+            onQueryChange={setQuery}
+            isDesktop={isDesktop}
+            isSearching={isSearching}
+            searchResults={searchResults}
+          />
+        )}
+        {showDetailPane && (
+          <DetailPane
+            activeSection={activeSection}
+            isDesktop={isDesktop}
+            isSearching={isSearching}
+            searchResults={searchResults}
+          />
+        )}
+      </div>
     </DialogRoot>,
     document.body,
+  );
+}
+
+function SettingsHeader({
+  title,
+  onBack,
+  onClose,
+}: {
+  title: string;
+  onBack: (() => void) | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex h-bar shrink-0 items-center gap-2 border-b border-border px-3">
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to sections"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-row-hover-bg hover:text-text-primary focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+        >
+          <PaGlyph.back />
+        </button>
+      )}
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
+        {title}
+      </span>
+      <DialogCloseButton onClick={onClose} />
+    </div>
   );
 }
 
@@ -129,7 +177,6 @@ interface ListPaneProps {
   isDesktop: boolean;
   isSearching: boolean;
   searchResults: ReturnType<typeof useFilteredSettingsResults>["searchResults"];
-  onClose: () => void;
 }
 
 function ListPane({
@@ -141,7 +188,6 @@ function ListPane({
   isDesktop,
   isSearching,
   searchResults,
-  onClose,
 }: ListPaneProps) {
   // Mobile when searching: render flat results inline (replacing the
   // section nav). Desktop: results land in the detail pane, so the
@@ -149,21 +195,8 @@ function ListPane({
   const showInlineResults = !isDesktop && isSearching;
 
   return (
-    <aside className="flex w-full min-w-0 flex-col md:w-[200px] md:shrink-0 md:border-r md:border-border">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:h-8 md:px-3">
-        <span className="flex-1 text-sm font-semibold text-text-primary">
-          Settings
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close settings"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-text-secondary hover:bg-row-hover-bg hover:text-text-primary md:hidden"
-        >
-          <PaGlyph.close />
-        </button>
-      </div>
-      <div className="px-3 pt-2 pb-1.5 md:px-2">
+    <aside className="flex w-full min-w-0 flex-col md:w-[220px] md:shrink-0 md:border-r md:border-border">
+      <div className="border-b border-border px-3 py-2 md:px-2.5">
         <label className="flex h-9 items-center gap-1.5 rounded-control border border-border bg-bg-tertiary px-2.5 text-text-secondary focus-within:border-accent md:h-7">
           <span aria-hidden className="inline-flex shrink-0">
             <PaGlyph.search />
@@ -181,7 +214,7 @@ function ListPane({
         {showInlineResults ? (
           <FlatResultsList results={searchResults} />
         ) : (
-          <nav className="px-1.5 pt-0.5">
+          <nav className="px-1.5 py-1.5">
             {sections.map((section) => {
               const active = section.id === activeId;
               return (
@@ -189,7 +222,7 @@ function ListPane({
                   key={section.id}
                   type="button"
                   onClick={() => onSelect(section.id)}
-                  className={`flex h-11 w-full items-center gap-2 rounded-control px-2.5 text-left text-sm text-text-primary md:h-7 ${
+                  className={`flex h-10 w-full items-center gap-2 rounded-control px-2.5 text-left text-sm text-text-primary md:h-8 ${
                     active
                       ? "bg-row-active-bg font-semibold"
                       : "font-normal hover:bg-row-hover-bg"
@@ -239,47 +272,19 @@ interface DetailPaneProps {
   activeSection:
     | ReturnType<typeof useFilteredSettingsResults>["sections"][number]
     | null;
+  isDesktop: boolean;
   isSearching: boolean;
   searchResults: ReturnType<typeof useFilteredSettingsResults>["searchResults"];
-  onBack: (() => void) | null;
-  onClose: () => void;
 }
 
 function DetailPane({
   activeSection,
+  isDesktop,
   isSearching,
   searchResults,
-  onBack,
-  onClose,
 }: DetailPaneProps) {
-  const headerLabel = isSearching
-    ? "Search results"
-    : (activeSection?.label ?? "Settings");
   return (
     <section className="flex min-w-0 min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2 md:h-8 md:gap-2 md:px-3">
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to sections"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
-          >
-            <PaGlyph.back />
-          </button>
-        )}
-        <span className="flex-1 truncate px-1 text-sm font-semibold text-text-primary md:px-0">
-          {headerLabel}
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close settings"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-text-secondary hover:bg-row-hover-bg hover:text-text-primary md:h-6 md:w-6"
-        >
-          <PaGlyph.close />
-        </button>
-      </header>
       <div className="cm-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-[max(env(safe-area-inset-bottom),1rem)] md:px-5">
         {isSearching ? (
           searchResults.length === 0 ? (
@@ -288,6 +293,11 @@ function DetailPane({
             </div>
           ) : (
             <div className="space-y-6">
+              {isDesktop && (
+                <div className="text-xs font-medium text-text-secondary">
+                  Search results
+                </div>
+              )}
               {searchResults.map(({ section, field }) => (
                 <div key={`${section.id}-${field.id}`} className="space-y-2">
                   <div className="text-xs uppercase tracking-[0.06em] text-text-secondary">
@@ -300,6 +310,11 @@ function DetailPane({
           )
         ) : activeSection ? (
           <div className="space-y-6">
+            {isDesktop && (
+              <div className="text-xs font-medium text-text-secondary">
+                {activeSection.label}
+              </div>
+            )}
             {activeSection.fields.map((field) => (
               <FieldRow key={field.id} field={field} />
             ))}

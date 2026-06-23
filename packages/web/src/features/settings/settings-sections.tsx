@@ -22,6 +22,7 @@ export interface SettingField {
   label: string;
   description?: string;
   keywords?: string[];
+  layout?: "row" | "block";
   render: () => ReactNode;
 }
 
@@ -78,8 +79,8 @@ export function useSettingsSections(
   return useMemo<SettingSection[]>(() => {
     const sections: SettingSection[] = [
       {
-        id: "theme",
-        label: "Theme",
+        id: "appearance",
+        label: "Appearance",
         fields: [
           {
             id: "color-theme",
@@ -87,6 +88,7 @@ export function useSettingsSections(
             description:
               "Choose a bundled theme or paste a VS Code--compatible color theme JSON.",
             keywords: ["theme", "color", "palette", "dark", "light"],
+            layout: "block",
             render: () => (
               <ThemePicker
                 value={themeId}
@@ -97,15 +99,9 @@ export function useSettingsSections(
               />
             ),
           },
-        ],
-      },
-      {
-        id: "font",
-        label: "Font",
-        fields: [
           {
             id: "ui-font-family",
-            label: "UI font family",
+            label: "UI font",
             description:
               "Custom font-family stack for chrome, sidebars, menus, dialogs, and controls. Leave empty to use the system font.",
             keywords: [
@@ -119,6 +115,7 @@ export function useSettingsSections(
               "controls",
               "system",
             ],
+            layout: "block",
             render: () => (
               <FontFamilyInput
                 value={uiFontFamily}
@@ -132,7 +129,7 @@ export function useSettingsSections(
           },
           {
             id: "ui-font-size",
-            label: "UI font size",
+            label: "UI size",
             description:
               "Base size for chrome, sidebars, menus, dialogs, and controls.",
             keywords: [
@@ -146,6 +143,7 @@ export function useSettingsSections(
               "sidebar",
               "controls",
             ],
+            layout: "row",
             render: () => (
               <FontSizeStepper
                 value={uiFontSize}
@@ -156,7 +154,7 @@ export function useSettingsSections(
           },
           {
             id: "font-preset",
-            label: "Content font preset",
+            label: "Content font",
             description:
               "Bundled OFL monospace font used by terminal and editor content. Downloaded from GitHub Releases on first use for CJK-aligned or Latin-optimized rendering.",
             keywords: [
@@ -174,6 +172,7 @@ export function useSettingsSections(
               "install",
               "download",
             ],
+            layout: "block",
             render: () => (
               <FontPresetPicker
                 selectedPresetId={fontPresetId}
@@ -183,7 +182,7 @@ export function useSettingsSections(
           },
           {
             id: "custom-font",
-            label: "Content custom font family",
+            label: "Content font override",
             description:
               "Custom monospace stack for terminal and editor content. Overrides the preset; leave empty to use the preset, or the default content stack when no preset is selected.",
             keywords: [
@@ -196,6 +195,7 @@ export function useSettingsSections(
               "hack",
               "nerd",
             ],
+            layout: "block",
             render: () => (
               <FontFamilyInput
                 value={customFontFamily}
@@ -207,7 +207,7 @@ export function useSettingsSections(
           },
           {
             id: "content-font-size",
-            label: "Content font size",
+            label: "Content size",
             description: "Base size for terminal and editor content.",
             keywords: [
               "font",
@@ -220,6 +220,7 @@ export function useSettingsSections(
               "editor",
               "code",
             ],
+            layout: "row",
             render: () => (
               <FontSizeStepper
                 value={contentFontSize}
@@ -231,34 +232,36 @@ export function useSettingsSections(
         ],
       },
       {
-        id: "sounds",
-        label: "Sounds",
+        id: "notifications",
+        label: "Notifications",
         fields: [
           {
             id: "attention-sound",
-            label: "Play sound when an agent needs attention",
+            label: "Attention sound",
             description:
               "Plays through the active browser tab when an agent enters a waiting state in a background project. Audio unlocks on first tap; mobile browsers may mute backgrounded tabs.",
             keywords: ["sound", "audio", "attention", "waiting", "notify"],
+            layout: "row",
             render: () => (
               <SettingToggle
                 checked={playAttentionSound}
                 onChange={setPlayAttentionSound}
-                label="Enable attention sound"
+                label="Enabled"
               />
             ),
           },
           {
             id: "completion-sound",
-            label: "Play sound when an agent completes",
+            label: "Completion sound",
             description:
               "Plays through the active browser tab when an agent finishes work in a background project. Audio unlocks on first tap; mobile browsers may mute backgrounded tabs.",
             keywords: ["sound", "audio", "completion", "done", "review"],
+            layout: "row",
             render: () => (
               <SettingToggle
                 checked={playCompletionSound}
                 onChange={setPlayCompletionSound}
-                label="Enable completion sound"
+                label="Enabled"
               />
             ),
           },
@@ -274,7 +277,7 @@ export function useSettingsSections(
     ) {
       systemFields.push({
         id: "prevent-idle-sleep",
-        label: "Prevent idle sleep while attached",
+        label: "Prevent idle sleep",
         description:
           "Keeps this Mac awake while a browser tab is connected so long-running agents are not interrupted by sleep. Uses `caffeinate -i`; released on last disconnect.",
         keywords: [
@@ -287,11 +290,12 @@ export function useSettingsSections(
           "display",
           "wake",
         ],
+        layout: "row",
         render: () => (
           <SettingToggle
             checked={serviceConfig.preventIdleSleep}
             onChange={onPreventIdleSleepChange}
-            label="Keep Mac awake while browser tabs are connected"
+            label="Enabled"
           />
         ),
       });
@@ -299,7 +303,7 @@ export function useSettingsSections(
     if (serviceConfig && onPortDetectionChange) {
       systemFields.push({
         id: "port-detection",
-        label: "Track dev server ports",
+        label: "Dev server ports",
         description:
           "Marks newly detected reachable ports in the sidebar network menu. Loopback-only ports are listed but cannot be opened from remote devices.",
         keywords: [
@@ -311,13 +315,14 @@ export function useSettingsSections(
           "iphone",
           "network",
         ],
+        layout: "row",
         render: () => (
           <SettingToggle
             checked={serviceConfig.portDetection === "all-interfaces"}
             onChange={(enabled) =>
               onPortDetectionChange(enabled ? "all-interfaces" : "off")
             }
-            label="Show a toast when a public dev server port is detected"
+            label="Enabled"
           />
         ),
       });
@@ -329,6 +334,7 @@ export function useSettingsSections(
         description:
           "Per-file cap for Terminal drop-to-upload. The server enforces a hard cap above this limit regardless of the setting.",
         keywords: ["upload", "drop", "file", "size", "limit", "quota", "cap"],
+        layout: "row",
         render: () => (
           <DropSizePicker
             valueBytes={serviceConfig.dropSizeMaxBytes}
@@ -340,19 +346,19 @@ export function useSettingsSections(
     }
     if (systemFields.length > 0) {
       sections.push({
-        id: "system",
-        label: "System",
+        id: "local-environment",
+        label: "Local environment",
         fields: systemFields,
       });
     }
     if (ideCommands && onIdeCommandsChange) {
       sections.push({
-        id: "ide",
-        label: "IDE",
+        id: "integrations",
+        label: "Integrations",
         fields: [
           {
             id: "ide-commands",
-            label: "Custom IDE commands",
+            label: "IDE commands",
             description:
               "Additional Open in IDE actions for worktree menus. Arguments are fixed argv entries, one per line; no shell is used.",
             keywords: [
@@ -366,6 +372,7 @@ export function useSettingsSections(
               "worktree",
               "open",
             ],
+            layout: "block",
             render: () => (
               <IdeCommandsEditor
                 commands={ideCommands}
