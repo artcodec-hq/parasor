@@ -36,8 +36,8 @@ interface CachedLineLinks {
 }
 
 const FILE_PATH_REGEX =
-  /(?:\/[A-Za-z0-9._@%+=:,~-]+(?:\/[A-Za-z0-9._@%+=:,~-]+)+|(?:\.\/|[A-Za-z0-9._@%+=,~-]+\/)[A-Za-z0-9._@%+=:,~/-]+)(?::\d+(?::\d+)?)?/g;
-const FILE_PATH_CHAR_REGEX = /[A-Za-z0-9._@%+=:,~/-]/;
+  /(?:\/[\p{L}\p{N}\p{M}._@%+=:,~-]+(?:\/[\p{L}\p{N}\p{M}._@%+=:,~-]+)+|(?:\.\/|[\p{L}\p{N}\p{M}._@%+=,~-]+\/)[\p{L}\p{N}\p{M}._@%+=:,~/-]+)(?::\d+(?::\d+)?)?/gu;
+const FILE_PATH_CHAR_REGEX = /[\p{L}\p{N}\p{M}._@%+=:,~/-]/u;
 const MAX_WRAPPED_LINK_LINES = 8;
 const LINK_CACHE_TTL_MS = 250;
 

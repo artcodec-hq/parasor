@@ -85,9 +85,9 @@ export function installShims(configDir: string): ShimPaths {
     );
   }
 
-  // Codex wrapper. Keep the integration app-contained by injecting
-  // per-process lifecycle hooks and a notify command. We do not read Codex
-  // TUI logs for status.
+  // Codex wrapper. Keep the integration app-contained by injecting per-process
+  // lifecycle hooks plus the runtime notify command. We do not bypass Codex
+  // hook trust or read TUI logs.
   const codexNotifyPath = join(binDir, CODEX_NOTIFY_SCRIPT_NAME);
   if (installCodexWrapper) {
     writeFileSync(codexNotifyPath, buildCodexNotifyBridge(), { mode: 0o755 });
@@ -162,7 +162,7 @@ async function notify(event) {
   if (!sessionId || !event) return;
   await post("/hook/debug", {
     sessionId,
-    label: "opencode-plugin-event",
+    label: "parasor-opencode-plugin-event",
     detail: event,
   });
   await post("/hook/notify", { sessionId, agent: AGENT, event });
@@ -208,8 +208,8 @@ export function buildCodexNotifyBridge(): string {
 #
 # Codex lifecycle hooks and runtime \`notify\` both provide a small JSON
 # payload. Current Codex builds pass notify payloads as argv[1]; hook payloads
-# may arrive as argv[1] or stdin depending on the hook path. Support both and
-# forward the event to parasor as a high-confidence Codex lifecycle signal.
+# arrive on stdin. Support both and forward the event to parasor as a
+# high-confidence Codex lifecycle signal.
 
 set -u
 
@@ -233,7 +233,7 @@ EVENT=$(field type)
 [ -z "$EVENT" ] && exit 0
 
 BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"agent\\":\\"codex\\",\\"event\\":\\"$EVENT\\"}"
-DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"codex-notify\\",\\"detail\\":\\"$EVENT\\"}"
+DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"parasor-codex-notify\\",\\"detail\\":\\"$EVENT\\"}"
 
 curl -s -X POST "http://127.0.0.1:$PARASOR_PORT/hook/debug" \\
   -H "Content-Type: application/json" \\
@@ -334,7 +334,7 @@ esac
 # Hand-built JSON body. Every value comes from a server-set env var
 # or one of Claude Code's enum strings, so there's no quoting hazard.
 BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"agent\\":\\"claude\\",\\"event\\":\\"$EVENT\\"}"
-DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"claude-hook-bridge\\",\\"detail\\":\\"$EVENT\\"}"
+DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"parasor-claude-hook-bridge\\",\\"detail\\":\\"$EVENT\\"}"
 
 curl -s -X POST "http://127.0.0.1:$PARASOR_PORT/hook/debug" \\
   -H "Content-Type: application/json" \\
@@ -476,7 +476,7 @@ if ! inside_parasor; then
   exec "$REAL_CLAUDE" "$@"
 fi
 
-DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"claude-wrapper-exec\\",\\"detail\\":\\"\${1:-}\\"}"
+DEBUG_BODY="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"parasor-claude-wrapper-exec\\",\\"detail\\":\\"\${1:-}\\"}"
 curl -s -X POST "http://127.0.0.1:$PARASOR_PORT/hook/debug" \\
   -H "Content-Type: application/json" \\
   -d "$DEBUG_BODY" \\
@@ -508,20 +508,35 @@ export function buildCodexWrapper(
   notifyScriptPath: string,
 ): string {
   const notifyConfig = JSON.stringify(["bash", notifyScriptPath]);
-  const hookCommand = shellSingleQuote(notifyScriptPath);
-  const hookHandler = `[{hooks=[{type="command",command=${JSON.stringify(
-    hookCommand,
-  )},timeout=5}]}]`;
+  const codexHooks = {
+    UserPromptSubmit: buildCodexHookHandler(
+      notifyScriptPath,
+      "parasor-codex-user-prompt-submit",
+    ),
+    PostToolUse: buildCodexHookHandler(
+      notifyScriptPath,
+      "parasor-codex-post-tool-use",
+    ),
+    PermissionRequest: buildCodexHookHandler(
+      notifyScriptPath,
+      "parasor-codex-permission-request",
+    ),
+    Stop: buildCodexHookHandler(notifyScriptPath, "parasor-codex-stop"),
+  };
 
   return `#!/usr/bin/env bash
 # parasor codex wrapper -- injects per-process Codex lifecycle hooks and
-# notify behavior without editing the user's ~/.codex files.
+# notify behavior without editing the user's ~/.codex files or bypassing hook
+# trust.
 
 set -u
 
 SHIM_DIR='${binDir}'
 NOTIFY_ARG='${notifyConfig.replace(/'/g, "'\\''")}'
-HOOK_HANDLER='${hookHandler.replace(/'/g, "'\\''")}'
+HOOK_USER_PROMPT_SUBMIT='${codexHooks.UserPromptSubmit.replace(/'/g, "'\\''")}'
+HOOK_POST_TOOL_USE='${codexHooks.PostToolUse.replace(/'/g, "'\\''")}'
+HOOK_PERMISSION_REQUEST='${codexHooks.PermissionRequest.replace(/'/g, "'\\''")}'
+HOOK_STOP='${codexHooks.Stop.replace(/'/g, "'\\''")}'
 
 find_real_codex() {
   local IFS=:
@@ -547,7 +562,7 @@ emit_debug() {
   [ -n "\${PARASOR_SESSION_ID:-}" ] || return 0
   local label
   local detail
-  label="\${1:-codex-wrapper-exec}"
+  label="\${1:-parasor-codex-wrapper-exec}"
   detail="\${2:-}"
   local body
   body="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"$label\\",\\"detail\\":\\"$detail\\"}"
@@ -561,16 +576,16 @@ emit_debug() {
 }
 
 if inside_parasor; then
-  emit_debug codex-wrapper-entry "\${1:-}"
-  emit_debug codex-wrapper-realpath-start
+  emit_debug parasor-codex-wrapper-entry "\${1:-}"
+  emit_debug parasor-codex-wrapper-realpath-start
 fi
 
 REAL_CODEX="$(find_real_codex)" || {
   echo 'parasor codex shim: real codex binary not found in PATH' >&2
-  emit_debug codex-wrapper-realpath missing
+  emit_debug parasor-codex-wrapper-realpath missing
   exit 127
 }
-emit_debug codex-wrapper-realpath found
+emit_debug parasor-codex-wrapper-realpath found
 
 case "\${1:-}" in
   exec|review|login|logout|mcp|marketplace|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|help|--help|-h|--version|-V)
@@ -582,22 +597,25 @@ if ! inside_parasor; then
   exec "$REAL_CODEX" "$@"
 fi
 
-emit_debug codex-wrapper-exec "\${1:-}"
+emit_debug parasor-codex-wrapper-exec "\${1:-}"
 
-emit_debug codex-wrapper-exec-start "\${1:-}"
-"$REAL_CODEX" --enable hooks \\
-  --dangerously-bypass-hook-trust \\
+emit_debug parasor-codex-wrapper-exec-start "\${1:-}"
+"$REAL_CODEX" \\
   -c "notify=$NOTIFY_ARG" \\
-  -c "hooks.UserPromptSubmit=$HOOK_HANDLER" \\
-  -c "hooks.PostToolUse=$HOOK_HANDLER" \\
-  -c "hooks.PermissionRequest=$HOOK_HANDLER" \\
-  -c "hooks.Stop=$HOOK_HANDLER" \\
+  -c "hooks.UserPromptSubmit=$HOOK_USER_PROMPT_SUBMIT" \\
+  -c "hooks.PostToolUse=$HOOK_POST_TOOL_USE" \\
+  -c "hooks.PermissionRequest=$HOOK_PERMISSION_REQUEST" \\
+  -c "hooks.Stop=$HOOK_STOP" \\
   "$@"
 PARASOR_CODEX_STATUS=$?
-emit_debug codex-wrapper-exit "$PARASOR_CODEX_STATUS"
+emit_debug parasor-codex-wrapper-exit "$PARASOR_CODEX_STATUS"
 
 exit "$PARASOR_CODEX_STATUS"
 `;
+}
+
+function buildCodexHookHandler(command: string, statusMessage: string): string {
+  return `[{hooks=[{type="command",command=${JSON.stringify(shellSingleQuote(command))},timeout=5,statusMessage=${JSON.stringify(statusMessage)}}]}]`;
 }
 
 function shellSingleQuote(value: string): string {
@@ -643,7 +661,7 @@ emit_debug() {
   [ -n "\${PARASOR_SESSION_ID:-}" ] || return 0
   local label
   local detail
-  label="\${1:-opencode-wrapper-exec}"
+  label="\${1:-parasor-opencode-wrapper-exec}"
   detail="\${2:-}"
   local body
   body="{\\"sessionId\\":\\"$PARASOR_SESSION_ID\\",\\"label\\":\\"$label\\",\\"detail\\":\\"$detail\\"}"
@@ -658,7 +676,7 @@ emit_debug() {
 
 REAL_OPENCODE="$(find_real_opencode)" || {
   echo 'parasor opencode shim: real opencode binary not found in PATH' >&2
-  emit_debug opencode-wrapper-realpath missing
+  emit_debug parasor-opencode-wrapper-realpath missing
   exit 127
 }
 
@@ -672,15 +690,15 @@ if ! inside_parasor; then
   exec "$REAL_OPENCODE" "$@"
 fi
 
-emit_debug opencode-wrapper-entry "\${1:-}"
+emit_debug parasor-opencode-wrapper-entry "\${1:-}"
 
 if [ -n "\${OPENCODE_CONFIG_DIR:-}" ] && [ "$OPENCODE_CONFIG_DIR" != "$PARASOR_OPENCODE_CONFIG_DIR" ]; then
-  emit_debug opencode-wrapper-config-dir-skip "$OPENCODE_CONFIG_DIR"
+  emit_debug parasor-opencode-wrapper-config-dir-skip "$OPENCODE_CONFIG_DIR"
   exec "$REAL_OPENCODE" "$@"
 fi
 
 export OPENCODE_CONFIG_DIR="$PARASOR_OPENCODE_CONFIG_DIR"
-emit_debug opencode-wrapper-config-dir "$OPENCODE_CONFIG_DIR"
+emit_debug parasor-opencode-wrapper-config-dir "$OPENCODE_CONFIG_DIR"
 exec "$REAL_OPENCODE" "$@"
 `;
 }

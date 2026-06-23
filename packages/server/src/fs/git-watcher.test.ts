@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   GitWatcher,
   parseGitPorcelain,
+  parseGitShortstat,
   parseGitStatusV2,
+  parseGitStatusV2WithFiles,
 } from "./git-watcher.js";
 
 const GIT_IDENTITY_ENV = {
@@ -71,6 +73,37 @@ describe("GitWatcher", () => {
     expect(state?.dirty).toBe(true);
   });
 
+  it("returns tracked line stats for modified dirty repo", async () => {
+    execFileSync("git", ["init"], { cwd: root });
+    execFileSync("git", ["checkout", "-b", "main"], { cwd: root });
+    writeFileSync(join(root, "file.txt"), "hello\nworld\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "init", "--no-gpg-sign"], {
+      cwd: root,
+    });
+    writeFileSync(join(root, "file.txt"), "hello\nworld\nagain\n");
+
+    const state = await watcher.check(root);
+    expect(state?.dirty).toBe(true);
+    expect(state?.addedLines).toBe(1);
+    expect(state?.deletedLines).toBe(0);
+  });
+
+  it("does not expose line stats for clean repo", async () => {
+    execFileSync("git", ["init"], { cwd: root });
+    execFileSync("git", ["checkout", "-b", "main"], { cwd: root });
+    writeFileSync(join(root, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "init", "--no-gpg-sign"], {
+      cwd: root,
+    });
+
+    const state = await watcher.check(root);
+    expect(state?.dirty).toBe(false);
+    expect(state?.addedLines).toBeUndefined();
+    expect(state?.deletedLines).toBeUndefined();
+  });
+
   it("detects branch after switch", async () => {
     execFileSync("git", ["init"], { cwd: root });
     execFileSync("git", ["checkout", "-b", "main"], { cwd: root });
@@ -100,6 +133,21 @@ describe("GitWatcher", () => {
     expect(state?.fileStatuses).toBeDefined();
     expect(state?.fileStatuses?.["file.txt"]).toBe("M");
     expect(state?.fileStatuses?.["new.txt"]).toBe("?");
+    expect(state?.changes).toEqual([
+      {
+        path: "file.txt",
+        area: "unstaged",
+        status: "modified",
+        code: "M",
+        worktreeStatus: "M",
+      },
+      {
+        path: "new.txt",
+        area: "untracked",
+        status: "untracked",
+        code: "?",
+      },
+    ]);
   });
 
   it("returns no fileStatuses for clean repo", async () => {
@@ -113,6 +161,7 @@ describe("GitWatcher", () => {
 
     const state = await watcher.check(root);
     expect(state?.fileStatuses).toBeUndefined();
+    expect(state?.changes).toBeUndefined();
   });
 });
 
@@ -172,6 +221,21 @@ describe("GitWatcher.checkAndDiff", () => {
     writeFileSync(join(root, "another.txt"), "new");
     const { changed } = await watcher.checkAndDiff("proj1", root);
     expect(changed).toBe(true);
+  });
+
+  it("returns changed=true when line stats change without status count changes", async () => {
+    writeFileSync(join(root, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "-m", "newline", "--no-gpg-sign"], {
+      cwd: root,
+    });
+    writeFileSync(join(root, "file.txt"), "hello\none\n");
+    await watcher.checkAndDiff("proj1", root);
+    writeFileSync(join(root, "file.txt"), "hello\none\ntwo\n");
+    const { state, changed } = await watcher.checkAndDiff("proj1", root);
+    expect(changed).toBe(true);
+    expect(state?.addedLines).toBe(2);
+    expect(state?.deletedLines).toBe(0);
   });
 
   it("caches state per projectId independently", async () => {
@@ -409,5 +473,116 @@ describe("parseGitStatusV2", () => {
       behind: undefined,
       dirtyCount: 0,
     });
+  });
+});
+
+describe("parseGitShortstat", () => {
+  it("parses additions and deletions", () => {
+    expect(
+      parseGitShortstat("2 files changed, 10 insertions(+), 3 deletions(-)"),
+    ).toEqual({ addedLines: 10, deletedLines: 3 });
+  });
+
+  it("parses singular insertion and deletion", () => {
+    expect(
+      parseGitShortstat("1 file changed, 1 insertion(+), 1 deletion(-)"),
+    ).toEqual({ addedLines: 1, deletedLines: 1 });
+  });
+
+  it("defaults missing additions or deletions to zero", () => {
+    expect(parseGitShortstat("1 file changed, 4 insertions(+)")).toEqual({
+      addedLines: 4,
+      deletedLines: 0,
+    });
+    expect(parseGitShortstat("1 file changed, 2 deletions(-)")).toEqual({
+      addedLines: 0,
+      deletedLines: 2,
+    });
+    expect(parseGitShortstat("")).toEqual({ addedLines: 0, deletedLines: 0 });
+  });
+});
+
+describe("parseGitStatusV2WithFiles", () => {
+  it("returns structured changes while preserving compact fileStatuses", () => {
+    const input = [
+      "# branch.head main",
+      "# branch.ab +1 -2",
+      "1 .M N... 100644 100644 100644 abc def src/unstaged.ts",
+      "1 M. N... 100644 100644 100644 abc def src/staged.ts",
+      "? src/new.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitStatusV2WithFiles(input)).toEqual({
+      branch: "main",
+      ahead: 1,
+      behind: 2,
+      dirtyCount: 3,
+      fileStatuses: {
+        "src/unstaged.ts": "M",
+        "src/staged.ts": "M",
+        "src/new.ts": "?",
+      },
+      changes: [
+        {
+          path: "src/unstaged.ts",
+          area: "unstaged",
+          status: "modified",
+          code: "M",
+          worktreeStatus: "M",
+        },
+        {
+          path: "src/staged.ts",
+          area: "staged",
+          status: "modified",
+          code: "M",
+          indexStatus: "M",
+        },
+        {
+          path: "src/new.ts",
+          area: "untracked",
+          status: "untracked",
+          code: "?",
+        },
+      ],
+    });
+  });
+
+  it("keeps oldPath for renames", () => {
+    const input = [
+      "2 R. N... 100644 100644 100644 abc def R100 src/new.ts",
+      "src/old.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitStatusV2WithFiles(input).changes).toEqual([
+      {
+        path: "src/new.ts",
+        area: "staged",
+        status: "renamed",
+        code: "R",
+        oldPath: "src/old.ts",
+        indexStatus: "R",
+      },
+    ]);
+  });
+
+  it("marks unmerged entries as conflicts", () => {
+    const input = [
+      "u UU N... 100644 100644 100644 100644 abc def 123 src/conflict.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitStatusV2WithFiles(input).changes).toEqual([
+      {
+        path: "src/conflict.ts",
+        area: "unstaged",
+        status: "conflict",
+        code: "U",
+        conflict: true,
+        indexStatus: "U",
+        worktreeStatus: "U",
+      },
+    ]);
   });
 });

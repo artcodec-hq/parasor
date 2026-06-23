@@ -31,7 +31,7 @@ interface ErrorMessage {
  * Empty-pane error state shown when a session ended under conditions
  * that are not safe to auto-resume (server crash / unknown custom
  * command side-effects). Replaces the previous centered "Session ended"
- * modal: non-resumable cases warrant a full-pane error surface.
+ * dialog: non-resumable cases warrant a full-pane error surface.
  * Tone bar + uppercase tag + title/body + buttons.
  */
 export function SessionErrorState({

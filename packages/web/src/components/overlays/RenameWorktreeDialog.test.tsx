@@ -35,7 +35,7 @@ describe("RenameWorktreeDialog", () => {
     expect(input.value).toBe("feat/a");
   });
 
-  it("renders as an accessible modal dialog", () => {
+  it("renders as an accessible dialog", () => {
     render(
       <RenameWorktreeDialog
         open={true}

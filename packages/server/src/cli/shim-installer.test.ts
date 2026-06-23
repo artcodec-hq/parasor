@@ -71,7 +71,10 @@ describe("buildClaudeHookBridge", () => {
 });
 
 describe("buildClaudeWrapper", () => {
-  const script = buildClaudeWrapper("/tmp/parasor/bin", "/tmp/parasor/hook.sh");
+  const script = buildClaudeWrapper(
+    "/tmp/parasor/bin",
+    "/tmp/parasor/parasor-claude-hook.sh",
+  );
 
   it("subscribes to explicit permission and elicitation events", () => {
     expect(script).toContain("PermissionRequest");
@@ -81,7 +84,7 @@ describe("buildClaudeWrapper", () => {
   });
 
   it("emits a wrapper execution breadcrumb to /hook/debug", () => {
-    expect(script).toContain("claude-wrapper-exec");
+    expect(script).toContain("parasor-claude-wrapper-exec");
     expect(script).toContain("/hook/debug");
   });
 
@@ -115,44 +118,63 @@ describe("buildCodexNotifyBridge", () => {
     expect(script).toContain("EVENT=$(field type)");
     expect(script).toContain("EVENT=$(field event)");
     expect(script).toContain("EVENT=$(field hook_event_name)");
+    expect(script).not.toContain("EVENT=$(field method)");
   });
 });
 
 describe("buildCodexWrapper", () => {
   const script = buildCodexWrapper(
     "/tmp/parasor/bin",
-    "/tmp/parasor/codex-notify.sh",
+    "/tmp/parasor/parasor-codex-notify.sh",
   );
 
   it("does not read Codex TUI session logs for lifecycle state", () => {
     expect(script).not.toContain("CODEX_TUI_RECORD_SESSION");
     expect(script).not.toContain("CODEX_TUI_SESSION_LOG_PATH");
     expect(script).not.toContain("start_session_log_watcher");
-    expect(script).not.toContain("codex-wrapper-session-log-event");
+    expect(script).not.toContain("parasor-codex-wrapper-session-log-event");
   });
 
   it("injects a per-process notify command instead of editing ~/.codex", () => {
     expect(script).toContain(
-      `NOTIFY_ARG='["bash","/tmp/parasor/codex-notify.sh"]'`,
+      `NOTIFY_ARG='["bash","/tmp/parasor/parasor-codex-notify.sh"]'`,
     );
     expect(script).toContain('-c "notify=$NOTIFY_ARG"');
   });
 
-  it("injects per-process lifecycle hooks without persisted hook trust", () => {
-    expect(script).toContain("HOOK_HANDLER=");
-    expect(script).toContain("--dangerously-bypass-hook-trust");
-    expect(script).toContain('-c "hooks.UserPromptSubmit=$HOOK_HANDLER"');
-    expect(script).toContain('-c "hooks.PostToolUse=$HOOK_HANDLER"');
-    expect(script).toContain('-c "hooks.PermissionRequest=$HOOK_HANDLER"');
-    expect(script).toContain('-c "hooks.Stop=$HOOK_HANDLER"');
+  it("injects per-process lifecycle hooks without bypassing hook trust", () => {
+    expect(script).toContain("HOOK_USER_PROMPT_SUBMIT=");
+    expect(script).toContain(
+      '-c "hooks.UserPromptSubmit=$HOOK_USER_PROMPT_SUBMIT"',
+    );
+    expect(script).toContain('-c "hooks.PostToolUse=$HOOK_POST_TOOL_USE"');
+    expect(script).toContain(
+      '-c "hooks.PermissionRequest=$HOOK_PERMISSION_REQUEST"',
+    );
+    expect(script).toContain('-c "hooks.Stop=$HOOK_STOP"');
+    expect(script).toContain("statusMessage");
+    expect(script).toContain("parasor-codex-user-prompt-submit");
+    expect(script).toContain("parasor-codex-permission-request");
+    expect(script).not.toContain("--dangerously-bypass-hook-trust");
+  });
+
+  it("shell-quotes Codex hook command paths", () => {
+    const spacedScript = buildCodexWrapper(
+      "/tmp/parasor bin",
+      "/tmp/parasor dir/parasor-codex-notify.sh",
+    );
+
+    expect(spacedScript).toContain(
+      `command="'\\''/tmp/parasor dir/parasor-codex-notify.sh'\\''"`,
+    );
   });
 
   it("emits wrapper lifecycle breadcrumbs without raw session-log lines", () => {
-    expect(script).toContain("codex-wrapper-entry");
-    expect(script).toContain("codex-wrapper-realpath");
-    expect(script).toContain("codex-wrapper-realpath-start");
-    expect(script).toContain("codex-wrapper-exec-start");
-    expect(script).toContain("codex-wrapper-exit");
+    expect(script).toContain("parasor-codex-wrapper-entry");
+    expect(script).toContain("parasor-codex-wrapper-realpath");
+    expect(script).toContain("parasor-codex-wrapper-realpath-start");
+    expect(script).toContain("parasor-codex-wrapper-exec-start");
+    expect(script).toContain("parasor-codex-wrapper-exit");
     expect(script).toContain("--connect-timeout 1");
     expect(script).toContain("--max-time 2");
     expect(script).not.toContain('\\"detail\\":\\"$line\\"');
@@ -167,7 +189,7 @@ describe("buildOpenCodePlugin", () => {
     expect(script).toContain("FORWARDED_EVENTS");
     expect(script).toContain("/hook/notify");
     expect(script).toContain("/hook/debug");
-    expect(script).toContain("opencode-plugin-event");
+    expect(script).toContain("parasor-opencode-plugin-event");
     expect(script).not.toContain("JSON.stringify(event)");
   });
 
@@ -207,12 +229,12 @@ describe("buildOpenCodeWrapper", () => {
   it("does not overwrite a user-provided OPENCODE_CONFIG_DIR", () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting literal shell parameter expansion in generated wrapper.
     expect(script).toContain('if [ -n "${OPENCODE_CONFIG_DIR:-}" ]');
-    expect(script).toContain("opencode-wrapper-config-dir-skip");
+    expect(script).toContain("parasor-opencode-wrapper-config-dir-skip");
   });
 
   it("emits wrapper lifecycle breadcrumbs", () => {
-    expect(script).toContain("opencode-wrapper-entry");
-    expect(script).toContain("opencode-wrapper-config-dir");
+    expect(script).toContain("parasor-opencode-wrapper-entry");
+    expect(script).toContain("parasor-opencode-wrapper-config-dir");
     expect(script).toContain("--connect-timeout 1");
     expect(script).toContain("--max-time 2");
   });

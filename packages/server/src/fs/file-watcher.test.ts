@@ -2,7 +2,7 @@ import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FileWatcher } from "./file-watcher.js";
+import { type FileChangeBatch, FileWatcher } from "./file-watcher.js";
 
 type WatchEvent = {
   type: "create" | "update" | "delete";
@@ -35,6 +35,11 @@ function emit(event: WatchEvent) {
   watcherMock.callback(null, [event]);
 }
 
+function emitMany(events: WatchEvent[]) {
+  if (!watcherMock.callback) throw new Error("watcher not started");
+  watcherMock.callback(null, events);
+}
+
 describe("FileWatcher", () => {
   let root: string;
 
@@ -55,56 +60,93 @@ describe("FileWatcher", () => {
   });
 
   it("emits create event on file add", async () => {
-    const events: Array<{ event: string; path: string }> = [];
-    const watcher = new FileWatcher(root, (e, p) =>
-      events.push({ event: e, path: p }),
-    );
+    const batches: FileChangeBatch[] = [];
+    const watcher = new FileWatcher(root, (batch) => batches.push(batch));
     await watcher.start();
 
     writeFileSync(join(root, "new.txt"), "new content");
     emit({ type: "create", path: join(root, "new.txt") });
-    await vi.advanceTimersByTimeAsync(301);
+    await vi.advanceTimersByTimeAsync(151);
     await watcher.stop();
 
-    const addEvent = events.find(
+    const addEvent = batches[0]?.events.find(
       (e) => e.path === "new.txt" && e.event === "create",
     );
     expect(addEvent).toBeDefined();
+    expect(batches[0]?.count).toBe(1);
   });
 
   it("emits update event on file modify", async () => {
-    const events: Array<{ event: string; path: string }> = [];
-    const watcher = new FileWatcher(root, (e, p) =>
-      events.push({ event: e, path: p }),
-    );
+    const batches: FileChangeBatch[] = [];
+    const watcher = new FileWatcher(root, (batch) => batches.push(batch));
     await watcher.start();
 
     writeFileSync(join(root, "existing.txt"), "modified");
     emit({ type: "update", path: join(root, "existing.txt") });
-    await vi.advanceTimersByTimeAsync(301);
+    await vi.advanceTimersByTimeAsync(151);
     await watcher.stop();
 
-    const changeEvent = events.find(
+    const changeEvent = batches[0]?.events.find(
       (e) => e.path === "existing.txt" && e.event === "update",
     );
     expect(changeEvent).toBeDefined();
   });
 
+  it("batches multiple file events into one callback", async () => {
+    const batches: FileChangeBatch[] = [];
+    const watcher = new FileWatcher(root, (batch) => batches.push(batch));
+    await watcher.start();
+
+    emitMany([
+      { type: "create", path: join(root, "a.txt") },
+      { type: "update", path: join(root, "existing.txt") },
+    ]);
+    await vi.advanceTimersByTimeAsync(151);
+    await watcher.stop();
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({
+      overflow: false,
+      count: 2,
+      events: [
+        { event: "create", path: "a.txt" },
+        { event: "update", path: "existing.txt" },
+      ],
+    });
+  });
+
+  it("emits a single overflow batch for very large event bursts", async () => {
+    const batches: FileChangeBatch[] = [];
+    const watcher = new FileWatcher(root, (batch) => batches.push(batch));
+    await watcher.start();
+
+    emitMany(
+      Array.from({ length: 5001 }, () => ({
+        type: "update",
+        path: join(root, "existing.txt"),
+      })),
+    );
+    await vi.advanceTimersByTimeAsync(151);
+    await watcher.stop();
+
+    expect(batches).toEqual([{ events: [], overflow: true, count: 5001 }]);
+  });
+
   it("ignores .git directory changes", async () => {
     mkdirSync(join(root, ".git"), { recursive: true });
 
-    const events: Array<{ event: string; path: string }> = [];
-    const watcher = new FileWatcher(root, (e, p) =>
-      events.push({ event: e, path: p }),
-    );
+    const batches: FileChangeBatch[] = [];
+    const watcher = new FileWatcher(root, (batch) => batches.push(batch));
     await watcher.start();
 
     writeFileSync(join(root, ".git", "COMMIT_EDITMSG"), "data");
     emit({ type: "create", path: join(root, ".git", "COMMIT_EDITMSG") });
-    await vi.advanceTimersByTimeAsync(301);
+    await vi.advanceTimersByTimeAsync(151);
     await watcher.stop();
 
-    const gitEvents = events.filter((e) => e.path.startsWith(".git"));
+    const gitEvents = batches.flatMap((batch) =>
+      batch.events.filter((e) => e.path.startsWith(".git")),
+    );
     expect(gitEvents).toHaveLength(0);
   });
 

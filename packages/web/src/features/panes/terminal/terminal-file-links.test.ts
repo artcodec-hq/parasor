@@ -40,6 +40,18 @@ describe("terminal file path links", () => {
     ).toBe("packages/web/src/App.tsx");
   });
 
+  it("resolves relative paths containing Japanese characters", () => {
+    expect(
+      resolveTerminalFilePath("src/日本語/設定.test.ts:12:3", "/repo"),
+    ).toBe("src/日本語/設定.test.ts");
+  });
+
+  it("resolves absolute paths containing Japanese characters", () => {
+    expect(
+      resolveTerminalFilePath("/repo/src/日本語/設定.test.ts:12:3", "/repo"),
+    ).toBe("src/日本語/設定.test.ts");
+  });
+
   it("rejects URLs and absolute paths outside the worktree", () => {
     expect(resolveTerminalFilePath("https://example.com/a.ts", "/repo")).toBe(
       null,
@@ -66,6 +78,58 @@ describe("terminal file path links", () => {
         length: 27,
       },
     ]);
+  });
+
+  it("links file path hits containing Japanese wide cells", () => {
+    const line = makeBufferLine([
+      ...cellsFromText("see "),
+      ...Array.from("src/日本語/設定.test.ts:12").flatMap((chars) =>
+        /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(chars)
+          ? [
+              { chars, width: 2 },
+              { chars: "", width: 0 },
+            ]
+          : [{ chars, width: 1 }],
+      ),
+    ]);
+
+    const hits = findFilePathHitsInLine(line as never, "/repo");
+
+    expect(hits).toEqual([
+      {
+        text: "src/日本語/設定.test.ts:12",
+        filePath: "src/日本語/設定.test.ts",
+        startCol: 4,
+        length: 26,
+      },
+    ]);
+  });
+
+  it("provides clickable links for paths containing Japanese characters", () => {
+    const opened: string[] = [];
+    const lines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("see src/日本語/設定.test.ts:12:3"))],
+    ]);
+    const provider = createTerminalFileLinkProvider(
+      (lineNumber) => lines.get(lineNumber) as never,
+      () => "/repo",
+      (filePath) => opened.push(filePath),
+    );
+
+    let links: unknown[] | undefined;
+    provider.provideLinks(1, (provided) => {
+      links = provided as unknown[] | undefined;
+    });
+    const link = links?.[0] as
+      | {
+          text: string;
+          activate: () => void;
+        }
+      | undefined;
+
+    expect(link?.text).toBe("src/日本語/設定.test.ts:12:3");
+    link?.activate();
+    expect(opened).toEqual(["src/日本語/設定.test.ts"]);
   });
 
   it("links paths that wrap across terminal buffer lines", () => {

@@ -59,18 +59,18 @@ vi.mock("./components/sidebar/index.js", () => ({
   buildSidebarProjects: ({ projects }: { projects: Project[] }) => projects,
   readClientBrowserChildPanes: () => ({}),
   Sidebar: ({
-    onOpenContainer,
+    onNewSession,
   }: {
-    onOpenContainer?: (projectId: string, worktreeId: string) => void;
+    onNewSession?: (projectId: string, worktreeId: string) => void;
   }) => (
-    <button type="button" onClick={() => onOpenContainer?.("p1", "wt:/repo")}>
+    <button type="button" onClick={() => onNewSession?.("p1", "wt:/repo")}>
       open terminal launcher
     </button>
   ),
 }));
 
-vi.mock("./components/overlays/OpenContainerDialog.js", () => ({
-  OpenContainerDialog: ({
+vi.mock("./components/overlays/NewSessionDialog.js", () => ({
+  NewSessionDialog: ({
     commands,
     onCommandsChange,
     onRunCommand,
@@ -116,8 +116,8 @@ vi.mock("./components/overlays/CommitDialog.js", () => ({
 vi.mock("./components/overlays/NewWorktreeDialog.js", () => ({
   NewWorktreeDialog: () => null,
 }));
-vi.mock("./components/overlays/ProjectModal.js", () => ({
-  ProjectModal: () => null,
+vi.mock("./components/overlays/NewProjectDialog.js", () => ({
+  NewProjectDialog: () => null,
 }));
 vi.mock("./components/overlays/RemoveWorktreeDialog.js", () => ({
   RemoveWorktreeDialog: () => null,

@@ -17,6 +17,7 @@ import { createFontRoutes } from "../fonts/routes.js";
 import type { FilesystemService } from "../fs/service.js";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import type { PtyHost } from "../pty/host.js";
+import type { TerminalPresenceManager } from "../pty/terminal-presence-manager.js";
 import { createDebugAgentStatusRoute } from "../routes/debug-agent-status.js";
 import { createDebugDiagnosticsRoute } from "../routes/debug-diagnostics.js";
 import { createDebugTerminalTraceRoute } from "../routes/debug-terminal-trace.js";
@@ -68,6 +69,7 @@ export interface CreateAppServerDeps {
   getAgentStates: () => Record<string, AgentState>;
   debugRecorder: AgentStatusRecorder;
   terminalTraceRecorder: TerminalTraceRecorder;
+  terminalPresenceManager?: TerminalPresenceManager;
   eventBus: EventBus;
   projectManager: ProjectManager;
   appStateStore: AppStateStore;
@@ -102,6 +104,7 @@ export function createAppServer({
   getAgentStates,
   debugRecorder,
   terminalTraceRecorder,
+  terminalPresenceManager,
   eventBus,
   projectManager,
   appStateStore,
@@ -256,6 +259,7 @@ export function createAppServer({
       projectManager,
       projectRuntime,
       ptyManager,
+      terminalPresenceManager,
       serverVersion,
       worktreeCache,
     }),
@@ -309,6 +313,7 @@ export function createAppServer({
             ptyManager,
             event,
             terminalTraceRecorder,
+            terminalPresenceManager,
           );
         },
         onClose() {
@@ -321,6 +326,7 @@ export function createAppServer({
               clientId,
               ptyManager,
               terminalTraceRecorder,
+              terminalPresenceManager,
             );
           }
         },

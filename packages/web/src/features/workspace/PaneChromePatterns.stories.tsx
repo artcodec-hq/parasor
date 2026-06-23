@@ -9,6 +9,7 @@ import {
   PaneIconButton,
 } from "../../components/primitives/index.js";
 import type { PaMenuItem } from "../../components/primitives/PaMenu.js";
+import { PinToggleButton } from "./views/PinToggleButton.js";
 
 const noop = () => undefined;
 
@@ -93,20 +94,10 @@ export const TerminalHeader: Story = {
           titleAttr="codex"
           actions={
             <>
-              <PaneIconButton
-                label={pinned ? "Unpin from Monitor" : "Pin to Monitor"}
-                title={
-                  pinned
-                    ? "Pinned to Monitor - click to unpin"
-                    : "Pin to Monitor"
-                }
-                size="md"
-                tone={pinned ? "accent" : "normal"}
-                pressed={pinned}
-                onClick={() => setPinned((value) => !value)}
-              >
-                <PaGlyph.pin />
-              </PaneIconButton>
+              <PinToggleButton
+                pinned={pinned}
+                onToggle={() => setPinned((value) => !value)}
+              />
               <PaneIconButton
                 label="Close pane"
                 title="Close pane"

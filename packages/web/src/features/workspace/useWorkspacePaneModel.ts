@@ -17,10 +17,10 @@ import { useMemo } from "react";
  *
  * Derivation rules:
  * - one `WorktreePanes` per entry from the AppStore-hydrated worktrees
- *   map (fallback: a single group at `projectPath` when empty), plus
- *   session cwd rows that are outside the known worktree list so active and
- *   inactive project sidebar projections do not disagree while worktree
- *   discovery is stale.
+ *   map (fallback: a single group at `projectPath` when empty). Session cwd
+ *   rows outside a server-reported snapshot stay visible as orphan groups so
+ *   the user can close their remaining sessions without treating the path as
+ *   a live worktree.
  * - `files`/`git` singletons are auto-inserted per worktree via
  *   `ensureSingletons`
  * - each live session -> one `terminal` pane with deterministic id
@@ -83,10 +83,16 @@ export function useWorkspacePaneModel({
     }
 
     const projectSessions = sessions.filter((s) => s.projectId === projectId);
-    const paths = resolveWorktreePaths(worktrees, projectPath, projectSessions);
+    const worktreePaths = resolveWorktreePaths(
+      worktrees,
+      projectPath,
+      projectSessions,
+    );
+    const paths = worktreePaths.map((wt) => wt.path);
 
-    const groups: WorktreePanes[] = paths.map((path) => ({
-      path,
+    const groups: WorktreePanes[] = worktreePaths.map((wt) => ({
+      path: wt.path,
+      ...(wt.orphan ? { orphan: true } : {}),
       panes: [],
     }));
 
@@ -101,6 +107,7 @@ export function useWorkspacePaneModel({
 
     if (clientBrowserPanes) {
       for (const group of groups) {
+        if (group.orphan) continue;
         const entries = clientBrowserPanes[group.path];
         if (!entries) continue;
         for (const entry of entries) {
@@ -110,7 +117,9 @@ export function useWorkspacePaneModel({
     }
 
     for (const group of groups) {
-      group.panes = sortPanesForList(ensureSingletons(group.path, group.panes));
+      group.panes = group.orphan
+        ? sortPanesForList(group.panes)
+        : sortPanesForList(ensureSingletons(group.path, group.panes));
     }
 
     const allPanes = groups.flatMap((g) => g.panes);
@@ -140,22 +149,27 @@ export function useWorkspacePaneModel({
   ]);
 }
 
+interface ResolvedWorktreePath {
+  path: string;
+  orphan?: boolean;
+}
+
 function resolveWorktreePaths(
   worktrees: Worktree[],
   projectPath: string,
   sessions: Session[],
-): string[] {
+): ResolvedWorktreePath[] {
   // Ensure projectPath (main worktree) is first, then linked worktrees.
   // `git worktree list --porcelain` already orders it that way but guard
   // against divergence defensively.
-  const ordered =
+  const ordered: Worktree[] =
     worktrees.length > 0
       ? [...worktrees]
       : [
           {
             path: projectPath,
             head: "",
-            branch: null,
+            branch: "",
             ahead: 0,
             behind: 0,
             dirtyCount: 0,
@@ -166,12 +180,23 @@ function resolveWorktreePaths(
     if (b.path === projectPath) return 1;
     return 0;
   });
-  const paths = ordered.map((w) => w.path);
+  const entries = ordered.map((w) => ({
+    path: w.path,
+    ...(w.orphan ? { orphan: true } : {}),
+  }));
+  const paths = entries.map((w) => w.path);
+  const hasAuthoritativeWorktrees = worktrees.length > 0;
   for (const session of sessions) {
     if (findContainingWorktreePath(session.cwd, paths)) continue;
-    if (!paths.includes(session.cwd)) paths.push(session.cwd);
+    if (!paths.includes(session.cwd)) {
+      entries.push({
+        path: session.cwd,
+        ...(hasAuthoritativeWorktrees ? { orphan: true } : {}),
+      });
+      paths.push(session.cwd);
+    }
   }
-  return paths;
+  return entries;
 }
 
 function findMatchingWorktreePath(

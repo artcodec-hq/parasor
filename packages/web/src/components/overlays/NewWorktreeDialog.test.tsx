@@ -41,7 +41,7 @@ describe("NewWorktreeDialog local file picker", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("renders as an accessible modal dialog", () => {
+  it("renders as an accessible dialog", () => {
     renderDialog({ loadLocalFiles: undefined });
 
     const dialog = screen.getByRole("dialog", {

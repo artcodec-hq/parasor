@@ -6,6 +6,8 @@ const MAX_TOTAL_CHARS = 12 * 1024 * 1024;
 export interface TerminalReplayCacheEntry {
   data: string;
   lastSeen: TerminalLastSeen;
+  cols: number;
+  rows: number;
   storedAt: number;
 }
 
@@ -32,13 +34,29 @@ export function getTerminalReplayCache(
 
 export function setTerminalReplayCache(
   sessionId: string,
-  entry: { data: string; lastSeen: TerminalLastSeen },
+  entry: {
+    data: string;
+    lastSeen: TerminalLastSeen;
+    cols: number;
+    rows: number;
+  },
 ): void {
   clearTerminalReplayCache(sessionId);
-  if (entry.data.length === 0 || entry.data.length > MAX_ENTRY_CHARS) return;
+  if (
+    entry.data.length === 0 ||
+    entry.data.length > MAX_ENTRY_CHARS ||
+    !Number.isSafeInteger(entry.cols) ||
+    !Number.isSafeInteger(entry.rows) ||
+    entry.cols <= 0 ||
+    entry.rows <= 0
+  ) {
+    return;
+  }
   const next: TerminalReplayCacheEntry = {
     data: entry.data,
     lastSeen: entry.lastSeen,
+    cols: entry.cols,
+    rows: entry.rows,
     storedAt: Date.now(),
   };
   entries.set(sessionId, next);

@@ -11,6 +11,11 @@ import {
   SidebarRowIcon,
   SidebarRowLabel,
 } from "../primitives/index.js";
+import {
+  formatSidebarMetricsTitle,
+  SidebarMetricsView,
+  type SidebarRowMetrics,
+} from "./SidebarMetrics.js";
 import { WorktreeChildren } from "./WorktreeChildren.js";
 import { WorktreeRowActions } from "./WorktreeRowActions.js";
 import { useWorktreeDisclosure } from "./worktree-disclosure.js";
@@ -22,6 +27,7 @@ interface WorktreeRowProps {
   displayName?: string;
   forceOpen?: boolean;
   isProjectRoot?: boolean;
+  showTopBorder?: boolean;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
   onSelectWorktree?: (projectId: string, worktreeId: string) => void;
   onSelectChild?: (
@@ -29,7 +35,7 @@ interface WorktreeRowProps {
     worktreeId: string,
     childId: string,
   ) => void;
-  onOpenContainer?: (projectId: string, worktreeId: string) => void;
+  onNewSession?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpen?: Record<string, boolean>;
   onWorktreeOpenChange?: (
@@ -51,10 +57,11 @@ export function WorktreeRow({
   displayName,
   forceOpen = false,
   isProjectRoot = false,
+  showTopBorder = false,
   dragHandleProps,
   onSelectWorktree,
   onSelectChild,
-  onOpenContainer,
+  onNewSession,
   onToggleChildPin,
   worktreeOpen,
   onWorktreeOpenChange,
@@ -73,18 +80,23 @@ export function WorktreeRow({
   // the row. Render a plain folder so the sidebar matches the `root` label.
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
-  const dirtyTitle =
-    worktree.dirty > 0
+  const orphan = worktree.orphan === true;
+  const labelClassName = orphan
+    ? "text-text-secondary line-through decoration-danger"
+    : "text-text-secondary";
+  const rowMetrics = metricsForWorktree(worktree);
+  const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
+  const dirtyFallbackTitle =
+    !metricsTitle && worktree.dirty > 0
       ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
       : undefined;
-  const dirtyDotClass =
-    worktree.dirty > 0 ? "bg-[var(--theme-git-modified)]" : "";
+  const rowTitle = metricsTitle || dirtyFallbackTitle;
   const lineageTitle = worktree.lineage
     ? formatLineageTitle(worktree.lineage)
     : null;
 
   return (
-    <div className="border-t border-border">
+    <div className={showTopBorder ? "border-t border-border" : undefined}>
       <SidebarRow
         selected={worktreeFocused}
         rootProps={dragHandleProps}
@@ -120,14 +132,14 @@ export function WorktreeRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1 text-left"
-          aria-label={dirtyTitle ? `${label}, ${dirtyTitle}` : undefined}
+          aria-label={rowTitle ? `${label}, ${rowTitle}` : undefined}
           onClick={() => onSelectWorktree?.(project.id, worktree.id)}
         >
           <SidebarRowLabel
-            title={dirtyTitle}
+            title={rowTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
-            className="text-text-secondary"
+            className={labelClassName}
           >
             {label}
           </SidebarRowLabel>
@@ -159,36 +171,27 @@ export function WorktreeRow({
           {worktree.orphan && (
             <span
               role="img"
-              aria-label="Orphan worktree"
-              title="Path is missing on disk -- use force remove to prune"
+              aria-label="Missing worktree"
+              title="Path is missing on disk - prune the stale worktree entry"
               className="shrink-0 rounded-tag border border-danger/40 bg-danger/10 px-1 text-[10px] font-medium leading-tight text-danger"
             >
-              orphan
-            </span>
-          )}
-          {(worktree.serviceCount ?? 0) > 0 && (
-            <span
-              role="img"
-              aria-label={`${worktree.serviceCount} live service${worktree.serviceCount === 1 ? "" : "s"}`}
-              title={`${worktree.serviceCount} live service${worktree.serviceCount === 1 ? "" : "s"}`}
-              className="shrink-0 rounded-tag border border-accent/40 bg-accent/10 px-1 text-[10px] font-medium leading-tight text-accent"
-            >
-              {worktree.serviceCount}
+              missing
             </span>
           )}
         </button>
-        {dirtyDotClass && (
+        <SidebarMetricsView metrics={rowMetrics} />
+        {dirtyFallbackTitle && (
           <span
             aria-hidden
-            title={dirtyTitle}
-            className={`h-1.5 w-1.5 shrink-0 rounded-tag ${dirtyDotClass}`}
+            title={dirtyFallbackTitle}
+            className="h-1.5 w-1.5 shrink-0 rounded-tag bg-[var(--theme-git-modified)]"
           />
         )}
         <WorktreeRowActions
           label={label}
-          onOpenContainer={
-            onOpenContainer
-              ? () => onOpenContainer(project.id, worktree.id)
+          onNewSession={
+            onNewSession
+              ? () => onNewSession(project.id, worktree.id)
               : undefined
           }
         />
@@ -206,6 +209,14 @@ export function WorktreeRow({
       )}
     </div>
   );
+}
+
+function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
+  return {
+    dirtyAdded: worktree.dirtyAdded,
+    dirtyDeleted: worktree.dirtyDeleted,
+    serviceCount: worktree.serviceCount,
+  };
 }
 
 function formatLineageTitle(

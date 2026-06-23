@@ -8,7 +8,7 @@ function getFocusables(root: HTMLElement): HTMLElement[] {
 }
 
 /**
- * Modal focus trap (WCAG 2.1 SC 2.1.2). When `active` flips true, captures
+ * Dialog focus trap (WCAG 2.1 SC 2.1.2). When `active` flips true, captures
  * the previously focused element; on deactivation restores focus to it.
  * While active, Tab cycles within `rootRef`'s focusable descendants so
  * keyboard / AT users cannot escape the modal into the background page.

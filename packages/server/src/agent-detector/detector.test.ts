@@ -49,6 +49,32 @@ describe("AgentDetector", () => {
     });
   });
 
+  it("keeps warning text with wait-related words in the running state", () => {
+    const detector = new AgentDetector({ now: () => 123 });
+    const callback = vi.fn();
+    detector.onStateChange(callback);
+
+    detector.feed(
+      "session-1",
+      "Warning: Press Enter handling changed; still processing.\n",
+    );
+    expect(callback).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      ...outputState("running"),
+      detectedAt: 123,
+    });
+
+    callback.mockClear();
+    detector.feed(
+      "session-1",
+      "Warning: command is not waiting for input; continuing.\n",
+    );
+    expect(callback).not.toHaveBeenCalled();
+    expect(detector.getStates()["session-1"]).toMatchObject(
+      outputState("running"),
+    );
+  });
+
   it("detects prompt return as completed", () => {
     const detector = new AgentDetector({ now: () => 123 });
     const callback = vi.fn();
@@ -174,15 +200,15 @@ describe("AgentDetector", () => {
     });
   });
 
-  it("setExternalState mutes weaker output observations", () => {
+  it("setExternalState keeps waiting state over weaker output observations", () => {
     const detector = new AgentDetector({ now: () => 123 });
     const callback = vi.fn();
     detector.onStateChange(callback);
 
-    detector.setExternalState("session-1", hookState("completed"));
+    detector.setExternalState("session-1", hookState("waiting"));
     expect(callback).toHaveBeenLastCalledWith({
       sessionId: "session-1",
-      ...hookState("completed"),
+      ...hookState("waiting"),
       detectedAt: 123,
     });
 

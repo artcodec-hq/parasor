@@ -35,7 +35,7 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const ModalDialog: Story = {
+export const DialogModalPresentation: Story = {
   render: () => (
     <PrimitiveFrame>
       <DialogRoot open ariaLabel="Story dialog" onClose={noop}>

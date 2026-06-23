@@ -3,6 +3,7 @@ node_modules/
 .vite/
 dist/
 storybook-static/
+.playwright-cli/
 *.tsbuildinfo
 docs/specs/
 tmp/

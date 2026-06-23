@@ -1,7 +1,4 @@
-import {
-  PaGlyph,
-  PaneIconButton,
-} from "../../../components/primitives/index.js";
+import { MonitorSwitchButton } from "../../../components/primitives/index.js";
 
 interface PinToggleButtonProps {
   pinned: boolean;
@@ -9,21 +6,15 @@ interface PinToggleButtonProps {
 }
 
 /**
- * Pin toggle for terminal pane headers. Icon-only frameless button --
- * pinned state communicated by color (accent vs. secondary). Affordance
- * meaning is explained on the Monitor empty state, not via inline label.
+ * Pin toggle for terminal pane headers. Mirrors the Monitor switch used in the
+ * sidebar so pinning has a consistent shape wherever it appears.
  */
 export function PinToggleButton({ pinned, onToggle }: PinToggleButtonProps) {
   return (
-    <PaneIconButton
-      label={pinned ? "Unpin from Monitor" : "Pin to Monitor"}
-      title={pinned ? "Pinned to Monitor -- click to unpin" : "Pin to Monitor"}
-      size="md"
-      tone={pinned ? "accent" : "normal"}
+    <MonitorSwitchButton
       pressed={pinned}
+      trackSurface="sidebar"
       onClick={onToggle}
-    >
-      <PaGlyph.pin />
-    </PaneIconButton>
+    />
   );
 }

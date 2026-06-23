@@ -33,21 +33,20 @@ export function isIosWebKit(ua: string, maxTouchPoints: number): boolean {
 }
 
 /**
- * Whether to attach xterm's WebGL renderer. Default: desktop on, touch off --
- * ADR-20260529 (`0c57027`) disabled WebGL on touch devices on the hypothesis
- * that mobile WebView WebGL surface/texture handling lengthens the
- * keyboard-resize blink. That call was recorded as "evaluate against
- * real-device perf", never confirmed with data.
+ * Whether to attach xterm's WebGL renderer. Default: off. Stress testing of
+ * TUI output + scroll + resize showed WebGL can keep xterm's buffer correct
+ * while painting rows at the wrong vertical offset. The DOM renderer is the
+ * stable path; WebGL stays available as an explicit diagnostic/perf opt-in.
  *
- * `?terminalWebgl=1|0` overrides the default so the keep/revert decision can be
- * A/B'd on a real device without a rebuild -- flip the flag, reproduce the
- * scenario, and compare K3 (clear-redraw blank) / drift via
+ * `?terminalWebgl=1|0` overrides the default so renderer behavior can be A/B'd
+ * on a real device without a rebuild -- flip the flag, reproduce the scenario,
+ * and compare K3 (clear-redraw blank) / drift via
  * `scripts/terminal-kpi.ts`.
  */
-export function resolveTerminalWebglEnabled(isTouch: boolean): boolean {
+export function resolveTerminalWebglEnabled(_isTouch: boolean): boolean {
   const override = readWebglOverride();
   if (override !== null) return override;
-  return !isTouch;
+  return false;
 }
 
 function readWebglOverride(): boolean | null {

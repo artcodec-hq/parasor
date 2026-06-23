@@ -23,7 +23,7 @@ export function MonitorRow({
         <PaGlyph.monitor />
       </SidebarRowIcon>
       <SidebarRowLabel weight="semibold">Monitor</SidebarRowLabel>
-      <span className="shrink-0 text-xs text-text-secondary">
+      <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-bg-primary/80 px-1.5 text-xs font-semibold leading-none text-text-secondary">
         {pinnedCount}
       </span>
     </SidebarRow>

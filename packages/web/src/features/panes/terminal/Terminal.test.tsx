@@ -327,10 +327,16 @@ vi.mock("../../../hooks/useTerminalSocket.js", () => ({
       lastSeen: { generation: number; seq: string } | null,
     ) => void;
     initialLastSeen?: { generation: number; seq: string } | null;
+    resolveInitialLastSeen?: (dims: {
+      cols: number;
+      rows: number;
+    }) => { generation: number; seq: string } | null;
   }) => {
     socketOptionsRef.onData = options.onData;
     socketOptionsRef.onFullReplay = options.onFullReplay;
-    socketOptionsRef.initialLastSeen = options.initialLastSeen;
+    socketOptionsRef.initialLastSeen =
+      options.resolveInitialLastSeen?.({ cols: 80, rows: 24 }) ??
+      options.initialLastSeen;
     return {
       send: mockSend,
       sendInit: mockSendInit,
@@ -859,6 +865,8 @@ describe("Terminal", () => {
       expect.objectContaining({
         data: "snapshot",
         lastSeen: { generation: 2, seq: "42" },
+        cols: 80,
+        rows: 24,
       }),
     );
   });
@@ -979,6 +987,8 @@ describe("Terminal", () => {
     setTerminalReplayCache("s-cached", {
       data: "cached snapshot",
       lastSeen: { generation: 8, seq: "123" },
+      cols: 80,
+      rows: 24,
     });
 
     render(<Terminal sessionId="s-cached" />, { wrapper });
@@ -999,6 +1009,24 @@ describe("Terminal", () => {
     );
     expect(fitOrder).toBeLessThan(cachedWriteOrder ?? Number.POSITIVE_INFINITY);
     expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  it("skips cached replay and lastSeen when the fitted terminal dimensions differ", () => {
+    setTerminalReplayCache("s-cached", {
+      data: "cached snapshot",
+      lastSeen: { generation: 8, seq: "123" },
+      cols: 100,
+      rows: 30,
+    });
+
+    render(<Terminal sessionId="s-cached" />, { wrapper });
+
+    expect(socketOptionsRef.initialLastSeen).toBeUndefined();
+    expect(mockTermReset).not.toHaveBeenCalled();
+    expect(mockTermWrite).not.toHaveBeenCalledWith(
+      "cached snapshot",
+      expect.any(Function),
+    );
   });
 
   it("loads an expanded scrollback snapshot when the user scrolls near the top", async () => {
@@ -1439,6 +1467,72 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
+  it("waits for queued TUI output before capturing the resize scroll anchor", () => {
+    vi.useFakeTimers();
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const term = MockXTerm.mock.results[0]?.value as {
+      buffer: { active: { viewportY: number; baseY: number } };
+    };
+
+    const writeCompletions: Array<() => void> = [];
+    term.buffer.active.baseY = 100;
+    term.buffer.active.viewportY = 80;
+    mockTermWrite.mockClear();
+    mockTermResize.mockClear();
+    mockTermScrollToBottom.mockClear();
+    mockTermScrollToLine.mockClear();
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 42, rows: 18 });
+    mockTermWrite.mockImplementation((data: string, callback?: () => void) => {
+      expect(["queued-tui-output", "next-tui-output"]).toContain(data);
+      const nextBaseY = data === "queued-tui-output" ? 120 : 125;
+      writeCompletions.push(() => {
+        term.buffer.active.baseY = nextBaseY;
+        term.buffer.active.viewportY = 80;
+        callback?.();
+      });
+    });
+    mockTermResize.mockImplementationOnce(() => {
+      term.buffer.active.baseY = 140;
+      term.buffer.active.viewportY = 0;
+    });
+
+    act(() => {
+      roCallbacks[0]([] as ResizeObserverEntry[]);
+      vi.advanceTimersByTime(99);
+      socketOptionsRef.onData?.("queued-tui-output");
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(mockTermWrite).toHaveBeenCalledWith(
+      "queued-tui-output",
+      expect.any(Function),
+    );
+    expect(mockTermResize).not.toHaveBeenCalled();
+
+    act(() => {
+      writeCompletions.shift()?.();
+      socketOptionsRef.onData?.("next-tui-output");
+      vi.advanceTimersByTime(16);
+    });
+
+    expect(mockTermWrite).toHaveBeenCalledWith(
+      "next-tui-output",
+      expect.any(Function),
+    );
+    expect(mockTermResize).not.toHaveBeenCalled();
+
+    act(() => {
+      writeCompletions.shift()?.();
+      vi.advanceTimersByTime(16);
+    });
+
+    expect(mockTermResize).toHaveBeenCalledWith(42, 18);
+    expect(mockTermScrollToBottom).not.toHaveBeenCalled();
+    expect(mockTermScrollToLine).toHaveBeenCalledWith(95);
+    vi.useRealTimers();
+  });
+
   it("scrolls to the input line and resizes the PTY when a touch keyboard shrinks the terminal", () => {
     // On touch, a row-shrinking resize is the on-screen keyboard opening =
     // input mode: jump to the live tail (cursor) regardless of prior scroll
@@ -1574,6 +1668,35 @@ describe("Terminal", () => {
       termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
     });
     expect(mockTermResize).toHaveBeenCalledWith(90, 30);
+  });
+
+  it("re-claims the desktop width on focus when the cursor is already over the terminal", () => {
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const termContainer = must(document.querySelector(".xterm")?.parentElement);
+    const term = must(
+      MockXTerm.mock.results[0]?.value as
+        | { cols: number; rows: number }
+        | undefined,
+    );
+    vi.spyOn(termContainer, "matches").mockImplementation(
+      (selector) => selector === ":hover",
+    );
+    mockTermResize.mockClear();
+    mockTermResize.mockImplementationOnce((cols: number, rows: number) => {
+      term.cols = cols;
+      term.rows = rows;
+    });
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
+    );
   });
 
   it("re-claims the shared PTY width on cursor enter even when the local size is unchanged", () => {
@@ -2167,9 +2290,10 @@ describe("Terminal", () => {
       viewportY: 5,
       baseY: 5,
       renderer: {
-        requestedWebgl: true,
-        effectiveRenderer: "webgl",
-        webglStatus: "attached",
+        requestedWebgl: false,
+        effectiveRenderer: "dom",
+        webglStatus: "disabled",
+        webglFailureReason: "disabled",
         contextLossCount: 0,
         fontLoadingDoneCount: 0,
         atlasRebuildCount: 0,
@@ -2218,11 +2342,12 @@ describe("Terminal", () => {
     expect(window.parasorTerminalTrace?.dump()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "terminal-renderer-webgl-attach",
+          type: "terminal-renderer-webgl-skip",
           sessionId: "s-renderer-trace",
-          requestedWebgl: true,
-          effectiveRenderer: "webgl",
-          webglStatus: "attached",
+          requestedWebgl: false,
+          effectiveRenderer: "dom",
+          webglStatus: "disabled",
+          webglFailureReason: "disabled",
           unicodeVersion: "11",
           isTouch: false,
           isIos: false,

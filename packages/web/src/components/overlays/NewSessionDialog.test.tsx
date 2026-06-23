@@ -4,13 +4,13 @@ import {
   type CustomPaneCommand,
   paneCommandsWithBuiltins,
 } from "../../lib/pane-command-store.js";
-import { OpenContainerDialog } from "./OpenContainerDialog.js";
+import { NewSessionDialog } from "./NewSessionDialog.js";
 
 const project = { id: "p1", name: "project", path: "/repo/project" };
 const worktree = { id: "wt1", name: "main", path: "/repo" };
 
 function renderDialog(
-  overrides: Partial<Parameters<typeof OpenContainerDialog>[0]> = {},
+  overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {},
 ) {
   const customCommands: CustomPaneCommand[] = [
     { id: "cmd:1", label: "Dev server", initialInput: "pnpm dev" },
@@ -26,38 +26,57 @@ function renderDialog(
     onRunCommand: vi.fn(),
     ...overrides,
   };
-  return { props, ...render(<OpenContainerDialog {...props} />) };
+  return { props, ...render(<NewSessionDialog {...props} />) };
 }
 
 afterEach(() => {
   cleanup();
 });
 
-describe("OpenContainerDialog command launcher", () => {
-  it("renders as an accessible desktop modal dialog", () => {
+describe("NewSessionDialog command launcher", () => {
+  it("renders as an accessible desktop dialog dialog", () => {
     renderDialog();
     const dialog = document.body.querySelector(
-      '[role="dialog"][aria-label="New session in main"]',
+      '[role="dialog"][aria-label="New session"]',
     );
     expect(dialog).toBeTruthy();
     expect(dialog?.getAttribute("aria-modal")).toBe("true");
     expect(dialog?.className).toContain("rounded-window");
   });
 
-  it("renders the mobile path as a bottom sheet", () => {
+  it("renders the mobile path as a fullscreen dialog", () => {
     renderDialog({ isMobile: true });
     const dialog = document.body.querySelector(
-      '[role="dialog"][aria-label="New session in main"]',
+      '[role="dialog"][aria-label="New session"]',
     );
     expect(dialog).toBeTruthy();
-    expect(dialog?.className).toContain("rounded-t-xl");
+    expect(dialog?.className).toContain("h-full");
+    expect(dialog?.className).not.toContain("rounded-t-xl");
   });
 
   it("renders command rows without an Open button", () => {
     const { queryByText, getByText } = renderDialog();
+    expect(getByText("Current worktree")).toBeTruthy();
     expect(getByText("Terminal")).toBeTruthy();
     expect(getByText("Dev server")).toBeTruthy();
     expect(queryByText("Open")).toBeNull();
+  });
+
+  it("separates the current worktree actions from new worktree creation", () => {
+    const { getByText } = renderDialog({
+      onCreateWorktreeSession: vi.fn(),
+    });
+    expect(getByText("Current worktree")).toBeTruthy();
+    expect(getByText("New worktree")).toBeTruthy();
+    expect(getByText("Create worktree and start session")).toBeTruthy();
+  });
+
+  it("labels the project root as project root instead of using the file view name", () => {
+    const { getByText, queryByText } = renderDialog({
+      worktree: { id: "root", name: "root", path: project.path },
+    });
+    expect(getByText("Project root")).toBeTruthy();
+    expect(queryByText("New session in root")).toBeNull();
   });
 
   it("closes the launcher on Escape", () => {
@@ -94,7 +113,7 @@ describe("OpenContainerDialog command launcher", () => {
       commandConfigs: [],
       onCommandsChange,
     });
-    fireEvent.click(getByText("Edit commands"));
+    fireEvent.click(getByText("Manage commands"));
     fireEvent.click(getByText("Add"));
     const inputs = Array.from(container.querySelectorAll("input"));
     fireEvent.change(inputs[0], { target: { value: "Test" } });
@@ -112,7 +131,7 @@ describe("OpenContainerDialog command launcher", () => {
       onCommandsChange,
     });
 
-    fireEvent.click(getByText("Edit commands"));
+    fireEvent.click(getByText("Manage commands"));
     fireEvent.click(getAllByText("Edit")[1]);
     const commandInput = Array.from(container.querySelectorAll("input")).at(-1);
     expect(commandInput).toBeTruthy();
@@ -169,7 +188,7 @@ describe("OpenContainerDialog command launcher", () => {
         onCreateWorktreeSession,
       });
 
-    fireEvent.click(getByText("New worktree session"));
+    fireEvent.click(getByText("Create worktree and start session"));
 
     await waitFor(() => expect(getByText(".env")).toBeTruthy());
     fireEvent.change(getByPlaceholderText("feature/foo"), {

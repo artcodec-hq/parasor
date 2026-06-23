@@ -1,5 +1,6 @@
 import {
   type AgentState,
+  type GitState,
   makeTerminalPane,
   type Project,
   type Session,
@@ -33,6 +34,15 @@ function session(overrides: Partial<Session>): Session {
     cwd: "/repos/p1",
     shell: "/bin/zsh",
     createdAt: 0,
+    ...overrides,
+  };
+}
+
+function gitState(overrides: Partial<GitState> = {}): GitState {
+  return {
+    branch: "main",
+    dirty: false,
+    lastChecked: 1,
     ...overrides,
   };
 }
@@ -229,6 +239,100 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(wts.flatMap((w) => w.children.map((c) => c.id))).not.toContain(
       "browser:p1-stale",
     );
+  });
+
+  it("keeps stale session cwd paths as orphan rows when a worktree snapshot exists", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+      ],
+    };
+    const sessions: Session[] = [
+      session({
+        id: "stale",
+        projectId: "p1",
+        cwd: "/repos/p1.worktrees/deleted",
+      }),
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions,
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    const wts = result[0]?.worktrees ?? [];
+    expect(wts.map((w) => w.path)).toEqual([
+      "/repos/p1",
+      "/repos/p1.worktrees/deleted",
+    ]);
+    const orphan = wts.find((w) => w.path === "/repos/p1.worktrees/deleted");
+    expect(orphan).toMatchObject({ orphan: true });
+    expect(orphan?.children.map((c) => c.id)).toEqual([
+      terminalPaneId("stale"),
+    ]);
+  });
+
+  it("does not attach stale browser child panes to session-created orphan rows", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+      ],
+    };
+    const sessions: Session[] = [
+      session({
+        id: "stale",
+        projectId: "p1",
+        cwd: "/repos/p1.worktrees/deleted",
+      }),
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions,
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+      inactiveChildPanesByProject: {
+        p1: {
+          "/repos/p1.worktrees/deleted": [
+            {
+              id: "browser:p1-stale",
+              kind: "browser",
+              url: "https://stale.example.com",
+            },
+          ],
+        },
+      },
+    });
+
+    const orphan = result[0]?.worktrees.find(
+      (w) => w.path === "/repos/p1.worktrees/deleted",
+    );
+    expect(orphan).toMatchObject({ orphan: true });
+    expect(orphan?.children.map((c) => c.id)).toEqual([
+      terminalPaneId("stale"),
+    ]);
   });
 
   it("inactive-project terminal child ids match the active path's pane id format", () => {
@@ -595,7 +699,7 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(result[0]?.worktrees[1]?.lineage).toBe(lineage);
   });
 
-  it("merges projectWorktrees with session-derived cwds without duplicates", () => {
+  it("merges projectWorktrees with matching session-derived cwds and marks missing paths orphan", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
     const sessions: Session[] = [
       session({ id: "s1", projectId: "p1", cwd: "/repos/p1/wt-a" }),
@@ -649,6 +753,9 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     expect(wtA?.children).toHaveLength(1);
     const wtB = wts.find((w) => w.path === "/repos/p1/wt-b");
     expect(wtB?.children).toHaveLength(0);
+    const wtC = wts.find((w) => w.path === "/repos/p1/wt-c");
+    expect(wtC).toMatchObject({ orphan: true });
+    expect(wtC?.children.map((c) => c.id)).toEqual([terminalPaneId("s2")]);
   });
 
   it("propagates pinned flag from session to child", () => {
@@ -735,10 +842,102 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
       worktreesByProject,
+      gitStates: {
+        p1: {
+          "/repos/p1": gitState({
+            dirty: true,
+            dirtyCount: 3,
+            addedLines: 8,
+            deletedLines: 2,
+            changes: [
+              {
+                path: "added.ts",
+                area: "staged",
+                status: "added",
+                code: "A",
+              },
+              {
+                path: "new.ts",
+                area: "untracked",
+                status: "untracked",
+                code: "?",
+              },
+              {
+                path: "deleted.ts",
+                area: "unstaged",
+                status: "deleted",
+                code: "D",
+              },
+              {
+                path: "modified.ts",
+                area: "unstaged",
+                status: "modified",
+                code: "M",
+              },
+            ],
+          }),
+        },
+      },
     });
     const [main, branch] = result[0]?.worktrees ?? [];
-    expect(main).toMatchObject({ dirty: 3, ahead: 1, behind: 0 });
-    expect(branch).toMatchObject({ dirty: 0, ahead: 5, behind: 2 });
+    expect(main).toMatchObject({
+      dirty: 3,
+      dirtyAdded: 8,
+      dirtyDeleted: 2,
+      ahead: 1,
+      behind: 0,
+    });
+    expect(branch).toMatchObject({
+      dirty: 0,
+      dirtyAdded: 0,
+      dirtyDeleted: 0,
+      ahead: 5,
+      behind: 2,
+    });
+  });
+
+  it("propagates tracked line stats from gitStates without worktree enrichment", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      { path: "/repos/p1", panes: [] },
+      { path: "/repos/p1/wt-a", panes: [] },
+    ];
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      gitStates: {
+        p1: {
+          "/repos/p1": gitState({
+            dirty: true,
+            dirtyCount: 1,
+            addedLines: 8,
+            deletedLines: 2,
+          }),
+          "/repos/p1/wt-a": gitState({
+            branch: "feature",
+            dirty: true,
+            dirtyCount: 1,
+            addedLines: 0,
+            deletedLines: 5,
+          }),
+        },
+      },
+    });
+    const [main, branch] = result[0]?.worktrees ?? [];
+    expect(main).toMatchObject({
+      dirty: 1,
+      dirtyAdded: 8,
+      dirtyDeleted: 2,
+    });
+    expect(branch).toMatchObject({
+      dirty: 1,
+      dirtyAdded: 0,
+      dirtyDeleted: 5,
+    });
   });
 
   it("matches counters across macOS /private aliasing", () => {
@@ -765,9 +964,28 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
       agentStates: {},
       reviewPendingSessions: new Set(),
       worktreesByProject,
+      gitStates: {
+        p1: {
+          "/tmp/proj": gitState({
+            dirty: true,
+            addedLines: 1,
+            deletedLines: 0,
+            changes: [
+              {
+                path: "new.ts",
+                area: "untracked",
+                status: "untracked",
+                code: "?",
+              },
+            ],
+          }),
+        },
+      },
     });
     expect(result[0]?.worktrees[0]).toMatchObject({
       dirty: 7,
+      dirtyAdded: 1,
+      dirtyDeleted: 0,
       ahead: 4,
       behind: 0,
     });

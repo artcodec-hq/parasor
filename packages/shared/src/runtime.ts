@@ -138,12 +138,40 @@ export interface Worktree {
   /** Product-level provenance for explicitly created worktrees. */
   lineage?: WorktreeLineageMetadata;
   /**
-   * `true` when `git worktree list --porcelain` enumerates the path but the
-   * directory is missing on disk (`git status` returns `ENOENT`). Lets the
-   * sidebar default the remove-dialog to `--force` so users can prune a
-   * stranded entry in one click.
+   * `true` when `git worktree list --porcelain` enumerates the path as
+   * prunable, or the directory is missing on disk (`git status` returns
+   * `ENOENT`). Lets the sidebar default the remove-dialog to `--force` so users
+   * can prune a stranded entry in one click.
    */
   orphan?: boolean;
+}
+
+export type GitChangeArea = "staged" | "unstaged" | "untracked";
+
+export type GitChangeStatus =
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "untracked"
+  | "conflict";
+
+export interface GitChangeEntry {
+  path: string;
+  /** Primary staging area for compact source-control views. */
+  area: GitChangeArea;
+  status: GitChangeStatus;
+  /** Single-letter compact status used by existing Git badges. */
+  code: string;
+  /** Present for rename/copy entries. */
+  oldPath?: string;
+  /** True for unmerged entries. */
+  conflict?: boolean;
+  /** Raw porcelain index status when present. */
+  indexStatus?: string;
+  /** Raw porcelain worktree status when present. */
+  worktreeStatus?: string;
 }
 
 export interface GitState {
@@ -151,6 +179,11 @@ export interface GitState {
   dirty: boolean;
   pullRequestUrl?: string;
   fileStatuses?: Record<string, string>;
+  /**
+   * Structured working-tree entries for richer source-control surfaces.
+   * `fileStatuses` remains for compact badges and existing consumers.
+   */
+  changes?: GitChangeEntry[];
   /** Commits ahead of upstream. `undefined` when no upstream tracking. */
   ahead?: number;
   /** Commits behind upstream. `undefined` when no upstream tracking. */
@@ -161,6 +194,10 @@ export interface GitState {
    * `git status --porcelain=v2`.
    */
   dirtyCount?: number;
+  /** Added lines in tracked working-tree diff. Omitted when clean/unavailable. */
+  addedLines?: number;
+  /** Deleted lines in tracked working-tree diff. Omitted when clean/unavailable. */
+  deletedLines?: number;
   /**
    * `false` when the worktree path is not a git repository (no `.git`).
    * Omitted (≡ `true`) for repos. Lets the Git pane render a `git init`

@@ -15,7 +15,7 @@ interface ProjectGroupProps {
     worktreeId: string,
     childId: string,
   ) => void;
-  onOpenContainer?: (projectId: string, worktreeId: string) => void;
+  onNewSession?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpen?: Record<string, boolean>;
   onWorktreeOpenChange?: (
@@ -52,7 +52,7 @@ export function ProjectGroup({
   selection,
   onSelectWorktree,
   onSelectChild,
-  onOpenContainer,
+  onNewSession,
   onToggleChildPin,
   worktreeOpen,
   onWorktreeOpenChange,
@@ -91,10 +91,11 @@ export function ProjectGroup({
             displayName={root ? project.name : wt.name}
             forceOpen={forceOpen}
             isProjectRoot={root}
+            showTopBorder={index === 0}
             dragHandleProps={root && index === 0 ? dragHandleProps : undefined}
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
-            onOpenContainer={onOpenContainer}
+            onNewSession={onNewSession}
             onToggleChildPin={onToggleChildPin}
             worktreeOpen={worktreeOpen}
             onWorktreeOpenChange={onWorktreeOpenChange}

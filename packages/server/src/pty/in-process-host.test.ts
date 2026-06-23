@@ -64,6 +64,30 @@ function makeFakePtyProcess() {
   };
 }
 
+function makeBootstrapFakePtyProcess() {
+  const listeners: Array<(data: string) => void> = [];
+  return {
+    pause: vi.fn(),
+    resume: vi.fn(),
+    resize: vi.fn(),
+    write: vi.fn(),
+    kill: vi.fn(),
+    process: "zsh",
+    onData: vi.fn((listener: (data: string) => void) => {
+      listeners.push(listener);
+      return {
+        dispose: vi.fn(() => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        }),
+      };
+    }),
+    emitData: (data: string) => {
+      for (const listener of [...listeners]) listener(data);
+    },
+  };
+}
+
 describe("InProcessPtyHost", () => {
   let manager: InProcessPtyHost;
   let scrollbackLog: ScrollbackLog;
@@ -79,6 +103,7 @@ describe("InProcessPtyHost", () => {
   afterEach(async () => {
     await manager?.disposeAll();
     cleanup?.();
+    vi.useRealTimers();
   });
 
   it("creates a session in spawning state without a pid", async () => {
@@ -325,9 +350,135 @@ describe("InProcessPtyHost", () => {
     await manager.testEagerSpawn(session.id);
     await manager.initClient(session.id, "client-1", 80, 24, () => {});
 
-    await vi.waitFor(() => {
-      expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+    await vi.waitFor(
+      () => {
+        expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+      },
+      { timeout: 4_000 },
+    );
+  });
+
+  it("writes bootstrap input shortly after readline readiness", async () => {
+    vi.useFakeTimers();
+    const session = await manager.create({
+      projectId: "proj-1",
+      command: { type: "shell" },
+      cwd: process.env.HOME ?? "/",
+      bootstrapInput: "echo bootstrapped\r",
     });
+    const fakeProcess = makeBootstrapFakePtyProcess();
+    const internal = getInternalSession<{
+      info: { id: string; state: "running" };
+      process: ReturnType<typeof makeBootstrapFakePtyProcess> | null;
+      currentGeneration: number;
+      bootstrapInput: string | null;
+    }>(manager, session.id);
+    internal.info.state = "running";
+    internal.process = fakeProcess;
+    const seen: { id: string; data: string }[] = [];
+    manager.onSessionInput((id, data) => seen.push({ id, data }));
+
+    (
+      manager as unknown as {
+        scheduleBootstrapInput: (
+          managed: unknown,
+          proc: unknown,
+          generationAtSpawn: number,
+        ) => void;
+      }
+    ).scheduleBootstrapInput(internal, fakeProcess, internal.currentGeneration);
+
+    fakeProcess.emitData("early shell output");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(seen).toEqual([]);
+
+    fakeProcess.emitData("\x1b[?2004h");
+    await vi.advanceTimersByTimeAsync(24);
+    expect(seen).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+    expect(fakeProcess.write).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(fakeProcess.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to a quiet output window before writing bootstrap input", async () => {
+    vi.useFakeTimers();
+    const session = await manager.create({
+      projectId: "proj-1",
+      command: { type: "shell" },
+      cwd: process.env.HOME ?? "/",
+      bootstrapInput: "echo bootstrapped\r",
+    });
+    const fakeProcess = makeBootstrapFakePtyProcess();
+    const internal = getInternalSession<{
+      info: { id: string; state: "running" };
+      process: ReturnType<typeof makeBootstrapFakePtyProcess> | null;
+      currentGeneration: number;
+      bootstrapInput: string | null;
+    }>(manager, session.id);
+    internal.info.state = "running";
+    internal.process = fakeProcess;
+    const seen: { id: string; data: string }[] = [];
+    manager.onSessionInput((id, data) => seen.push({ id, data }));
+
+    (
+      manager as unknown as {
+        scheduleBootstrapInput: (
+          managed: unknown,
+          proc: unknown,
+          generationAtSpawn: number,
+        ) => void;
+      }
+    ).scheduleBootstrapInput(internal, fakeProcess, internal.currentGeneration);
+
+    fakeProcess.emitData("early shell output");
+    await vi.advanceTimersByTimeAsync(499);
+    expect(seen).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+    expect(fakeProcess.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for a conservative fallback when the PTY emits no readiness output", async () => {
+    vi.useFakeTimers();
+    const session = await manager.create({
+      projectId: "proj-1",
+      command: { type: "shell" },
+      cwd: process.env.HOME ?? "/",
+      bootstrapInput: "echo bootstrapped\r",
+    });
+    const fakeProcess = makeBootstrapFakePtyProcess();
+    const internal = getInternalSession<{
+      info: { id: string; state: "running" };
+      process: ReturnType<typeof makeBootstrapFakePtyProcess> | null;
+      currentGeneration: number;
+      bootstrapInput: string | null;
+    }>(manager, session.id);
+    internal.info.state = "running";
+    internal.process = fakeProcess;
+    const seen: { id: string; data: string }[] = [];
+    manager.onSessionInput((id, data) => seen.push({ id, data }));
+
+    (
+      manager as unknown as {
+        scheduleBootstrapInput: (
+          managed: unknown,
+          proc: unknown,
+          generationAtSpawn: number,
+        ) => void;
+      }
+    ).scheduleBootstrapInput(internal, fakeProcess, internal.currentGeneration);
+
+    await vi.advanceTimersByTimeAsync(2499);
+    expect(seen).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(seen).toEqual([{ id: session.id, data: "echo bootstrapped\r" }]);
+    expect(fakeProcess.write).toHaveBeenCalledTimes(1);
   });
 
   /*

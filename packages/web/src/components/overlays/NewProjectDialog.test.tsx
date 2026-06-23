@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProjectModal } from "./ProjectModal.js";
+import { NewProjectDialog } from "./NewProjectDialog.js";
 
 interface MockResponse {
   match: (input: RequestInfo | URL, init?: RequestInit) => boolean;
@@ -55,11 +55,11 @@ function mockBrowse(path: string, parent: string | null = null) {
   });
 }
 
-async function openModalWithBrowse(path: string) {
+async function openDialogWithBrowse(path: string) {
   mockBrowse(path);
   const onCreate = vi.fn();
   const result = render(
-    <ProjectModal open={true} onClose={vi.fn()} onCreate={onCreate} />,
+    <NewProjectDialog open={true} onClose={vi.fn()} onCreate={onCreate} />,
   );
   await waitFor(() => {
     expect(fetchSpy).toHaveBeenCalled();
@@ -69,7 +69,7 @@ async function openModalWithBrowse(path: string) {
 
 async function openCreateFolderForm(container: HTMLElement) {
   const trigger = Array.from(container.querySelectorAll("button")).find((b) =>
-    b.textContent?.includes("Create new folder here"),
+    b.textContent?.includes("New folder here"),
   ) as HTMLButtonElement;
   fireEvent.click(trigger);
   await waitFor(() => {
@@ -79,19 +79,21 @@ async function openCreateFolderForm(container: HTMLElement) {
   });
 }
 
-describe("ProjectModal -- create new folder", () => {
+describe("NewProjectDialog -- create new folder", () => {
   it("renders nothing when closed", () => {
     const { container } = render(
-      <ProjectModal open={false} onClose={vi.fn()} onCreate={vi.fn()} />,
+      <NewProjectDialog open={false} onClose={vi.fn()} onCreate={vi.fn()} />,
     );
     expect(container.textContent).toBe("");
   });
 
-  it("renders as an accessible modal dialog", async () => {
+  it("renders as an accessible dialog", async () => {
     mockBrowse("/Users/test/projects");
-    render(<ProjectModal open={true} onClose={vi.fn()} onCreate={vi.fn()} />);
+    render(
+      <NewProjectDialog open={true} onClose={vi.fn()} onCreate={vi.fn()} />,
+    );
 
-    const dialog = screen.getByRole("dialog", { name: "New Project" });
+    const dialog = screen.getByRole("dialog", { name: "New project" });
     expect(dialog.getAttribute("aria-modal")).toBe("true");
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
   });
@@ -100,7 +102,7 @@ describe("ProjectModal -- create new folder", () => {
     mockBrowse("/Users/test/projects");
     const onClose = vi.fn();
     const { container } = render(
-      <ProjectModal open={true} onClose={onClose} onCreate={vi.fn()} />,
+      <NewProjectDialog open={true} onClose={onClose} onCreate={vi.fn()} />,
     );
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
 
@@ -111,10 +113,10 @@ describe("ProjectModal -- create new folder", () => {
     expect(onClose).toHaveBeenCalledTimes(3);
   });
 
-  it("hides Browse on mobile", () => {
+  it("uses the same project folder form on mobile", () => {
     mockBrowse("/Users/test/projects");
     render(
-      <ProjectModal
+      <NewProjectDialog
         open={true}
         onClose={vi.fn()}
         onCreate={vi.fn()}
@@ -122,26 +124,37 @@ describe("ProjectModal -- create new folder", () => {
       />,
     );
 
-    expect(screen.queryByText("Browse")).toBeNull();
-    expect(screen.getByText("Quick Pick")).toBeTruthy();
-    expect(screen.getByText("Path")).toBeTruthy();
-    expect(document.body.querySelector(".rounded-t-xl")).toBeTruthy();
+    expect(screen.getByLabelText("Project folder")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Choose folder" })).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    const dialog = screen.getByRole("dialog", { name: "New project" });
+    expect(dialog.className).toContain("h-full");
+    expect(document.body.querySelector(".rounded-t-xl")).toBeNull();
+  });
+
+  it("shows the loaded folder as the project folder value", async () => {
+    await openDialogWithBrowse("/Users/test/projects");
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText("Project folder") as HTMLInputElement).value,
+      ).toBe("/Users/test/projects");
+    });
   });
 
   it("shows the create-new-folder affordance once a parent folder is loaded", async () => {
-    const { container } = await openModalWithBrowse("/Users/test/projects");
+    const { container } = await openDialogWithBrowse("/Users/test/projects");
     await waitFor(() => {
-      expect(container.textContent).toContain("Create new folder here");
+      expect(container.textContent).toContain("New folder here");
     });
     const createBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Create new folder here"),
+      (b) => b.textContent?.includes("New folder here"),
     );
     expect(createBtn).toBeTruthy();
     expect((createBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("disables the submit button while the name is empty", async () => {
-    const { container } = await openModalWithBrowse("/Users/test/projects");
+    const { container } = await openDialogWithBrowse("/Users/test/projects");
     await openCreateFolderForm(container);
     const createBtn = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent === "Create",
@@ -151,7 +164,7 @@ describe("ProjectModal -- create new folder", () => {
   });
 
   it("disables the submit button when the name contains a slash", async () => {
-    const { container } = await openModalWithBrowse("/Users/test/projects");
+    const { container } = await openDialogWithBrowse("/Users/test/projects");
     await openCreateFolderForm(container);
     const input = container.querySelector(
       "input[placeholder='my-new-app']",
@@ -164,7 +177,7 @@ describe("ProjectModal -- create new folder", () => {
   });
 
   it("posts to /api/fs/mkdir with the parent + trimmed name and registers the new project", async () => {
-    const { container, onCreate } = await openModalWithBrowse(
+    const { container, onCreate } = await openDialogWithBrowse(
       "/Users/test/projects",
     );
 
@@ -209,7 +222,7 @@ describe("ProjectModal -- create new folder", () => {
   });
 
   it("surfaces server error messages without closing the form", async () => {
-    const { container, onCreate } = await openModalWithBrowse(
+    const { container, onCreate } = await openDialogWithBrowse(
       "/Users/test/projects",
     );
 
@@ -240,11 +253,11 @@ describe("ProjectModal -- create new folder", () => {
   });
 
   it("cancel closes the inline form without creating", async () => {
-    const { container, onCreate } = await openModalWithBrowse(
+    const { container, onCreate } = await openDialogWithBrowse(
       "/Users/test/projects",
     );
     const trigger = Array.from(container.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("Create new folder here"),
+      b.textContent?.includes("New folder here"),
     ) as HTMLButtonElement;
     fireEvent.click(trigger);
     const input = container.querySelector(
@@ -263,7 +276,7 @@ describe("ProjectModal -- create new folder", () => {
     expect(cancelBtn ?? innerCancel).toBeTruthy();
 
     await waitFor(() => {
-      expect(container.textContent).toContain("Create new folder here");
+      expect(container.textContent).toContain("New folder here");
     });
     expect(onCreate).not.toHaveBeenCalled();
   });

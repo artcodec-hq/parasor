@@ -113,6 +113,34 @@ describe("applyEvent: file-change", () => {
     };
     expect(applyEvent(store, msg).fileChangeSeq).toBe(6);
   });
+
+  it("increments fileChangeSeq once for a file-changes batch", () => {
+    const store = storeWith({ fileChangeSeq: 5 });
+    const msg: WsEventMessage = {
+      type: "file-changes",
+      projectId: "p1",
+      worktreePath: "/repo",
+      count: 2,
+      events: [
+        { event: "create", path: "a.ts" },
+        { event: "update", path: "b.ts" },
+      ],
+    };
+    expect(applyEvent(store, msg).fileChangeSeq).toBe(6);
+  });
+
+  it("increments fileChangeSeq once for an overflow file-changes batch", () => {
+    const store = storeWith({ fileChangeSeq: 5 });
+    const msg: WsEventMessage = {
+      type: "file-changes",
+      projectId: "p1",
+      worktreePath: "/repo",
+      count: 5001,
+      events: [],
+      overflow: true,
+    };
+    expect(applyEvent(store, msg).fileChangeSeq).toBe(6);
+  });
 });
 
 describe("applyEvent: gitignore-updated", () => {
@@ -675,13 +703,44 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
   });
 
   it("applySnapshot sets snapshotApplied true", () => {
-    const store = applySnapshot(SNAPSHOT);
+    const store = applySnapshot({
+      ...SNAPSHOT,
+      terminalPresences: {
+        s1: {
+          sessionId: "s1",
+          driver: { kind: "mobile", clientId: "phone" },
+          layout: {
+            kind: "mobile",
+            ownerClientId: "phone",
+            cols: 44,
+            rows: 18,
+          },
+          subscribers: [],
+        },
+      },
+      mobileSessionSnapshots: {
+        p1: [
+          {
+            projectId: "p1",
+            worktreePath: "/repo",
+            snapshotVersion: 1,
+            focusedPaneId: null,
+            panes: [],
+          },
+        ],
+      },
+    });
     expect(store.snapshotApplied).toBe(true);
     expect(store.sessionActivityHistory).toEqual(
       ACTIVITY_HISTORY.slice().reverse(),
     );
     expect(store.paneCommands).toEqual([]);
     expect(store.services).toEqual({});
+    expect(store.terminalPresences.s1?.driver).toEqual({
+      kind: "mobile",
+      clientId: "phone",
+    });
+    expect(store.mobileSessionSnapshots.p1?.[0]?.worktreePath).toBe("/repo");
   });
 
   it("applySnapshot defaults missing activityHistory to empty", () => {
@@ -691,6 +750,36 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
     });
 
     expect(store.sessionActivityHistory).toEqual([]);
+  });
+
+  it("applies terminal presence and mobile snapshot events", () => {
+    const withPresence = applyEvent(EMPTY_STORE, {
+      type: "terminal-presence-changed",
+      sessionId: "s1",
+      presence: {
+        sessionId: "s1",
+        driver: { kind: "desktop" },
+        layout: { kind: "desktop", cols: 100, rows: 30 },
+        subscribers: [],
+      },
+    });
+    const withSnapshot = applyEvent(withPresence, {
+      type: "mobile-session-snapshot",
+      projectId: "p1",
+      worktreePath: "/repo",
+      snapshot: {
+        projectId: "p1",
+        worktreePath: "/repo",
+        snapshotVersion: 1,
+        focusedPaneId: null,
+        panes: [],
+      },
+    });
+
+    expect(withSnapshot.terminalPresences.s1?.driver).toEqual({
+      kind: "desktop",
+    });
+    expect(withSnapshot.mobileSessionSnapshots.p1).toHaveLength(1);
   });
 
   it("loadCachedStore returns snapshotApplied=false even when cache has data", () => {

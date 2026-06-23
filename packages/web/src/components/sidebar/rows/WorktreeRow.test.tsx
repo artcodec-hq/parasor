@@ -58,27 +58,33 @@ const selection: SidebarSelection = {
 };
 
 describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
-  it("uses a standalone Git modified dot and keeps the normal label color when dirty > 0", () => {
-    const { container } = render(
+  it("uses compact added/deleted dirty metrics and keeps the normal label color", () => {
+    render(
       <WorktreeRow
         project={project}
-        worktree={makeWorktree(3)}
+        worktree={{
+          ...makeWorktree(3),
+          ahead: 2,
+          behind: 1,
+          dirtyAdded: 2,
+          dirtyDeleted: 1,
+          serviceCount: 4,
+        }}
         selection={selection}
       />,
     );
     const row = screen.getByRole("button", {
-      name: "main, 3 uncommitted changes",
+      name: "main, 2 added lines, 1 deleted line, 4 live ports",
     });
     const label = screen.getByText("main");
     expect(row).not.toBeNull();
-    expect(label.getAttribute("title")).toBe("3 uncommitted changes");
-    expect(label.className).toContain("text-text-secondary");
-    const dot = container.querySelector(
-      ".bg-\\[var\\(--theme-git-modified\\)\\]",
+    expect(label.getAttribute("title")).toBe(
+      "2 added lines, 1 deleted line, 4 live ports",
     );
-    expect(dot).not.toBeNull();
-    expect(dot?.className).not.toContain("absolute");
-    expect(dot?.className).toContain("shrink-0");
+    expect(label.className).toContain("text-text-secondary");
+    expect(screen.getByText("+2")).toBeTruthy();
+    expect(screen.getByText("-1")).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
     expect(screen.queryByLabelText("Modified")).toBeNull();
   });
 
@@ -96,8 +102,8 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     ).toBeNull();
   });
 
-  it("uses singular 'change' in title when dirty === 1", () => {
-    render(
+  it("falls back to the modified dot when only dirtyCount is available", () => {
+    const { container } = render(
       <WorktreeRow
         project={project}
         worktree={makeWorktree(1)}
@@ -109,6 +115,47 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     );
     expect(
       screen.getByRole("button", { name: "main, 1 uncommitted change" }),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
+    ).not.toBeNull();
+  });
+
+  it("shows tracked line stats instead of the modified dot when available", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(3), dirtyAdded: 12, dirtyDeleted: 4 }}
+        selection={selection}
+      />,
+    );
+    expect(screen.getByText("+12")).not.toBeNull();
+    expect(screen.getByText("-4")).not.toBeNull();
+    expect(screen.getByText("main").getAttribute("title")).toBe(
+      "12 added lines, 4 deleted lines",
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "main, 12 added lines, 4 deleted lines",
+      }),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
+    ).toBeNull();
+  });
+
+  it("falls back to the modified dot when dirty has no tracked line stats", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(2), dirtyAdded: 0, dirtyDeleted: 0 }}
+        selection={selection}
+      />,
+    );
+    expect(screen.queryByText("+0")).toBeNull();
+    expect(screen.queryByText("-0")).toBeNull();
+    expect(
+      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
     ).not.toBeNull();
   });
 
@@ -126,18 +173,6 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(screen.queryByLabelText("Modified")).toBeNull();
   });
 
-  it("renders a live service count pill", () => {
-    render(
-      <WorktreeRow
-        project={project}
-        worktree={{ ...makeWorktree(0), serviceCount: 2 }}
-        selection={selection}
-      />,
-    );
-
-    expect(screen.getByLabelText("2 live services").textContent).toBe("2");
-  });
-
   it("uses secondary text for the project root label", () => {
     render(
       <WorktreeRow
@@ -152,9 +187,24 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(label.className).toContain("text-text-secondary");
     expect(label.className).not.toContain("text-text-primary");
   });
+
+  it("does not render a top border separator on the worktree wrapper", () => {
+    const { container } = render(
+      <WorktreeRow
+        project={project}
+        worktree={makeWorktree(0)}
+        selection={selection}
+      />,
+    );
+
+    expect(container.firstElementChild?.className).not.toContain("border-t");
+    expect(container.firstElementChild?.className).not.toContain(
+      "border-border",
+    );
+  });
 });
 
-describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
+describe("WorktreeRow agent / missing-path pills", () => {
   it("renders an 'agent' pill when origin is agent", () => {
     const { getByLabelText } = render(
       <WorktreeRow
@@ -166,7 +216,7 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
     expect(getByLabelText("Agent worktree").textContent).toBe("agent");
   });
 
-  it("renders an 'orphan' pill when orphan flag is set", () => {
+  it("renders a 'missing' pill when orphan flag is set", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -174,7 +224,19 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
         selection={selection}
       />,
     );
-    expect(getByLabelText("Orphan worktree").textContent).toBe("orphan");
+    expect(getByLabelText("Missing worktree").textContent).toBe("missing");
+  });
+
+  it("strikes through the worktree label when orphan flag is set", () => {
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), orphan: true }}
+        selection={selection}
+      />,
+    );
+
+    expect(screen.getByText("main").className).toContain("line-through");
   });
 
   it("renders a linked pill when lineage metadata is present", () => {
@@ -214,7 +276,7 @@ describe("WorktreeRow agent / orphan pills (orphan agent display)", () => {
     );
     expect(queryByLabelText("Agent worktree")).toBeNull();
     expect(queryByLabelText("Linked worktree")).toBeNull();
-    expect(queryByLabelText("Orphan worktree")).toBeNull();
+    expect(queryByLabelText("Missing worktree")).toBeNull();
   });
 });
 

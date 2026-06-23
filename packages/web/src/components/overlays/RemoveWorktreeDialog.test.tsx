@@ -29,7 +29,7 @@ describe("RemoveWorktreeDialog", () => {
     expect(container.textContent).toContain("/tmp/wt-a");
   });
 
-  it("renders as an accessible modal dialog", () => {
+  it("renders as an accessible dialog", () => {
     render(<RemoveWorktreeDialog {...defaults} />);
     const dialog = screen.getByRole("dialog", {
       name: "Remove worktree feat/a",

@@ -5,9 +5,11 @@ import {
   DEFAULT_DROP_SIZE_MAX_BYTES,
   type GitState,
   type HydrationPayload,
+  type MobileSessionSnapshot,
   type Notification,
   type PortInfo,
   type RuntimeServiceInfo,
+  type TerminalPresenceSnapshot,
   type Worktree,
   type WsEventEnvelope,
   type WsEventMessage,
@@ -22,6 +24,8 @@ export interface HydrationSources {
   getNotifications: () => Notification[];
   getPorts: () => Record<string, PortInfo[]>;
   getActivityHistory: () => ReturnType<SessionActivityStore["getRecent"]>;
+  getTerminalPresences: () => Record<string, TerminalPresenceSnapshot>;
+  getMobileSessionSnapshots: () => Record<string, MobileSessionSnapshot[]>;
   getServices: () => Record<string, RuntimeServiceInfo[]>;
   getGitStates: () => Record<string, Record<string, GitState | null>>;
   /**
@@ -85,6 +89,8 @@ export class EventBus {
           notifications: this.sources.getNotifications(),
           ports: this.sources.getPorts(),
           activityHistory: this.sources.getActivityHistory(),
+          terminalPresences: this.sources.getTerminalPresences(),
+          mobileSessionSnapshots: this.sources.getMobileSessionSnapshots(),
           services: this.sources.getServices(),
           gitStates: this.sources.getGitStates(),
           worktrees: this.sources.getWorktrees(),
@@ -111,6 +117,8 @@ export class EventBus {
           notifications: [],
           ports: {},
           activityHistory: [],
+          terminalPresences: {},
+          mobileSessionSnapshots: {},
           services: {},
           gitStates: {},
           worktrees: {},

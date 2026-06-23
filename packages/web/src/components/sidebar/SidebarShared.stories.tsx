@@ -183,7 +183,7 @@ export const WorktreeRows: Story = {
         forceOpen
         onSelectWorktree={noop}
         onSelectChild={noop}
-        onOpenContainer={noop}
+        onNewSession={noop}
         onToggleChildPin={noop}
       />
       <WorktreeRow
@@ -201,7 +201,7 @@ export const WorktreeRows: Story = {
         }}
         selection={{ ...selection, selectedWorktreeId: null }}
         onSelectWorktree={noop}
-        onOpenContainer={noop}
+        onNewSession={noop}
       />
     </SidebarSurface>
   ),
@@ -224,7 +224,7 @@ export const ProjectGroupFallback: Story = {
         }}
         forceOpen
         onSelectWorktree={noop}
-        onOpenContainer={noop}
+        onNewSession={noop}
       />
     </SidebarSurface>
   ),
@@ -267,7 +267,7 @@ export const WorktreeActions: Story = {
         <span className="flex-1 text-sm text-text-secondary">
           feature/storybook
         </span>
-        <WorktreeRowActions label="feature/storybook" onOpenContainer={noop} />
+        <WorktreeRowActions label="feature/storybook" onNewSession={noop} />
       </div>
       <div className="flex h-bar items-center gap-2 px-3">
         <span className="flex-1 text-sm text-text-secondary">read only</span>

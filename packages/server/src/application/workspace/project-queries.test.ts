@@ -84,6 +84,30 @@ describe("parseWorktreeList", () => {
       ["/Users/user/project", undefined],
     ]);
   });
+
+  it("marks prunable worktrees as orphaned", () => {
+    const input = [
+      "worktree /Users/user/project",
+      "HEAD abc123def456",
+      "branch refs/heads/main",
+      "",
+      "worktree /Users/user/project-gone",
+      "HEAD 789abc012def",
+      "branch refs/heads/gone",
+      "prunable gitdir file points to non-existent location",
+      "",
+    ].join("\n");
+
+    expect(parseWorktreeList(input)).toEqual([
+      { path: "/Users/user/project", head: "abc123def456", branch: "main" },
+      {
+        path: "/Users/user/project-gone",
+        head: "789abc012def",
+        branch: "gone",
+        orphan: true,
+      },
+    ]);
+  });
 });
 
 describe("createProjectQueries", () => {
@@ -321,6 +345,57 @@ describe("createProjectQueries", () => {
     });
 
     const out = await queries.getProjectWorktrees("proj-1");
+    expect(out).toEqual([
+      {
+        path: "/tmp/proj",
+        head: "abc",
+        branch: "main",
+        ahead: 0,
+        behind: 0,
+        dirtyCount: 0,
+      },
+      {
+        path: "/tmp/proj/gone",
+        head: "def",
+        branch: "stale",
+        orphan: true,
+      },
+    ]);
+  });
+
+  it("does not query status for prunable worktrees", async () => {
+    projects.set("proj-1", makeProject({ id: "proj-1" }));
+    const runGit = vi.fn(async (cwd: string, args: string[]) => {
+      if (args[0] === "worktree") {
+        return [
+          "worktree /tmp/proj",
+          "HEAD abc",
+          "branch refs/heads/main",
+          "",
+          "worktree /tmp/proj/gone",
+          "HEAD def",
+          "branch refs/heads/stale",
+          "prunable gitdir file points to non-existent location",
+          "",
+        ].join("\n");
+      }
+      if (args[0] === "status") {
+        return ["# branch.ab +0 -0", ""].join("\n");
+      }
+      throw new Error(`unexpected git ${cwd} ${args.join(" ")}`);
+    });
+    const queries = createProjectQueries({
+      projectManager,
+      runGit,
+    });
+
+    const out = await queries.getProjectWorktrees("proj-1");
+
+    expect(runGit).not.toHaveBeenCalledWith("/tmp/proj/gone", [
+      "status",
+      "--porcelain=v2",
+      "-b",
+    ]);
     expect(out).toEqual([
       {
         path: "/tmp/proj",

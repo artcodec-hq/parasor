@@ -1,14 +1,16 @@
-import { AgentDot, PaGlyph } from "../../primitives/index.js";
-import type { SidebarChild } from "../model/types.js";
 import {
-  SidebarRow,
-  SidebarRowActionButton,
-  SidebarRowLabel,
-} from "../primitives/index.js";
+  AgentDot,
+  MonitorSwitchButton,
+  PaGlyph,
+} from "../../primitives/index.js";
+import type { SidebarChild } from "../model/types.js";
+import { SidebarRow, SidebarRowLabel } from "../primitives/index.js";
 
 interface ChildRowProps {
   child: SidebarChild;
   selected: boolean;
+  disabled?: boolean;
+  unavailable?: boolean;
   onClick?: () => void;
   onTogglePin?: () => void;
 }
@@ -42,22 +44,31 @@ function SidebarChildStatus({ child }: { child: SidebarChild }) {
 export function ChildRow({
   child,
   selected,
+  disabled = false,
+  unavailable = false,
   onClick,
   onTogglePin,
 }: ChildRowProps) {
   const accessibleStatus = ACCESSIBLE_STATUS_LABEL[child.status];
-  const canTogglePin = child.kind === "terminal" && onTogglePin !== undefined;
+  const rowSelected = !disabled && selected;
+  const canTogglePin =
+    !disabled &&
+    !unavailable &&
+    child.kind === "terminal" &&
+    onTogglePin !== undefined;
 
   return (
     <SidebarRow
       depth={1}
-      selected={selected}
+      selected={rowSelected}
       hint={child.hint}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      className={disabled || unavailable ? "opacity-50" : undefined}
+      rootProps={disabled ? { "aria-disabled": true } : undefined}
     >
       <SidebarChildStatus child={child} />
       <SidebarRowLabel
-        selected={selected}
+        selected={rowSelected}
         className={STATUS_LABEL_CLASS[child.status]}
       >
         {child.label}
@@ -66,19 +77,15 @@ export function ChildRow({
         <span className="sr-only">, {accessibleStatus}</span>
       )}
       {canTogglePin ? (
-        <SidebarRowActionButton
-          aria-label={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          aria-pressed={child.pinned}
-          title={child.pinned ? "Remove from Monitor" : "Pin to Monitor"}
-          tone={child.pinned ? "accent" : "default"}
+        <MonitorSwitchButton
+          pressed={child.pinned}
+          trackSurface="sidebar"
           onClick={(event) => {
             event.stopPropagation();
             onTogglePin();
           }}
-        >
-          <PaGlyph.pin />
-        </SidebarRowActionButton>
-      ) : child.pinned ? (
+        />
+      ) : !disabled && !unavailable && child.pinned ? (
         <span
           role="img"
           aria-label="pinned to Monitor"

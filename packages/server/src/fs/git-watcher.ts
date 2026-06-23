@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { GitState } from "@parasor/shared";
+import type {
+  GitChangeEntry,
+  GitChangeStatus,
+  GitState,
+} from "@parasor/shared";
 
 const execFileAsync = promisify(execFile);
 
@@ -145,6 +149,27 @@ export interface GitStatusV2Snapshot {
   behind?: number;
   dirtyCount: number;
   fileStatuses: Record<string, string>;
+  changes: GitChangeEntry[];
+}
+
+export interface GitShortstat {
+  addedLines: number;
+  deletedLines: number;
+}
+
+/**
+ * Parse `git diff --shortstat` output. Examples:
+ *   `1 file changed, 2 insertions(+), 3 deletions(-)`
+ *   `1 file changed, 1 insertion(+)`
+ *   `1 file changed, 1 deletion(-)`
+ */
+export function parseGitShortstat(raw: string): GitShortstat {
+  const added = raw.match(/(\d+)\s+insertions?\(\+\)/);
+  const deleted = raw.match(/(\d+)\s+deletions?\(-\)/);
+  return {
+    addedLines: added ? parseInt(added[1], 10) : 0,
+    deletedLines: deleted ? parseInt(deleted[1], 10) : 0,
+  };
 }
 
 /**
@@ -171,6 +196,7 @@ export function parseGitStatusV2WithFiles(raw: string): GitStatusV2Snapshot {
   let behind: number | undefined;
   let dirtyCount = 0;
   const fileStatuses: Record<string, string> = {};
+  const changes: GitChangeEntry[] = [];
 
   // `-z` separates records by NUL. Renames carry an extra NUL between new
   // and old paths; the loop reads the next record on encountering one.
@@ -203,6 +229,8 @@ export function parseGitStatusV2WithFiles(raw: string): GitStatusV2Snapshot {
       const path = parts.slice(8).join(" ");
       const code = pickStatusCode(xy);
       if (code) fileStatuses[path] = code;
+      const entry = buildChangeEntry(path, xy, code);
+      if (entry) changes.push(entry);
       dirtyCount += 1;
     } else if (head === "2") {
       // Rename/copy. Path = current name (this record's tail), original
@@ -213,6 +241,9 @@ export function parseGitStatusV2WithFiles(raw: string): GitStatusV2Snapshot {
       const newPath = parts.slice(9).join(" ");
       const code = pickStatusCode(xy);
       if (code) fileStatuses[newPath] = code;
+      const oldPath = records[i + 1];
+      const entry = buildChangeEntry(newPath, xy, code, oldPath);
+      if (entry) changes.push(entry);
       dirtyCount += 1;
       i += 1; // skip the original-path record
     } else if (head === "u") {
@@ -220,17 +251,32 @@ export function parseGitStatusV2WithFiles(raw: string): GitStatusV2Snapshot {
       if (parts.length < 11) continue;
       const path = parts.slice(10).join(" ");
       fileStatuses[path] = "U";
+      changes.push({
+        path,
+        area: "unstaged",
+        status: "conflict",
+        code: "U",
+        conflict: true,
+        indexStatus: parts[1]?.[0],
+        worktreeStatus: parts[1]?.[1],
+      });
       dirtyCount += 1;
     } else if (head === "?") {
       // `? <path>` -- single space, then path.
       const path = line.slice(2);
       fileStatuses[path] = "?";
+      changes.push({
+        path,
+        area: "untracked",
+        status: "untracked",
+        code: "?",
+      });
       dirtyCount += 1;
     }
     // `!` ignored entries are skipped (would only appear with --ignored).
   }
 
-  return { branch, ahead, behind, dirtyCount, fileStatuses };
+  return { branch, ahead, behind, dirtyCount, fileStatuses, changes };
 }
 
 function stderrOf(err: unknown): string {
@@ -248,6 +294,43 @@ function pickStatusCode(xy: string): string | null {
   if (y !== "." && y !== " ") return y;
   if (x !== "." && x !== " ") return x;
   return null;
+}
+
+function isChangedStatus(value: string | undefined): boolean {
+  return value !== undefined && value !== "." && value !== " ";
+}
+
+function statusFromCode(code: string, oldPath?: string): GitChangeStatus {
+  if (code === "A") return "added";
+  if (code === "D") return "deleted";
+  if (code === "R") return "renamed";
+  if (code === "C") return "copied";
+  if (code === "?") return "untracked";
+  if (code === "U") return "conflict";
+  if (oldPath) return "renamed";
+  return "modified";
+}
+
+function buildChangeEntry(
+  path: string,
+  xy: string,
+  code: string | null,
+  oldPath?: string,
+): GitChangeEntry | null {
+  if (!code) return null;
+  const indexStatus = xy[0];
+  const worktreeStatus = xy[1];
+  const indexChanged = isChangedStatus(indexStatus);
+  const worktreeChanged = isChangedStatus(worktreeStatus);
+  return {
+    path,
+    area: worktreeChanged ? "unstaged" : "staged",
+    status: statusFromCode(code, oldPath),
+    code,
+    ...(oldPath ? { oldPath } : {}),
+    ...(indexChanged ? { indexStatus } : {}),
+    ...(worktreeChanged ? { worktreeStatus } : {}),
+  };
 }
 
 function cacheKey(projectId: string, worktreePath: string): string {
@@ -275,13 +358,19 @@ export class GitWatcher {
 
       const snap = parseGitStatusV2WithFiles(stdout);
       const dirty = snap.dirtyCount > 0;
+      const shortstat = dirty
+        ? await this.checkShortstat(worktreePath, env)
+        : undefined;
       return {
         branch: snap.branch,
         dirty,
         fileStatuses: dirty ? snap.fileStatuses : undefined,
+        changes: dirty ? snap.changes : undefined,
         ahead: snap.ahead,
         behind: snap.behind,
         dirtyCount: snap.dirtyCount,
+        addedLines: shortstat?.addedLines,
+        deletedLines: shortstat?.deletedLines,
         lastChecked: Date.now(),
       };
     } catch (err) {
@@ -302,6 +391,26 @@ export class GitWatcher {
     }
   }
 
+  private async checkShortstat(
+    worktreePath: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<GitShortstat | undefined> {
+    try {
+      const { stdout } = await execFileAsync(
+        "git",
+        ["-C", worktreePath, "diff", "HEAD", "--shortstat"],
+        {
+          timeout: 5000,
+          env,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+      return parseGitShortstat(stdout);
+    } catch {
+      return undefined;
+    }
+  }
+
   async checkAndDiff(
     projectId: string,
     worktreePath: string,
@@ -314,12 +423,15 @@ export class GitWatcher {
       state?.fileStatuses,
       cached?.fileStatuses,
     );
+    const changesChanged = !changesEqual(state?.changes, cached?.changes);
     const changed =
       state?.branch !== cached?.branch ||
       state?.dirty !== cached?.dirty ||
       state?.ahead !== cached?.ahead ||
       state?.behind !== cached?.behind ||
       state?.dirtyCount !== cached?.dirtyCount ||
+      state?.addedLines !== cached?.addedLines ||
+      state?.deletedLines !== cached?.deletedLines ||
       // The repo/non-repo transition (`git init` flipping isRepo from false
       // to undefined+populated) usually shows up as a branch change, but the
       // sidebar gates `root` label / folder icon / `Initialize git…` menu
@@ -327,7 +439,8 @@ export class GitWatcher {
       // UI re-renders the moment the flag flips, even on degenerate cases
       // where the post-init branch happens to read as `""`.
       state?.isRepo !== cached?.isRepo ||
-      fileStatusesChanged;
+      fileStatusesChanged ||
+      changesChanged;
 
     if (changed) {
       this.cache.set(key, state);
@@ -381,4 +494,27 @@ function fileStatusesEqual(
   const keysA = Object.keys(a);
   if (keysA.length !== Object.keys(b).length) return false;
   return keysA.every((k) => a[k] === b[k]);
+}
+
+function changesEqual(
+  a: GitChangeEntry[] | undefined,
+  b: GitChangeEntry[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  return a.every((entry, index) => {
+    const other = b[index];
+    return (
+      other !== undefined &&
+      entry.path === other.path &&
+      entry.area === other.area &&
+      entry.status === other.status &&
+      entry.code === other.code &&
+      entry.oldPath === other.oldPath &&
+      entry.conflict === other.conflict &&
+      entry.indexStatus === other.indexStatus &&
+      entry.worktreeStatus === other.worktreeStatus
+    );
+  });
 }

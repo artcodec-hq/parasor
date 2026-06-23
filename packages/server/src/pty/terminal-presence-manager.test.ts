@@ -302,6 +302,7 @@ describe("TerminalPresenceManager", () => {
       layout: null,
       subscribers: [],
     });
+    expect(manager.getAll()).toEqual({});
 
     advance(1_000);
     expect(manager.get("s1")).toEqual(reset.snapshot);

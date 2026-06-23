@@ -92,11 +92,28 @@ interface InactiveChildPane {
  * supplied path, falling back to direct equality.
  */
 interface CounterIndex {
-  lookup(path: string): Worktree | undefined;
+  lookup(path: string): SidebarWorktreeCounters | undefined;
+}
+
+interface SidebarWorktreeCounters {
+  path: string;
+  ahead?: number;
+  behind?: number;
+  dirtyCount?: number;
+  /** Added/deleted line counts from the live git watcher. */
+  dirtyAdded?: number;
+  dirtyDeleted?: number;
+  origin?: Worktree["origin"];
+  lineage?: Worktree["lineage"];
+  orphan?: Worktree["orphan"];
 }
 
 interface ServiceCountIndex {
   lookup(path: string): number;
+}
+
+interface GitStateIndex {
+  lookup(path: string): GitState | null | undefined;
 }
 
 function normalizePath(p: string): string {
@@ -107,11 +124,36 @@ function normalizePath(p: string): string {
 
 function counterLookup(
   worktreesByProject: Record<string, Worktree[]> | undefined,
+  gitStates: Record<string, Record<string, GitState | null>> | undefined,
   projectId: string,
 ): CounterIndex {
+  const projectGitStates = gitStates?.[projectId] ?? {};
+  const gitStateByNormalizedPath = new Map(
+    Object.entries(projectGitStates).map(([path, state]) => [
+      normalizePath(path),
+      state,
+    ]),
+  );
   const list = worktreesByProject?.[projectId] ?? [];
-  const byNormalizedPath = new Map<string, Worktree>();
-  for (const w of list) byNormalizedPath.set(normalizePath(w.path), w);
+  const byNormalizedPath = new Map<string, SidebarWorktreeCounters>();
+  for (const w of list) {
+    const key = normalizePath(w.path);
+    byNormalizedPath.set(key, {
+      ...w,
+      ...lineStatsFromGitState(gitStateByNormalizedPath.get(key)),
+    });
+  }
+  for (const [path, state] of Object.entries(projectGitStates)) {
+    const key = normalizePath(path);
+    if (byNormalizedPath.has(key)) continue;
+    byNormalizedPath.set(key, {
+      path,
+      ahead: state?.ahead,
+      behind: state?.behind,
+      dirtyCount: state?.dirtyCount,
+      ...lineStatsFromGitState(state),
+    });
+  }
   // Sort descending by length so prefix-matching picks the deepest worktree
   // (e.g. /repo/wt-a wins over /repo when cwd is /repo/wt-a/sub).
   const keys = [...byNormalizedPath.keys()].sort((a, b) => b.length - a.length);
@@ -120,6 +162,39 @@ function counterLookup(
       const t = normalizePath(target);
       const direct = byNormalizedPath.get(t);
       if (direct) return direct;
+      for (const k of keys) {
+        if (t === k || t.startsWith(`${k}/`)) return byNormalizedPath.get(k);
+      }
+      return undefined;
+    },
+  };
+}
+
+function lineStatsFromGitState(
+  state: GitState | null | undefined,
+): Pick<SidebarWorktreeCounters, "dirtyAdded" | "dirtyDeleted"> {
+  if (!state) return {};
+  return {
+    dirtyAdded: state.addedLines ?? 0,
+    dirtyDeleted: state.deletedLines ?? 0,
+  };
+}
+
+function gitStateLookup(
+  gitStates: Record<string, Record<string, GitState | null>> | undefined,
+  projectId: string,
+): GitStateIndex {
+  const states = gitStates?.[projectId] ?? {};
+  const byNormalizedPath = new Map<string, GitState | null>();
+  for (const [path, state] of Object.entries(states)) {
+    byNormalizedPath.set(normalizePath(path), state);
+  }
+  const keys = [...byNormalizedPath.keys()].sort((a, b) => b.length - a.length);
+  return {
+    lookup(target) {
+      const t = normalizePath(target);
+      const direct = byNormalizedPath.get(t);
+      if (direct !== undefined) return direct;
       for (const k of keys) {
         if (t === k || t.startsWith(`${k}/`)) return byNormalizedPath.get(k);
       }
@@ -167,9 +242,10 @@ export function buildSidebarProjects({
   const dismissed = attentionDismissed ?? {};
   return sortProjects(projects).map((project) => {
     const isActive = project.id === activeProjectId;
-    const counters = counterLookup(worktreesByProject, project.id);
+    const counters = counterLookup(worktreesByProject, gitStates, project.id);
+    const gitStateIndex = gitStateLookup(gitStates, project.id);
     const serviceCounts = serviceCountLookup(servicesByProject, project.id);
-    const rootGit = gitStates?.[project.id]?.[project.path];
+    const rootGit = gitStateIndex.lookup(project.path);
     const isNotRepo = rootGit?.isRepo === false;
     const worktrees = isActive
       ? buildActiveWorktrees({
@@ -258,6 +334,8 @@ function buildActiveWorktrees({
       path: wt.path,
       active: isRoot,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(wt.path),
@@ -266,7 +344,7 @@ function buildActiveWorktrees({
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
       ...(meta?.lineage ? { lineage: meta.lineage } : {}),
-      ...(meta?.orphan ? { orphan: true } : {}),
+      ...(wt.orphan || meta?.orphan ? { orphan: true } : {}),
     };
   });
 }
@@ -285,6 +363,8 @@ function buildPlaceholderWorktrees(
       path: project.path,
       active: true,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(project.path),
@@ -311,8 +391,11 @@ interface BuildInactiveWorktreesOptions {
 }
 
 // Union of project.path ("main"), server worktree snapshot, and distinct
-// session cwds. Client-side child panes may attach to those rows, but do not
-// seed rows on their own because their persisted paths can be stale.
+// session cwds. When a session cwd no longer belongs to the authoritative
+// snapshot, keep it as an orphan row so the user can close the remaining
+// session without presenting the path as a live worktree. Client-side child
+// panes may attach to known rows, but do not seed rows on their own because
+// their persisted paths can be stale.
 function buildInactiveWorktrees({
   project,
   sessions,
@@ -327,14 +410,22 @@ function buildInactiveWorktrees({
 }: BuildInactiveWorktreesOptions): SidebarWorktree[] {
   const projectSessions = sessions.filter((s) => s.projectId === project.id);
   const byCwd = new Map<string, Session[]>();
+  const syntheticOrphanPaths = new Set<string>();
   byCwd.set(project.path, []);
+  const hasAuthoritativeWorktrees = projectWorktrees.length > 0;
   for (const wt of projectWorktrees) {
     if (!byCwd.has(wt.path)) byCwd.set(wt.path, []);
   }
   for (const s of projectSessions) {
-    const cwd =
-      inactiveSessionWorktreePath(s.cwd, project.path, projectWorktrees) ??
-      s.cwd;
+    let cwd = inactiveSessionWorktreePath(
+      s.cwd,
+      project.path,
+      projectWorktrees,
+    );
+    if (!cwd) {
+      cwd = s.cwd;
+      if (hasAuthoritativeWorktrees) syntheticOrphanPaths.add(cwd);
+    }
     const list = byCwd.get(cwd) ?? [];
     list.push(s);
     byCwd.set(cwd, list);
@@ -377,27 +468,32 @@ function buildInactiveWorktrees({
         agentType: agentTypeForSession(session),
       });
     }
-    for (const pane of childPanes[cwd] ?? []) {
-      const baseLabel = browserLabel(pane.url);
-      const seen = labelCounts.get(baseLabel) ?? 0;
-      labelCounts.set(baseLabel, seen + 1);
-      children.push({
-        id: pane.id,
-        kind: "browser",
-        label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
-        hint: pane.url,
-        status: "idle",
-        pinned: false,
-      });
-    }
     const meta = counters.lookup(cwd);
     const isRoot = cwd === project.path;
+    const isSyntheticOrphan = syntheticOrphanPaths.has(cwd);
+    if (!isSyntheticOrphan) {
+      for (const pane of childPanes[cwd] ?? []) {
+        const baseLabel = browserLabel(pane.url);
+        const seen = labelCounts.get(baseLabel) ?? 0;
+        labelCounts.set(baseLabel, seen + 1);
+        children.push({
+          id: pane.id,
+          kind: "browser",
+          label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
+          hint: pane.url,
+          status: "idle",
+          pinned: false,
+        });
+      }
+    }
     return {
       id: `wt:${cwd}`,
       name: isRoot ? (isNotRepo ? "root" : "main") : lastSegment(cwd),
       path: cwd,
       active: isRoot,
       dirty: meta?.dirtyCount ?? 0,
+      dirtyAdded: meta?.dirtyAdded ?? 0,
+      dirtyDeleted: meta?.dirtyDeleted ?? 0,
       ahead: meta?.ahead ?? 0,
       behind: meta?.behind ?? 0,
       serviceCount: serviceCounts.lookup(cwd),
@@ -406,7 +502,7 @@ function buildInactiveWorktrees({
       hasAlertChild: children.some((c) => c.status === "attention"),
       ...(meta?.origin ? { origin: meta.origin } : {}),
       ...(meta?.lineage ? { lineage: meta.lineage } : {}),
-      ...(meta?.orphan ? { orphan: true } : {}),
+      ...(meta?.orphan || isSyntheticOrphan ? { orphan: true } : {}),
     };
   });
 }

@@ -48,6 +48,8 @@ describe("EventBus", () => {
       getNotifications: () => [],
       getPorts: () => ({}),
       getActivityHistory: () => [],
+      getTerminalPresences: () => ({}),
+      getMobileSessionSnapshots: () => ({}),
       getServices: () => ({}),
       getGitStates: () => ({}),
       getWorktrees: () => ({}),
@@ -169,6 +171,8 @@ describe("EventBus", () => {
       getNotifications: () => [],
       getPorts: () => ({}),
       getActivityHistory: () => [],
+      getTerminalPresences: () => ({}),
+      getMobileSessionSnapshots: () => ({}),
       getServices: () => ({
         p1: [
           {

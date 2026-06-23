@@ -32,8 +32,10 @@ const DEFAULT_HEADLESS_REPLAY_MAX_BYTES =
   DEFAULT_IN_PROCESS_LEGACY_REPLAY_MAX_BYTES;
 const DEFAULT_HEADLESS_STATE_MAX_SESSIONS = 8;
 const DEFAULT_HEADLESS_STATE_TTL_MS = 10 * 60_000;
-const BOOTSTRAP_INPUT_AFTER_OUTPUT_DELAY_MS = 50;
-const BOOTSTRAP_INPUT_FALLBACK_DELAY_MS = 400;
+const BOOTSTRAP_INPUT_READLINE_READY_DELAY_MS = 25;
+const BOOTSTRAP_INPUT_AFTER_OUTPUT_QUIET_MS = 500;
+const BOOTSTRAP_INPUT_FALLBACK_DELAY_MS = 2500;
+const READLINE_READY_SEQUENCE = "\x1b[?2004h";
 
 function readPositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name];
@@ -1189,10 +1191,12 @@ export class InProcessPtyHost implements PtyHost {
       timer = setTimeout(send, delayMs);
     };
 
-    outputSubscription = proc.onData(() => {
-      arm(BOOTSTRAP_INPUT_AFTER_OUTPUT_DELAY_MS);
-      outputSubscription?.dispose();
-      outputSubscription = null;
+    outputSubscription = proc.onData((data) => {
+      arm(
+        data.includes(READLINE_READY_SEQUENCE)
+          ? BOOTSTRAP_INPUT_READLINE_READY_DELAY_MS
+          : BOOTSTRAP_INPUT_AFTER_OUTPUT_QUIET_MS,
+      );
     });
     arm(BOOTSTRAP_INPUT_FALLBACK_DELAY_MS);
   }

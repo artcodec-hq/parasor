@@ -27,6 +27,8 @@ const projects: SidebarProject[] = [
         path: "/Users/akibe/Repos/github.com/akibe/parasor",
         active: true,
         dirty: 3,
+        dirtyAdded: 24,
+        dirtyDeleted: 1,
         ahead: 0,
         behind: 0,
         children: [
@@ -159,7 +161,7 @@ export const Desktop: Story = {
         onSelectMonitor={noop}
         onSelectWorktree={noop}
         onSelectChild={noop}
-        onOpenContainer={noop}
+        onNewSession={noop}
         onToggleChildPin={noop}
         onNewProject={noop}
         onOpenSettings={noop}
@@ -188,7 +190,7 @@ export const Filtered: Story = {
           onToggleSearch={noop}
           onSelectWorktree={noop}
           onSelectChild={noop}
-          onOpenContainer={noop}
+          onNewSession={noop}
           onNewProject={noop}
           onOpenSettings={noop}
         />
@@ -245,7 +247,7 @@ export const FillPanel: Story = {
           onSelectMonitor={noop}
           onSelectWorktree={noop}
           onSelectChild={noop}
-          onOpenContainer={noop}
+          onNewSession={noop}
           onToggleChildPin={noop}
           onNewProject={noop}
           onOpenSettings={noop}
@@ -269,7 +271,7 @@ export const Mobile: Story = {
           onSelectMonitor={noop}
           onSelectWorktree={noop}
           onSelectChild={noop}
-          onOpenContainer={noop}
+          onNewSession={noop}
           onToggleChildPin={noop}
           onNewProject={noop}
           onOpenSettings={noop}

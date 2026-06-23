@@ -202,6 +202,76 @@ describe("useTerminalSocket", () => {
     );
   });
 
+  it("resolves the initial cached cursor after terminal dimensions are known", async () => {
+    const resolveInitialLastSeen = vi.fn(
+      (dims: { cols: number; rows: number }) =>
+        dims.cols === 100 && dims.rows === 30
+          ? { generation: 4, seq: "99" }
+          : null,
+    );
+    const { result } = renderHook(() =>
+      useTerminalSocket({
+        sessionId: "s-cached",
+        resolveInitialLastSeen,
+        onData: () => {},
+      }),
+    );
+
+    await settleAuth();
+    const ws = latestSocket();
+    act(() => result.current.sendInit(100, 30));
+    act(() => ws.fireOpen());
+
+    expect(resolveInitialLastSeen).toHaveBeenCalledWith({
+      cols: 100,
+      rows: 30,
+    });
+    expect(ws.sent[0]).toBe(
+      JSON.stringify({
+        type: "init",
+        cols: 100,
+        rows: 30,
+        capabilities: {
+          binary: true,
+          chunkedReplay: true,
+          lastSeen: { generation: 4, seq: "99" },
+        },
+      }),
+    );
+  });
+
+  it("omits the cached cursor when the resolver rejects the fitted dimensions", async () => {
+    const resolveInitialLastSeen = vi.fn(() => null);
+    const { result } = renderHook(() =>
+      useTerminalSocket({
+        sessionId: "s-cached",
+        resolveInitialLastSeen,
+        onData: () => {},
+      }),
+    );
+
+    await settleAuth();
+    const ws = latestSocket();
+    act(() => result.current.sendInit(80, 24));
+    act(() => ws.fireOpen());
+
+    expect(resolveInitialLastSeen).toHaveBeenCalledWith({
+      cols: 80,
+      rows: 24,
+    });
+    expect(ws.sent[0]).toBe(
+      JSON.stringify({
+        type: "init",
+        cols: 80,
+        rows: 24,
+        capabilities: {
+          binary: true,
+          chunkedReplay: true,
+        },
+      }),
+    );
+  });
+
   it("does not reconnect when initialLastSeen identity changes after init-ack", async () => {
     const { result, rerender } = renderHook(
       ({ seen }: { seen: { generation: number; seq: string } | null }) =>

@@ -9,7 +9,7 @@ interface WorkspaceEmptyStateProps {
 /**
  * Hero placeholder shown when no pane is focused. The workspace empty
  * surface is brand-only -- actual launch flows live on worktree rows
- * (`+` -> OpenContainerDialog) and the sidebar. "New Project…" only
+ * (`+` -> NewSessionDialog) and the sidebar. "New Project…" only
  * surfaces when the user has no project yet; otherwise we point them
  * at the sidebar filter (`⌘K`) since search now scopes to the sidebar.
  */
