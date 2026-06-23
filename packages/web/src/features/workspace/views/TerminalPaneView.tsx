@@ -1,6 +1,7 @@
 import type { Session, TerminalPaneState } from "@parasor/shared";
 import { lazy, Suspense, useState, useSyncExternalStore } from "react";
 import {
+  MonitorSwitchButton,
   PaGlyph,
   PaneHeader,
   PaneIconButton,
@@ -13,7 +14,6 @@ import {
 } from "../../../lib/terminal-trace.js";
 import { EditablePaneTitle } from "./EditablePaneTitle.js";
 import { PaneCloseButton } from "./PaneCloseButton.js";
-import { PinToggleButton } from "./PinToggleButton.js";
 
 const LazyTerminalPane = lazy(() =>
   import("../../panes/terminal/TerminalPane.js").then(({ TerminalPane }) => ({
@@ -83,7 +83,11 @@ export function TerminalPaneView({
               />
             )}
             {pin && (
-              <PinToggleButton pinned={pin.pinned} onToggle={pin.onToggle} />
+              <MonitorSwitchButton
+                pressed={pin.pinned}
+                className="bg-bg-secondary"
+                onClick={pin.onToggle}
+              />
             )}
             {onClose && <PaneCloseButton onClick={onClose} />}
           </>

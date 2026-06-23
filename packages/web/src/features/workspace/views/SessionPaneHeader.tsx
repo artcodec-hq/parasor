@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  MonitorSwitchButton,
   PaGlyph,
   PaMenu,
   PaneIconButton,
@@ -7,7 +8,6 @@ import {
 import type { PaMenuItem } from "../../../components/primitives/PaMenu.js";
 import { useLongPressCopy } from "../../../hooks/use-long-press-copy.js";
 import { PaneCloseButton } from "./PaneCloseButton.js";
-import { PinToggleButton } from "./PinToggleButton.js";
 import { WorktreeTabBar } from "./WorktreeTabBar.js";
 
 export interface SessionCrumb {
@@ -103,9 +103,10 @@ export function SessionPaneHeader({
                 isLast={isLast}
                 trailing={
                   isLast && pin ? (
-                    <PinToggleButton
-                      pinned={pin.pinned}
-                      onToggle={pin.onToggle}
+                    <MonitorSwitchButton
+                      pressed={pin.pinned}
+                      className="bg-bg-secondary"
+                      onClick={pin.onToggle}
                     />
                   ) : undefined
                 }

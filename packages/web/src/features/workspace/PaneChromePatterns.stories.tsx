@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ReactNode, useState } from "react";
 import {
+  MonitorSwitchButton,
   PaButton,
   PaGlyph,
   PaMenu,
@@ -9,7 +10,6 @@ import {
   PaneIconButton,
 } from "../../components/primitives/index.js";
 import type { PaMenuItem } from "../../components/primitives/PaMenu.js";
-import { PinToggleButton } from "./views/PinToggleButton.js";
 
 const noop = () => undefined;
 
@@ -94,9 +94,10 @@ export const TerminalHeader: Story = {
           titleAttr="codex"
           actions={
             <>
-              <PinToggleButton
-                pinned={pinned}
-                onToggle={() => setPinned((value) => !value)}
+              <MonitorSwitchButton
+                pressed={pinned}
+                className="bg-bg-secondary"
+                onClick={() => setPinned((value) => !value)}
               />
               <PaneIconButton
                 label="Close pane"
