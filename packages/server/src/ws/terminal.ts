@@ -598,16 +598,23 @@ function applyPresenceResize(
     return false;
   }
   terminalPresenceManager.recordDesktopGeometry(sessionId, { cols, rows });
-  const allowed = terminalPresenceManager.canResize(sessionId, {
-    kind: "desktop",
-    clientId,
-  });
-  if (!allowed) {
-    traceRecorder?.record(
-      "pty-resize",
-      { blockedByPresence: true, clientKind: state.clientKind, cols, rows },
-      { sessionId, clientId },
-    );
+  if (
+    terminalPresenceManager.canResize(sessionId, {
+      kind: "desktop",
+      clientId,
+    })
+  ) {
+    return true;
   }
-  return allowed;
+
+  const reclaim = terminalPresenceManager.reclaimForDesktop(sessionId);
+  if (reclaim.snapshot.driver.kind === "desktop") {
+    return false;
+  }
+  traceRecorder?.record(
+    "pty-resize",
+    { blockedByPresence: true, clientKind: state.clientKind, cols, rows },
+    { sessionId, clientId },
+  );
+  return false;
 }
