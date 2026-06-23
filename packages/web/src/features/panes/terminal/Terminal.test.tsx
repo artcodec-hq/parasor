@@ -640,6 +640,10 @@ describe("Terminal", () => {
       configurable: true,
       value: undefined,
     });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: undefined,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 404 })),
@@ -2661,6 +2665,14 @@ describe("Terminal", () => {
     });
     expect(pointerDown.defaultPrevented).toBe(true);
     expect(rootPointerDown).not.toHaveBeenCalled();
+    const contextMenu = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      copyButton.dispatchEvent(contextMenu);
+    });
+    expect(contextMenu.defaultPrevented).toBe(true);
 
     mockTermFocus.mockClear();
     await act(async () => {
@@ -2703,6 +2715,181 @@ describe("Terminal", () => {
     });
     expect(laterMouseDown.defaultPrevented).toBe(false);
     expect(xtermMouseDownHandler).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("falls back to execCommand when native terminal copy writeText fails", async () => {
+    vi.useFakeTimers();
+    enableTerminalTrace();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    const writeText = vi
+      .fn()
+      .mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    });
+    mockTermGetSelection.mockReturnValue("copy me");
+    mockTermGetSelectionPosition.mockReturnValue({
+      start: { x: 8, y: 7 },
+      end: { x: 16, y: 7 },
+    });
+    const { container } = render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 10 },
+        ]),
+      );
+      vi.advanceTimersByTime(451);
+      screen.dispatchEvent(
+        makeTouchEvent("touchend", [
+          { identifier: 1, clientX: 120, clientY: 40 },
+        ]),
+      );
+    });
+
+    await act(async () => {
+      buttonByLabel(container, "Copy terminal selection").click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(localStorage.getItem(TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY)).toBe(
+      "copy me",
+    );
+    expect(window.parasorTerminalTrace?.dump()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-toolbar-copy",
+          status: "native",
+          dataLength: 7,
+        }),
+      ]),
+    );
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("opens an external copy dialog from a long-press on the copy action", async () => {
+    vi.useFakeTimers();
+    enableTerminalTrace();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    mockTermGetSelection.mockReturnValue("copy me");
+    mockTermGetSelectionPosition.mockReturnValue({
+      start: { x: 8, y: 7 },
+      end: { x: 16, y: 7 },
+    });
+    const { container } = render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 10 },
+        ]),
+      );
+      vi.advanceTimersByTime(451);
+      screen.dispatchEvent(
+        makeTouchEvent("touchend", [
+          { identifier: 1, clientX: 120, clientY: 40 },
+        ]),
+      );
+    });
+
+    const copyButton = buttonByLabel(container, "Copy terminal selection");
+    act(() => {
+      copyButton.dispatchEvent(
+        makePointerEvent("pointerdown", { clientX: 120, clientY: 20 }),
+      );
+      vi.advanceTimersByTime(650);
+    });
+
+    expect(
+      document.querySelector('[role="dialog"][aria-label="Copy text"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).toBeNull();
+    expect(
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.textContent === "Close",
+      ),
+    ).toBe(true);
+    const copyText = document.querySelector<HTMLTextAreaElement>(
+      '[aria-label="Selected terminal text"]',
+    );
+    expect(copyText?.value).toBe("copy me");
+    expect(copyText?.selectionStart).toBe(copyText?.selectionEnd);
+
+    await act(async () => {
+      copyButton.dispatchEvent(
+        makePointerEvent("pointerup", { clientX: 120, clientY: 20 }),
+      );
+      copyButton.click();
+    });
+
+    expect(writeText).not.toHaveBeenCalled();
+
+    const dialogCopyButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent === "Copy");
+    if (!dialogCopyButton) throw new Error("missing dialog copy button");
+    await act(async () => {
+      dialogCopyButton.click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(localStorage.getItem(TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY)).toBe(
+      "copy me",
+    );
+    expect(
+      document.querySelector('[role="dialog"][aria-label="Copy text"]'),
+    ).toBeNull();
+    expect(window.parasorTerminalTrace?.dump()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-external-copy-dialog-open",
+          dataLength: 7,
+        }),
+        expect.objectContaining({
+          type: "terminal-external-copy-dialog-copy",
+          status: "internal",
+          dataLength: 7,
+        }),
+        expect.objectContaining({
+          type: "terminal-external-copy-dialog-copy",
+          status: "native",
+          dataLength: 7,
+        }),
+      ]),
+    );
     vi.useRealTimers();
   });
 
@@ -2895,6 +3082,54 @@ describe("Terminal", () => {
       type: "input",
       data: "tap paste",
     });
+  });
+
+  it("dismisses the paste-only toolbar when tapping outside it", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue("paste") },
+    });
+    const { container } = render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 20 },
+        ]),
+      );
+      screen.dispatchEvent(
+        makeTouchEndEvent([{ identifier: 1, clientX: 80, clientY: 20 }]),
+      );
+    });
+
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).not.toBeNull();
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 120, clientY: 20 },
+        ]),
+      );
+      screen.dispatchEvent(
+        makeTouchEndEvent([{ identifier: 1, clientX: 120, clientY: 20 }]),
+      );
+    });
+
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).toBeNull();
   });
 
   it("falls back to the internal terminal clipboard when native clipboard read fails", async () => {
