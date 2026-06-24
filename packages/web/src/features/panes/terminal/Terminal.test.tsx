@@ -1697,17 +1697,29 @@ describe("Terminal", () => {
   it("claims the terminal width on desktop when the cursor enters, not on bare focus", () => {
     // Non-touch (no matchMedia mock -> isTouch false). The shared PTY width is
     // claimed only on engagement: desktop = cursor entering the terminal.
+    enableTerminalTrace();
     render(<Terminal sessionId="s1" />, { wrapper });
     const termContainer = must(document.querySelector(".xterm")).parentElement;
     mockTermResize.mockClear();
+    mockTermRefresh.mockClear();
     mockSend.mockClear();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
 
-    // A bare window focus (alt-tab back) must NOT re-claim the width.
+    // A bare window focus (alt-tab back) must repaint locally without
+    // re-claiming the shared PTY width.
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
+    expect(window.parasorTerminalTrace?.dump()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-visible-refresh",
+          reason: "foreground",
+        }),
+      ]),
+    );
 
     // The cursor entering the terminal claims it (fits + resizes the PTY).
     act(() => {
