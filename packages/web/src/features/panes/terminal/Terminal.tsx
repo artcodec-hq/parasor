@@ -118,6 +118,7 @@ const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS = [80, 250] as const;
 const TERMINAL_UNICODE_VERSION = "11";
+const DESKTOP_INPUT_CLAIM_MIN_INTERVAL_MS = 1000;
 
 type SelectionOverlayState = {
   range: TerminalSelectionRange;
@@ -331,6 +332,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     });
     const historyTopLoadArmedRef = useRef(false);
     const encoderRef = useRef<TextEncoder | null>(null);
+    const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
     if (!encoderRef.current) encoderRef.current = new TextEncoder();
     if (cachedReplayRef.current?.sessionId !== sessionId) {
       cachedReplayRef.current = {
@@ -1146,7 +1148,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       rendererTraceRef.current.fontFamily = resolvedFontStack;
       rendererTraceRef.current.fontSize = contentFontSize;
     }
-    const { attachViewportLifecycle, applyTerminalConfig } =
+    const { attachViewportLifecycle, applyTerminalConfig, claimViewport } =
       useTerminalViewportLifecycle({
         sessionId,
         isEnded,
@@ -1593,6 +1595,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             sessionId,
             dataLength: out.length,
           });
+          if (!isTouch) {
+            const sinceLastClaim = now - lastDesktopInputClaimAtRef.current;
+            if (sinceLastClaim >= DESKTOP_INPUT_CLAIM_MIN_INTERVAL_MS) {
+              lastDesktopInputClaimAtRef.current = now;
+              claimViewport("desktop-input");
+            }
+          }
           send({ type: "input", data: out });
           scheduleInputDiagnostics(term, out.length, inputStatus);
         });
@@ -1874,6 +1883,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       };
     }, [
       attachViewportLifecycle,
+      claimViewport,
       dropEnabledRef,
       isIos,
       isTouch,

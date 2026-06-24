@@ -1694,9 +1694,9 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
-  it("claims the terminal width on desktop when the cursor enters, not on bare focus", () => {
+  it("claims the terminal width on desktop terminal focus or cursor enter, not on bare window focus", () => {
     // Non-touch (no matchMedia mock -> isTouch false). The shared PTY width is
-    // claimed only on engagement: desktop = cursor entering the terminal.
+    // claimed only on terminal engagement: focus inside xterm or cursor enter.
     enableTerminalTrace();
     render(<Terminal sessionId="s1" />, { wrapper });
     const termContainer = must(document.querySelector(".xterm")).parentElement;
@@ -1721,7 +1721,17 @@ describe("Terminal", () => {
       ]),
     );
 
+    // Keyboard-only or restored-pane focus still means this terminal is about
+    // to send desktop input, so it must reclaim before that input is written.
+    act(() => {
+      termContainer?.dispatchEvent(
+        new FocusEvent("focusin", { bubbles: true }),
+      );
+    });
+    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
+
     // The cursor entering the terminal claims it (fits + resizes the PTY).
+    mockTermResize.mockClear();
     act(() => {
       termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
     });
@@ -2192,6 +2202,26 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
+  it("claims the desktop viewport before sending terminal input", () => {
+    render(<Terminal sessionId="s-input-claim" />, { wrapper });
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    const onData = mockTermOnData.mock.calls[0]?.[0] as
+      | ((data: string) => void)
+      | undefined;
+    if (!onData) throw new Error("missing onData handler");
+
+    act(() => {
+      onData("a");
+    });
+
+    expect(mockSend.mock.calls.slice(0, 2).map(([msg]) => msg)).toEqual([
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+      { type: "input", data: "a" },
+    ]);
+  });
+
   it("suppresses duplicate text emitted during one IME composition commit", () => {
     render(<Terminal sessionId="s-ime" />, { wrapper });
     mockSend.mockClear();
@@ -2222,8 +2252,10 @@ describe("Terminal", () => {
       onData("確定");
     });
 
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend).toHaveBeenCalledWith({ type: "input", data: "確定" });
+    const inputs = mockSend.mock.calls
+      .map(([msg]) => msg)
+      .filter((msg) => msg.type === "input");
+    expect(inputs).toEqual([{ type: "input", data: "確定" }]);
   });
 
   it("does not suppress repeated text outside the IME duplicate window", () => {
@@ -2258,9 +2290,13 @@ describe("Terminal", () => {
       onData("あ");
     });
 
-    expect(mockSend).toHaveBeenCalledTimes(2);
-    expect(mockSend).toHaveBeenNthCalledWith(1, { type: "input", data: "あ" });
-    expect(mockSend).toHaveBeenNthCalledWith(2, { type: "input", data: "あ" });
+    const inputs = mockSend.mock.calls
+      .map(([msg]) => msg)
+      .filter((msg) => msg.type === "input");
+    expect(inputs).toEqual([
+      { type: "input", data: "あ" },
+      { type: "input", data: "あ" },
+    ]);
   });
 
   it("records sanitized xterm, replay, and DOM trace events when enabled", async () => {
