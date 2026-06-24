@@ -18,6 +18,7 @@ import {
 import {
   AgentDot,
   type AgentDotState,
+  MonitorSwitchButton,
   PaGlyph,
   PaneIconButton,
 } from "../../components/primitives/index.js";
@@ -27,7 +28,6 @@ import {
   type AttentionDismissals,
   isAttentionDismissed,
 } from "../workspace/useAttentionDismissals.js";
-import { PinToggleButton } from "../workspace/views/PinToggleButton.js";
 import {
   collectPinnedTerminals,
   type PinnedTerminalEntry,
@@ -675,9 +675,10 @@ function MonitorColumnHeader({
       {status !== "idle" && (
         <AgentDot state={status} title={statusContext?.reason} />
       )}
-      <PinToggleButton
-        pinned={true}
-        onToggle={() => void onTogglePin(entry.session.id)}
+      <MonitorSwitchButton
+        pressed={true}
+        className="bg-bg-secondary"
+        onClick={() => void onTogglePin(entry.session.id)}
       />
     </div>
   );

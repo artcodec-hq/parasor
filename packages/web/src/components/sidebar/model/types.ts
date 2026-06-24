@@ -56,6 +56,12 @@ export interface SidebarWorktree {
    * Agent Team isolation root (see `Worktree.origin`).
    */
   origin?: "agent";
+  /**
+   * Optional product-level provenance surfaced as a pill only when it changes
+   * the user's expectation. Parasor-created worktrees are the default; imported
+   * means the path came from git worktree discovery without Parasor lineage.
+   */
+  provenance?: "imported";
   lineage?: WorktreeLineageMetadata;
   /**
    * `true` when the worktree path no longer exists on disk. The sidebar

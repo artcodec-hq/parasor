@@ -39,7 +39,6 @@ export interface NewSessionDialogProps {
 }
 
 type Mode = "launcher" | "editor" | "worktree";
-
 function makeCommandId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `cmd:${crypto.randomUUID()}`;
@@ -75,6 +74,8 @@ export function NewSessionDialog({
 }: NewSessionDialogProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mode, setMode] = useState<Mode>("launcher");
+  const [editorTitle, setEditorTitle] = useState("Manage commands");
+  const [editorBack, setEditorBack] = useState<(() => void) | null>(null);
   const committedRef = useRef(false);
 
   const runSelected = useCallback(
@@ -96,6 +97,8 @@ export function NewSessionDialog({
     }
     setMode("launcher");
     setSelectedIndex(0);
+    setEditorTitle("Manage commands");
+    setEditorBack(null);
   }, [open]);
 
   useEffect(() => {
@@ -120,6 +123,10 @@ export function NewSessionDialog({
     return () => document.removeEventListener("keydown", onKey);
   }, [commands.length, mode, open, runSelected, selectedIndex]);
 
+  const handleEditorBackChange = useCallback((next: (() => void) | null) => {
+    setEditorBack(next ? () => next : null);
+  }, []);
+
   if (!open) return null;
 
   const worktreeDisplayName = displayWorktreeName({ project, worktree });
@@ -131,7 +138,10 @@ export function NewSessionDialog({
         projectName={project.name}
         selectedIndex={selectedIndex}
         worktreeName={worktreeDisplayName}
-        onEdit={() => setMode("editor")}
+        onEdit={() => {
+          setEditorTitle("Manage commands");
+          setMode("editor");
+        }}
         onNewWorktree={
           onCreateWorktreeSession ? () => setMode("worktree") : undefined
         }
@@ -155,7 +165,8 @@ export function NewSessionDialog({
     ) : (
       <CommandEditorBody
         commands={commandConfigs}
-        onBack={() => setMode("launcher")}
+        onHeaderBackChange={handleEditorBackChange}
+        onTitleChange={setEditorTitle}
         onChange={onCommandsChange}
       />
     );
@@ -172,7 +183,12 @@ export function NewSessionDialog({
     >
       <NewSessionHeader
         mode={mode}
-        onBack={() => setMode("launcher")}
+        editorTitle={editorTitle}
+        onBack={
+          mode === "editor" && editorBack
+            ? editorBack
+            : () => setMode("launcher")
+        }
         onClose={onClose}
       />
 
@@ -184,17 +200,19 @@ export function NewSessionDialog({
 }
 
 function NewSessionHeader({
+  editorTitle,
   mode,
   onBack,
   onClose,
 }: {
+  editorTitle: string;
   mode: Mode;
   onBack: () => void;
   onClose: () => void;
 }) {
   const title =
     mode === "editor"
-      ? "Commands"
+      ? editorTitle
       : mode === "worktree"
         ? "New worktree session"
         : "New session";
@@ -607,18 +625,22 @@ function CommandRow({
 
 function CommandEditorBody({
   commands,
-  onBack,
+  onHeaderBackChange,
+  onTitleChange,
   onChange,
 }: {
   commands: CustomPaneCommand[];
-  onBack: () => void;
+  onHeaderBackChange: (back: (() => void) | null) => void;
+  onTitleChange: (title: string) => void;
   onChange: (commands: CustomPaneCommand[]) => void;
 }) {
   const [editing, setEditing] = useState<{
     command: CustomPaneCommand;
-    fixedLabel?: boolean;
+    variant: CommandEditVariant;
     allowEmptyCommand?: boolean;
+    onDelete?: () => void;
     onReset?: () => void;
+    title: string;
   } | null>(null);
   const customCommands = commands.filter(
     (command) => !isBuiltinCommand(command),
@@ -626,15 +648,29 @@ function CommandEditorBody({
   const startNew = () =>
     setEditing({
       command: { id: makeCommandId(), label: "", initialInput: "" },
+      variant: "new",
+      title: "New custom command",
     });
+
+  useEffect(() => {
+    if (!editing) {
+      onTitleChange("Manage commands");
+      onHeaderBackChange(null);
+      return;
+    }
+    onTitleChange(editing.title);
+    onHeaderBackChange(() => setEditing(null));
+    return () => onHeaderBackChange(null);
+  }, [editing, onHeaderBackChange, onTitleChange]);
 
   if (editing) {
     return (
       <CommandForm
         allowEmptyCommand={editing.allowEmptyCommand}
         command={editing.command}
-        fixedLabel={editing.fixedLabel}
+        variant={editing.variant}
         onCancel={() => setEditing(null)}
+        onDelete={editing.onDelete}
         onReset={editing.onReset}
         onSave={(next) => {
           const builtinPreset = BUILTIN_SHELL_PRESETS.find(
@@ -665,127 +701,141 @@ function CommandEditorBody({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <PaButton kind="normal" size="sm" onClick={onBack}>
-          Done
-        </PaButton>
-        <div className="flex-1" />
-        <PaButton kind="submit" size="sm" onClick={startNew}>
-          <span className="inline-flex items-center gap-1">
+    <div className="flex flex-col gap-4">
+      <section className="space-y-2">
+        <div className="text-xs font-medium text-text-secondary">
+          Built-in commands
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {BUILTIN_SHELL_PRESETS.map((preset) => {
+            const command = builtinEditorCommand(commands, preset);
+            const enabled = command.enabled !== false;
+            const canToggle = preset.group === "agent";
+            return (
+              <div
+                className="flex min-h-12 items-center gap-2.5 rounded-control border border-border bg-bg-primary px-3 py-2"
+                key={preset.id}
+              >
+                <span className="inline-flex h-7 w-5 shrink-0 items-center justify-center text-text-secondary">
+                  <PaGlyph.terminal />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-text-primary">
+                    {preset.label}
+                  </div>
+                  <div className="cm-mono truncate text-xs text-text-secondary">
+                    {command.initialInput || "empty shell"}
+                  </div>
+                </div>
+                {canToggle && (
+                  <label className="inline-flex h-8 shrink-0 items-center gap-1.5 text-xs text-text-secondary">
+                    <input
+                      checked={enabled}
+                      className="h-3.5 w-3.5 accent-accent"
+                      type="checkbox"
+                      onChange={(event) =>
+                        onChange(
+                          upsertBuiltinCommand(commands, preset, {
+                            enabled: event.currentTarget.checked,
+                            initialInput: command.initialInput,
+                          }),
+                        )
+                      }
+                    />
+                    <span>{enabled ? "On" : "Off"}</span>
+                  </label>
+                )}
+                <PaButton
+                  kind="normal"
+                  size="sm"
+                  onClick={() =>
+                    setEditing({
+                      command,
+                      variant: "builtin",
+                      allowEmptyCommand: preset.commandLine === "",
+                      title: `Edit ${preset.label}`,
+                      onReset: () => {
+                        onChange(
+                          removeBuiltinCommandOverride(commands, preset.id),
+                        );
+                        setEditing(null);
+                      },
+                    })
+                  }
+                >
+                  Edit
+                </PaButton>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      <section className="space-y-2 border-t border-border pt-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1 text-xs font-medium text-text-secondary">
+            Custom commands
+          </div>
+          <button
+            type="button"
+            onClick={startNew}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control border border-border bg-bg-primary px-2 text-xs font-medium text-text-secondary hover:bg-row-hover-bg hover:text-text-primary"
+          >
             <PaGlyph.add />
             <span>Add</span>
-          </span>
-        </PaButton>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {BUILTIN_SHELL_PRESETS.map((preset) => {
-          const command = builtinEditorCommand(commands, preset);
-          const enabled = command.enabled !== false;
-          const canToggle = preset.group === "agent";
-          return (
-            <div
-              className="flex items-center gap-2 rounded-control border border-border bg-bg-primary px-3 py-2"
-              key={preset.id}
-            >
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-text-secondary/10">
-                {preset.group === "terminal" ? (
-                  <PaGlyph.terminal />
-                ) : (
-                  <PaGlyph.agent />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-text-primary">
-                  {preset.label}
-                </div>
-                <div className="cm-mono truncate text-xs text-text-secondary">
-                  {command.initialInput || "empty shell"}
-                </div>
-              </div>
-              {canToggle && (
-                <label className="inline-flex h-8 shrink-0 items-center gap-2 text-xs text-text-secondary">
-                  <input
-                    checked={enabled}
-                    className="h-4 w-4 accent-accent"
-                    type="checkbox"
-                    onChange={(event) =>
-                      onChange(
-                        upsertBuiltinCommand(commands, preset, {
-                          enabled: event.currentTarget.checked,
-                          initialInput: command.initialInput,
-                        }),
-                      )
-                    }
-                  />
-                  <span>{enabled ? "On" : "Off"}</span>
-                </label>
-              )}
-              <PaButton
-                kind="normal"
-                size="sm"
-                onClick={() =>
-                  setEditing({
-                    command,
-                    fixedLabel: true,
-                    allowEmptyCommand: preset.commandLine === "",
-                    onReset: () => {
-                      onChange(
-                        removeBuiltinCommandOverride(commands, preset.id),
-                      );
-                      setEditing(null);
-                    },
-                  })
-                }
-              >
-                Edit
-              </PaButton>
-            </div>
-          );
-        })}
-      </div>
-      {customCommands.length === 0 ? (
-        <div className="rounded-control border border-dashed border-border px-3 py-6 text-center text-sm text-text-secondary">
-          No custom commands
+          </button>
         </div>
-      ) : (
-        customCommands.map((command) => (
-          <div
-            className="flex items-center gap-2 rounded-control border border-border bg-bg-primary px-3 py-2"
-            key={command.id}
-          >
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold text-text-primary">
-                {command.label}
-              </div>
-              <div className="cm-mono truncate text-xs text-text-secondary">
-                {command.initialInput}
-              </div>
-            </div>
-            <PaButton
-              kind="normal"
-              size="sm"
-              onClick={() => setEditing({ command })}
-            >
-              Edit
-            </PaButton>
-            <PaButton
-              kind="destroy"
-              size="sm"
-              onClick={() =>
-                onChange(commands.filter((item) => item.id !== command.id))
-              }
-            >
-              Delete
-            </PaButton>
+        {customCommands.length === 0 ? (
+          <div className="rounded-control border border-dashed border-border px-3 py-6 text-center text-sm text-text-secondary">
+            No custom commands
           </div>
-        ))
-      )}
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {customCommands.map((command) => (
+              <div
+                className="flex min-h-12 items-center gap-2.5 rounded-control border border-border bg-bg-primary px-3 py-2"
+                key={command.id}
+              >
+                <span className="inline-flex h-7 w-5 shrink-0 items-center justify-center text-text-secondary">
+                  <PaGlyph.terminal />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-text-primary">
+                    {command.label}
+                  </div>
+                  <div className="cm-mono truncate text-xs text-text-secondary">
+                    {command.initialInput}
+                  </div>
+                </div>
+                <PaButton
+                  kind="normal"
+                  size="sm"
+                  onClick={() =>
+                    setEditing({
+                      command,
+                      variant: "custom",
+                      title: "Edit command",
+                      onDelete: () => {
+                        onChange(
+                          commands.filter((item) => item.id !== command.id),
+                        );
+                        setEditing(null);
+                      },
+                    })
+                  }
+                >
+                  Edit
+                </PaButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
 type BuiltinPreset = (typeof BUILTIN_SHELL_PRESETS)[number];
+type CommandEditVariant = "new" | "custom" | "builtin";
 
 function isBuiltinCommand(command: CustomPaneCommand): boolean {
   return command.id.startsWith("builtin:");
@@ -830,24 +880,27 @@ function removeBuiltinCommandOverride(
 function CommandForm({
   allowEmptyCommand = false,
   command,
-  fixedLabel = false,
   onCancel,
+  onDelete,
   onReset,
   onSave,
+  variant,
 }: {
   allowEmptyCommand?: boolean;
   command: CustomPaneCommand;
-  fixedLabel?: boolean;
   onCancel: () => void;
+  onDelete?: () => void;
   onReset?: () => void;
   onSave: (command: CustomPaneCommand) => void;
+  variant: CommandEditVariant;
 }) {
   const [label, setLabel] = useState(command.label);
   const [initialInput, setInitialInput] = useState(command.initialInput);
   const normalizedLabel = label.trim();
   const normalizedInput = initialInput.trim();
+  const labelRequired = variant !== "builtin";
   const canSave =
-    normalizedLabel.length > 0 &&
+    (!labelRequired || normalizedLabel.length > 0) &&
     (allowEmptyCommand || normalizedInput.length > 0);
   return (
     <form
@@ -857,22 +910,24 @@ function CommandForm({
         if (!canSave) return;
         onSave({
           id: command.id,
-          label: normalizedLabel,
+          label: variant === "builtin" ? command.label : normalizedLabel,
           initialInput: normalizedInput,
           ...(command.enabled !== undefined && { enabled: command.enabled }),
         });
       }}
     >
-      {fixedLabel ? (
-        <div className="flex flex-col gap-1.5 text-sm text-text-secondary">
-          <span>Name</span>
-          <div className="h-9 rounded-control border border-border bg-bg-primary px-2 py-2 text-sm text-text-primary">
+      {variant === "builtin" ? (
+        <div className="rounded-control border border-border bg-bg-primary px-2.5 py-2">
+          <div className="mb-0.5 text-xs font-medium text-text-secondary">
+            Built-in command
+          </div>
+          <div className="truncate text-sm font-semibold text-text-primary">
             {command.label}
           </div>
         </div>
       ) : (
         <label className="flex flex-col gap-1.5 text-sm text-text-secondary">
-          <span>Name</span>
+          <span>Label</span>
           <input
             className="h-9 rounded-control border border-border bg-bg-primary px-2 text-sm text-text-primary outline-none focus:border-accent"
             value={label}
@@ -889,15 +944,20 @@ function CommandForm({
         />
       </label>
       <div className="flex items-center gap-2">
-        <PaButton kind="normal" size="sm" type="button" onClick={onCancel}>
-          Cancel
-        </PaButton>
+        {onDelete && (
+          <PaButton kind="destroy" size="sm" type="button" onClick={onDelete}>
+            Delete
+          </PaButton>
+        )}
         {onReset && (
           <PaButton kind="normal" size="sm" type="button" onClick={onReset}>
-            Reset
+            Reset to default
           </PaButton>
         )}
         <div className="flex-1" />
+        <PaButton kind="normal" size="sm" type="button" onClick={onCancel}>
+          Cancel
+        </PaButton>
         <PaButton kind="submit" size="sm" type="submit" disabled={!canSave}>
           Save
         </PaButton>

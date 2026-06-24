@@ -32,6 +32,7 @@ import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
 import { authFetch } from "../../../lib/auth-fetch.js";
 import { extractImageFiles } from "../../../lib/clipboard-images.js";
+import { copyTextToNativeClipboard } from "../../../lib/native-clipboard.js";
 import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
@@ -56,6 +57,7 @@ import {
   traceTerminalEventLazy,
 } from "../../../lib/terminal-trace.js";
 import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
+import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
 import {
   type OverlayPoint,
   type TerminalSelectionAction,
@@ -113,6 +115,7 @@ const MAX_HISTORY_LOAD_BYTES = 4 * 1024 * 1024;
 const HISTORY_LOAD_SUPPRESS_MS = 750;
 const IME_DUPLICATE_SUPPRESS_MS = 120;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
+const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS = [80, 250] as const;
 const TERMINAL_UNICODE_VERSION = "11";
 
@@ -684,12 +687,64 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       useState<SelectionOverlayState | null>(null);
     const selectionOverlayRef = useRef<SelectionOverlayState | null>(null);
     selectionOverlayRef.current = selectionOverlay;
+    const [externalCopyText, setExternalCopyText] = useState<string | null>(
+      null,
+    );
     const [inputToolbarAnchor, setInputToolbarAnchor] = useState<{
       clientX: number;
       clientY: number;
     } | null>(null);
+    const inputToolbarAnchorRef = useRef<typeof inputToolbarAnchor>(null);
+    inputToolbarAnchorRef.current = inputToolbarAnchor;
+    const inputToolbarDismissSuppressUntilRef = useRef(0);
     const toolbarSyntheticMouseSuppressUntilRef = useRef(0);
     const [showScrollDown, setShowScrollDown] = useState(false);
+
+    useEffect(() => {
+      const closeInputToolbarFromOutside = (event: Event) => {
+        if (!inputToolbarAnchorRef.current) return;
+        const target = event.target;
+        if (!(target instanceof Node)) return;
+        const toolbar = document.querySelector(
+          '[role="toolbar"][aria-label="Terminal selection actions"]',
+        );
+        if (toolbar?.contains(target)) return;
+        inputToolbarDismissSuppressUntilRef.current =
+          performance.now() + INPUT_TOOLBAR_DISMISS_SUPPRESS_MS;
+        setInputToolbarAnchor(null);
+        traceTerminalEvent("terminal-toolbar-dismiss", {
+          sessionId,
+          surface: "paste",
+          status: event.type,
+        });
+      };
+      document.addEventListener("pointerdown", closeInputToolbarFromOutside, {
+        capture: true,
+      });
+      document.addEventListener("touchstart", closeInputToolbarFromOutside, {
+        capture: true,
+      });
+      document.addEventListener("mousedown", closeInputToolbarFromOutside, {
+        capture: true,
+      });
+      return () => {
+        document.removeEventListener(
+          "pointerdown",
+          closeInputToolbarFromOutside,
+          { capture: true },
+        );
+        document.removeEventListener(
+          "touchstart",
+          closeInputToolbarFromOutside,
+          { capture: true },
+        );
+        document.removeEventListener(
+          "mousedown",
+          closeInputToolbarFromOutside,
+          { capture: true },
+        );
+      };
+    }, [sessionId]);
 
     // Only accept drops once the PTY is attached. Before init-ack, send()
     // would queue silently, which makes the drop look accepted but nothing
@@ -824,33 +879,22 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         });
       }
 
-      const writeText = navigator.clipboard?.writeText;
-      let nativeWritten = false;
-      if (!writeText) {
+      const nativeCopyResult = await copyTextToNativeClipboard(text);
+      if (nativeCopyResult.ok) {
+        traceTerminalEvent("terminal-toolbar-copy", {
+          sessionId,
+          status: "native",
+          dataLength: text.length,
+        });
+      } else {
         traceTerminalEvent("terminal-toolbar-copy-failed", {
           sessionId,
           status: "native",
-          reason: "clipboard-api-unavailable",
+          reason: nativeCopyResult.reason,
         });
-      } else {
-        try {
-          await writeText.call(navigator.clipboard, text);
-          nativeWritten = true;
-          traceTerminalEvent("terminal-toolbar-copy", {
-            sessionId,
-            status: "native",
-            dataLength: text.length,
-          });
-        } catch (err) {
-          traceTerminalEvent("terminal-toolbar-copy-failed", {
-            sessionId,
-            status: "native",
-            reason: getErrorName(err),
-          });
-        }
       }
 
-      if (!internalWritten && !nativeWritten) return;
+      if (!internalWritten && !nativeCopyResult.ok) return;
       traceTerminalEvent("terminal-toolbar-copy-complete", {
         sessionId,
         dataLength: text.length,
@@ -860,6 +904,50 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       setSelectionOverlay(null);
       setInputToolbarAnchor(null);
     }, [sessionId]);
+
+    const openExternalCopyDialog = useCallback(() => {
+      const text = xtermRef.current?.getSelection() ?? "";
+      if (!text) return;
+      setExternalCopyText(text);
+      traceTerminalEvent("terminal-external-copy-dialog-open", {
+        sessionId,
+        dataLength: text.length,
+      });
+    }, [sessionId]);
+
+    const copyExternalText = useCallback(
+      async (text: string): Promise<boolean> => {
+        if (!text) return false;
+        const internalWritten = writeTerminalInternalClipboard(text);
+        if (internalWritten) {
+          traceTerminalEvent("terminal-external-copy-dialog-copy", {
+            sessionId,
+            status: "internal",
+            dataLength: text.length,
+          });
+        } else {
+          traceTerminalEvent("terminal-external-copy-dialog-copy-failed", {
+            sessionId,
+            status: "internal",
+            reason: "local-storage-unavailable",
+          });
+        }
+        const result = await copyTextToNativeClipboard(text);
+        traceTerminalEvent(
+          result.ok
+            ? "terminal-external-copy-dialog-copy"
+            : "terminal-external-copy-dialog-copy-failed",
+          {
+            sessionId,
+            status: "native",
+            dataLength: text.length,
+            ...(result.ok ? {} : { reason: result.reason }),
+          },
+        );
+        return internalWritten || result.ok;
+      },
+      [sessionId],
+    );
 
     const handlePasteFromTerminalToolbar = useCallback(async () => {
       const term = xtermRef.current;
@@ -1188,6 +1276,22 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               }));
             })
           : { dispose: () => {} };
+      // Mobile DOM rendering can leave stale rows visible during Codex/Claude-
+      // style synchronized TUI updates. Keep desktop behavior, but render touch
+      // terminals continuously so normal-buffer transcript scrollback stays
+      // visually contiguous.
+      const synchronizedOutputModeDisposables = isTouch
+        ? [
+            term.parser.registerCsiHandler(
+              { prefix: "?", final: "h" },
+              (params) => params.length === 1 && params[0] === 2026,
+            ),
+            term.parser.registerCsiHandler(
+              { prefix: "?", final: "l" },
+              (params) => params.length === 1 && params[0] === 2026,
+            ),
+          ]
+        : [];
       const SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS = 1200;
       let synchronizedCursorRefreshFrame: number | null = null;
       let synchronizedCursorRefreshStartedAt = 0;
@@ -1339,6 +1443,14 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         },
         onInputToolbarRequest: (anchor) => {
           if (!hasTerminalPasteCandidate()) return;
+          if (performance.now() < inputToolbarDismissSuppressUntilRef.current) {
+            traceTerminalEvent("terminal-toolbar-request-skipped", {
+              sessionId,
+              surface: "paste",
+              reason: "recent-dismiss",
+            });
+            return;
+          }
           setHasSelection(false);
           setSelectionOverlay(null);
           setInputToolbarAnchor(anchor);
@@ -1748,6 +1860,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           pendingScrollFrame = null;
         }
         cancelSynchronizedCursorRefresh();
+        for (const disposable of synchronizedOutputModeDisposables) {
+          disposable.dispose();
+        }
         setHasSelection(false);
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
@@ -1877,7 +1992,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             </button>
           )}
         </div>
-        {selectionOverlayLayout && (
+        {selectionOverlayLayout && externalCopyText === null && (
           <TerminalSelectionOverlay
             startHandle={selectionOverlayLayout.startHandle}
             endHandle={selectionOverlayLayout.endHandle}
@@ -1887,6 +2002,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             onCopy={() => {
               void handleCopySelection();
             }}
+            onCopyLongPress={openExternalCopyDialog}
             onPaste={() => {
               void handlePasteFromTerminalToolbar();
             }}
@@ -1911,6 +2027,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             onActionEvent={handleToolbarActionEvent}
           />
         )}
+        <TerminalExternalCopyDialog
+          open={externalCopyText !== null}
+          text={externalCopyText ?? ""}
+          isMobile={isTouch}
+          onClose={() => setExternalCopyText(null)}
+          onCopy={copyExternalText}
+        />
         {isDragOver && dropEnabled && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/30 ring-2 ring-inset ring-accent">
             <div className="rounded-window border border-border bg-bg-secondary/95 px-3 py-1.5 text-sm text-text-primary shadow-lg">

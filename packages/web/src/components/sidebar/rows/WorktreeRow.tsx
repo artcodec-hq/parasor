@@ -91,9 +91,6 @@ export function WorktreeRow({
       ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
       : undefined;
   const rowTitle = metricsTitle || dirtyFallbackTitle;
-  const lineageTitle = worktree.lineage
-    ? formatLineageTitle(worktree.lineage)
-    : null;
 
   return (
     <div className={showTopBorder ? "border-t border-border" : undefined}>
@@ -158,14 +155,14 @@ export function WorktreeRow({
               agent
             </span>
           )}
-          {lineageTitle && (
+          {worktree.provenance === "imported" && (
             <span
               role="img"
-              aria-label="Linked worktree"
-              title={lineageTitle}
+              aria-label="Imported worktree"
+              title="Created outside Parasor"
               className="shrink-0 rounded-tag border border-text-secondary/30 bg-bg-primary px-1 text-[10px] font-medium leading-tight text-text-secondary"
             >
-              linked
+              imported
             </span>
           )}
           {worktree.orphan && (
@@ -217,22 +214,4 @@ function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
     dirtyDeleted: worktree.dirtyDeleted,
     serviceCount: worktree.serviceCount,
   };
-}
-
-function formatLineageTitle(
-  lineage: NonNullable<SidebarWorktree["lineage"]>,
-): string {
-  const parts = ["Created from workspace context"];
-  if (lineage.parentWorktreePath) {
-    parts.push(`parent: ${lastPathSegment(lineage.parentWorktreePath)}`);
-  }
-  if (lineage.createdByPaneCommandLabel) {
-    parts.push(`command: ${lineage.createdByPaneCommandLabel}`);
-  }
-  return parts.join(" | ");
-}
-
-function lastPathSegment(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  return trimmed.split("/").pop() || path;
 }

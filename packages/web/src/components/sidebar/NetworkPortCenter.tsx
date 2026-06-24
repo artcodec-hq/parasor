@@ -208,7 +208,7 @@ export function NetworkPortCenter({
         {hasUnread && (
           <span
             aria-hidden
-            className="absolute top-1/2 -right-1.5 h-1.5 w-1.5 -translate-y-1/2 rounded-tag bg-accent"
+            className="absolute top-0 -right-0.5 h-1.5 w-1.5 rounded-tag bg-accent"
           />
         )}
       </SidebarRowActionButton>
