@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { APP_METADATA, APP_VERSION } from "../../lib/app-version.js";
 import { SettingsOverlay } from "./SettingsOverlay.js";
 import { SettingsProvider } from "./SettingsProvider.js";
 import type { ServerSettingsBinding } from "./settings-sections.js";
@@ -109,5 +110,28 @@ describe("SettingsOverlay", () => {
     fireEvent.click(checkbox as HTMLInputElement);
 
     expect(onPreventIdleSleepChange).toHaveBeenCalledWith(true);
+  });
+
+  it("shows the app version in the About section", () => {
+    const { getByText } = renderOverlay({ desktop: true });
+
+    fireEvent.click(getByText("About"));
+
+    expect(document.body.textContent).toContain("Parasor");
+    expect(document.body.textContent).toContain(
+      "Mobile-first local development workspace.",
+    );
+    expect(document.body.textContent).toContain("Version");
+    expect(document.body.textContent).toContain(APP_VERSION);
+    expect(document.body.textContent).toContain("License");
+    expect(document.body.textContent).toContain(APP_METADATA.license);
+
+    const repository = getByText("GitHub").closest("a");
+    expect(repository?.getAttribute("href")).toBe(APP_METADATA.repositoryUrl);
+    expect(repository?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(repository?.getAttribute("referrerpolicy")).toBe("no-referrer");
+
+    const issues = getByText("Issues").closest("a");
+    expect(issues?.getAttribute("href")).toBe(APP_METADATA.issuesUrl);
   });
 });

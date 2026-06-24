@@ -7,6 +7,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { PaGlyph } from "../../components/icons/index.js";
 import { PaButton } from "../../components/primitives/index.js";
+import { APP_METADATA, APP_VERSION } from "../../lib/app-version.js";
 import { DEFAULT_UI_FONT_STACK, resolveFontStack } from "../../lib/fonts.js";
 import { ThemeValidationError } from "../../lib/theme/loader.js";
 import type { ThemeEntry } from "../../lib/theme/types.js";
@@ -383,6 +384,64 @@ export function useSettingsSections(
         ],
       });
     }
+    sections.push({
+      id: "about",
+      label: "About",
+      fields: [
+        {
+          id: "app-summary",
+          label: "Parasor",
+          description: "Mobile-first local development workspace.",
+          keywords: ["about", "app", "application", "workspace", "local"],
+          layout: "block",
+          render: () => null,
+        },
+        {
+          id: "app-version",
+          label: "Version",
+          description: "Parasor application package version.",
+          keywords: ["about", "app", "application", "package", "release"],
+          layout: "row",
+          render: () => (
+            <span className="font-mono text-sm text-text-primary">
+              {APP_VERSION}
+            </span>
+          ),
+        },
+        {
+          id: "repository",
+          label: "Repository",
+          description: "Parasor source repository.",
+          keywords: ["github", "source", "code", "oss"],
+          layout: "row",
+          render: () => (
+            <AboutLink href={APP_METADATA.repositoryUrl}>GitHub</AboutLink>
+          ),
+        },
+        {
+          id: "report-issue",
+          label: "Report an issue",
+          description: "Open the public issue tracker.",
+          keywords: ["bug", "feedback", "github", "support"],
+          layout: "row",
+          render: () => (
+            <AboutLink href={APP_METADATA.issuesUrl}>Issues</AboutLink>
+          ),
+        },
+        {
+          id: "license",
+          label: "License",
+          description: "Open source license.",
+          keywords: ["oss", "open source", "legal"],
+          layout: "row",
+          render: () => (
+            <span className="font-mono text-sm text-text-primary">
+              {APP_METADATA.license}
+            </span>
+          ),
+        },
+      ],
+    });
 
     return sections;
   }, [
@@ -413,6 +472,20 @@ export function useSettingsSections(
     uiFontFamily,
     uiFontSize,
   ]);
+}
+
+function AboutLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      referrerPolicy="no-referrer"
+      className="text-sm font-medium text-accent hover:underline"
+    >
+      {children}
+    </a>
+  );
 }
 
 function IdeCommandsEditor({

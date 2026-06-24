@@ -14,6 +14,8 @@ describe("printHelp", () => {
     expect(output).toContain("--port");
     expect(output).toContain("--no-qr");
     expect(output).toContain("--qr=<iface>");
+    expect(output).toContain("--version");
+    expect(output).toContain("version");
     expect(output).toContain("--help-all");
   });
 

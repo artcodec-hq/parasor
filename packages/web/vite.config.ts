@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { createLogger, defineConfig } from "vite";
@@ -16,6 +17,18 @@ const RUNTIME_FILE = join(
   process.env.PARASOR_CONFIG_DIR ?? join(homedir(), ".config", "parasor"),
   "runtime.json",
 );
+const configDir = dirname(fileURLToPath(import.meta.url));
+const rootPackage = JSON.parse(
+  readFileSync(join(configDir, "../../package.json"), "utf-8"),
+) as {
+  version: string;
+  license?: string;
+  repository?: { url?: string };
+  bugs?: { url?: string };
+};
+const repositoryUrl =
+  rootPackage.repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "") ??
+  "https://github.com/artcodec-hq/parasor";
 
 let cachedBackendUrl: { url: string; at: number } | null = null;
 
@@ -66,6 +79,16 @@ logger.error = (msg, opts) => {
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   customLogger: logger,
+  define: {
+    "import.meta.env.PARASOR_APP_VERSION": JSON.stringify(rootPackage.version),
+    "import.meta.env.PARASOR_LICENSE": JSON.stringify(
+      rootPackage.license ?? "MIT",
+    ),
+    "import.meta.env.PARASOR_REPOSITORY_URL": JSON.stringify(repositoryUrl),
+    "import.meta.env.PARASOR_ISSUES_URL": JSON.stringify(
+      rootPackage.bugs?.url ?? `${repositoryUrl}/issues`,
+    ),
+  },
   server: {
     host: true,
     allowedHosts: [".ts.net"],
