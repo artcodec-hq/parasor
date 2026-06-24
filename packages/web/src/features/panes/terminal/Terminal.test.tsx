@@ -746,63 +746,6 @@ describe("Terminal", () => {
     expect(mockTermRefresh).not.toHaveBeenCalled();
   });
 
-  it("refreshes visible rows on desktop foreground without claiming the PTY size", () => {
-    enableTerminalTrace();
-    render(<Terminal sessionId="s1" />, { wrapper });
-
-    mockTermRefresh.mockClear();
-    mockSend.mockClear();
-    mockTermScrollToBottom.mockClear();
-    mockTermScrollToLine.mockClear();
-
-    act(() => {
-      window.dispatchEvent(new Event("focus"));
-    });
-
-    expect(mockTermRefresh).toHaveBeenCalledTimes(1);
-    expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
-    expect(mockSend).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "resize" }),
-    );
-    expect(mockTermScrollToBottom).not.toHaveBeenCalled();
-    expect(mockTermScrollToLine).not.toHaveBeenCalled();
-    expect(window.parasorTerminalTrace?.dump()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "terminal-visible-refresh",
-          reason: "foreground",
-        }),
-      ]),
-    );
-  });
-
-  it("refreshes visible rows when the terminal receives focus", () => {
-    enableTerminalTrace();
-    render(<Terminal sessionId="s1" />, { wrapper });
-
-    const container = mockTermOpen.mock.calls[0]?.[0] as HTMLElement;
-    mockTermRefresh.mockClear();
-    mockSend.mockClear();
-
-    act(() => {
-      container.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-    });
-
-    expect(mockTermRefresh).toHaveBeenCalledTimes(1);
-    expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
-    expect(mockSend).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "resize" }),
-    );
-    expect(window.parasorTerminalTrace?.dump()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "terminal-visible-refresh",
-          reason: "focusin",
-        }),
-      ]),
-    );
-  });
-
   it("disables synchronized output mode on touch devices", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,

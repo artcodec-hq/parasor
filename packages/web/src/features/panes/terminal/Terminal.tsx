@@ -1235,12 +1235,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             bottomRowsSnapshotProvider,
             { sessionId, paneId },
           );
-        refreshVisibleRows(term);
-        traceTerminalEvent("terminal-visible-refresh", {
-          sessionId,
-          reason: "focusin",
-          ...terminalBufferTrace(term),
-        });
       };
 
       const fitAddon = new FitAddon();

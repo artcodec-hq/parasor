@@ -444,13 +444,6 @@ export function useTerminalViewportLifecycle({
         // fires because the cursor never moved.
         if (isTouchRef.current || container.matches(":hover")) {
           applyResize(true);
-        } else {
-          refreshVisibleRows(term);
-          traceTerminalEvent("terminal-visible-refresh", {
-            sessionId,
-            reason: "foreground",
-            ...terminalBufferTrace(term),
-          });
         }
       };
       document.addEventListener("visibilitychange", onForeground);
