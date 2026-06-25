@@ -12,6 +12,18 @@ Project-specific task contract for Parasor repository work.
   - backend: `http://127.0.0.1:7682`
   - Vite web UI: `http://127.0.0.1:7683`
   - config: `/tmp/parasor-dev` unless explicitly overridden
+- To run an additional isolated dev profile alongside the standard stack, set
+  all three values explicitly:
+
+  ```bash
+  PARASOR_CONFIG_DIR=/tmp/parasor-monkey PORT=7782 WEB_PORT=7783 pnpm dev
+  ```
+
+  `PORT` selects the backend port, `WEB_PORT` selects the Vite frontend port,
+  and `PARASOR_CONFIG_DIR` isolates app state, runtime metadata, locks, and PTY
+  state. Browser E2E for that profile must target the selected Vite URL
+  (`http://127.0.0.1:7783` in the example), and API checks must target the
+  selected backend URL (`http://127.0.0.1:7782` in the example).
 - Assume the user starts the test environment. Before E2E, check whether
   `:7682` and `:7683` are already listening.
 - If the test environment is not available, ask the user before starting it.
