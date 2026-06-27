@@ -67,7 +67,12 @@ function blurActiveEditableElement(): void {
 interface WorkspaceFileDisplayTarget {
   worktreePath: string;
   filePath: string;
+  temporaryFilePath?: string;
   openerPaneId: string;
+}
+
+function isTemporaryAbsolutePath(filePath: string): boolean {
+  return filePath.startsWith("/tmp/") || filePath.startsWith("/private/tmp/");
 }
 
 interface WorkspacePaneRouterProps {
@@ -275,9 +280,21 @@ export function WorkspacePaneRouter({
 
   const handleOpenTerminalFilePath = useCallback(
     (worktreePath: string, filePath: string) => {
+      if (isTemporaryAbsolutePath(filePath)) {
+        const openerPaneId =
+          focusedPane?.id ?? worktreeFilesPaneId(worktreePath);
+        if (isMobile) blurActiveEditableElement();
+        setFileDisplayTarget({
+          worktreePath,
+          filePath,
+          temporaryFilePath: filePath,
+          openerPaneId,
+        });
+        return;
+      }
       handleOpenFilePath(worktreePath, filePath);
     },
-    [handleOpenFilePath],
+    [focusedPane?.id, handleOpenFilePath, isMobile],
   );
   useEffect(() => {
     if (!fileDisplayTarget) return;
@@ -522,6 +539,7 @@ function WorkspaceFileDisplay({
           projectId={projectId}
           worktreePath={target.worktreePath}
           filePath={target.filePath}
+          temporaryFilePath={target.temporaryFilePath}
           fileChangeSeq={fileChangeSeq}
           onClose={onClose}
         />
