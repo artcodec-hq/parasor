@@ -76,6 +76,15 @@ logger.error = (msg, opts) => {
   originalError(msg, opts);
 };
 
+function readPortEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const port = Number(raw);
+  return Number.isSafeInteger(port) && port > 0 && port <= 65535
+    ? port
+    : fallback;
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   customLogger: logger,
@@ -92,7 +101,7 @@ export default defineConfig({
   server: {
     host: true,
     allowedHosts: [".ts.net"],
-    port: 7683,
+    port: readPortEnv("WEB_PORT", 7683),
     strictPort: true,
     proxy: {
       "/api": {
