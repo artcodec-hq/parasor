@@ -2222,6 +2222,32 @@ describe("Terminal", () => {
     ]);
   });
 
+  it("claims the desktop viewport before input even with queued output", async () => {
+    render(<Terminal sessionId="s-input-claim-queued" />, { wrapper });
+    mockSend.mockClear();
+    mockTermWrite.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    const onData = mockTermOnData.mock.calls[0]?.[0] as
+      | ((data: string) => void)
+      | undefined;
+    if (!onData) throw new Error("missing onData handler");
+
+    act(() => {
+      socketOptionsRef.onData?.("queued output");
+      onData("a");
+    });
+
+    expect(mockTermWrite).not.toHaveBeenCalled();
+    expect(mockSend.mock.calls.slice(0, 2).map(([msg]) => msg)).toEqual([
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+      { type: "input", data: "a" },
+    ]);
+
+    await flushAnimationFrame();
+    expect(mockTermWrite).toHaveBeenCalledWith("queued output");
+  });
+
   it("suppresses duplicate text emitted during one IME composition commit", () => {
     render(<Terminal sessionId="s-ime" />, { wrapper });
     mockSend.mockClear();

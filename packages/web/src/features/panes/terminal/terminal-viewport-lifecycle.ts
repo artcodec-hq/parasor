@@ -260,6 +260,7 @@ export function useTerminalViewportLifecycle({
         forceClaim = false,
         outputFlushStartedAt: number | null = null,
         captureDiagnostics = true,
+        flushOutputBeforeResize = true,
       ) => {
         const startedAt = performance.now();
         resizeTimer = null;
@@ -296,14 +297,19 @@ export function useTerminalViewportLifecycle({
         }
         const flushStartedAt = outputFlushStartedAt ?? startedAt;
         if (
-          performance.now() - flushStartedAt <
-          RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS
+          flushOutputBeforeResize &&
+          performance.now() - flushStartedAt < RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS
         ) {
           const flushedOutput = flushPendingOutput(() => {
             clearResizeAfterFlushFrame();
             resizeAfterFlushFrame = requestAnimationFrame(() => {
               resizeAfterFlushFrame = null;
-              applyResize(forceClaim, flushStartedAt, captureDiagnostics);
+              applyResize(
+                forceClaim,
+                flushStartedAt,
+                captureDiagnostics,
+                flushOutputBeforeResize,
+              );
             });
           });
           if (flushedOutput) {
@@ -499,7 +505,7 @@ export function useTerminalViewportLifecycle({
           reason,
           surface: isTouchRef.current ? "touch" : "desktop",
         });
-        applyResize(true, null, false);
+        applyResize(true, null, false, reason !== "desktop-input");
       };
 
       return () => {
