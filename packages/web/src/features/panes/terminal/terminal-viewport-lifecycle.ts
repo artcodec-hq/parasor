@@ -98,11 +98,13 @@ export function useTerminalViewportLifecycle({
     args: AttachViewportLifecycleArgs,
   ) => ViewportLifecycleCleanup;
   applyTerminalConfig: () => void;
+  claimViewport: (reason: string) => void;
 } {
   const initCommittedRef = useRef(false);
   const keyboardSettlingRef = useRef(keyboardSettling);
   const isTouchRef = useRef(isTouch);
   const flushDeferredResizeRef = useRef<(() => void) | null>(null);
+  const claimViewportRef = useRef<((reason: string) => void) | null>(null);
   keyboardSettlingRef.current = keyboardSettling;
   isTouchRef.current = isTouch;
 
@@ -257,6 +259,8 @@ export function useTerminalViewportLifecycle({
       const applyResize = (
         forceClaim = false,
         outputFlushStartedAt: number | null = null,
+        captureDiagnostics = true,
+        flushOutputBeforeResize = true,
       ) => {
         const startedAt = performance.now();
         resizeTimer = null;
@@ -293,14 +297,19 @@ export function useTerminalViewportLifecycle({
         }
         const flushStartedAt = outputFlushStartedAt ?? startedAt;
         if (
-          performance.now() - flushStartedAt <
-          RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS
+          flushOutputBeforeResize &&
+          performance.now() - flushStartedAt < RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS
         ) {
           const flushedOutput = flushPendingOutput(() => {
             clearResizeAfterFlushFrame();
             resizeAfterFlushFrame = requestAnimationFrame(() => {
               resizeAfterFlushFrame = null;
-              applyResize(forceClaim, flushStartedAt);
+              applyResize(
+                forceClaim,
+                flushStartedAt,
+                captureDiagnostics,
+                flushOutputBeforeResize,
+              );
             });
           });
           if (flushedOutput) {
@@ -333,7 +342,7 @@ export function useTerminalViewportLifecycle({
             durationMs: performance.now() - startedAt,
             proposeDurationMs,
           });
-          if (forceClaim) {
+          if (forceClaim && captureDiagnostics) {
             scheduleTerminalInputDiagnosticCapture("terminal-resize-claim", {
               type: "terminal-resize-skip",
               sessionId,
@@ -401,10 +410,12 @@ export function useTerminalViewportLifecycle({
           resizeDurationMs,
         };
         traceTerminalEvent("terminal-resize-apply", resizeApplyEvent);
-        scheduleTerminalInputDiagnosticCapture(
-          "terminal-resize-apply",
-          resizeApplyEvent,
-        );
+        if (captureDiagnostics) {
+          scheduleTerminalInputDiagnosticCapture(
+            "terminal-resize-apply",
+            resizeApplyEvent,
+          );
+        }
       };
 
       const flushDeferredKeyboardResize = () => {
@@ -478,6 +489,25 @@ export function useTerminalViewportLifecycle({
       };
       container.addEventListener("mouseenter", onPointerEnter);
 
+      const onFocusIn = () => {
+        traceTerminalEvent("terminal-engage", {
+          sessionId,
+          reason: "focus-in",
+          surface: isTouchRef.current ? "touch" : "desktop",
+        });
+        if (isTouchRef.current) return;
+        applyResize(true);
+      };
+      container.addEventListener("focusin", onFocusIn);
+      claimViewportRef.current = (reason: string) => {
+        traceTerminalEvent("terminal-engage", {
+          sessionId,
+          reason,
+          surface: isTouchRef.current ? "touch" : "desktop",
+        });
+        applyResize(true, null, false, reason !== "desktop-input");
+      };
+
       return () => {
         clearFirstDataTimer();
         clearInitFallbackTimer();
@@ -487,10 +517,14 @@ export function useTerminalViewportLifecycle({
         if (flushDeferredResizeRef.current === flushDeferredKeyboardResize) {
           flushDeferredResizeRef.current = null;
         }
+        if (claimViewportRef.current !== null) {
+          claimViewportRef.current = null;
+        }
         observer.disconnect();
         document.removeEventListener("visibilitychange", onForeground);
         window.removeEventListener("focus", onForeground);
         container.removeEventListener("mouseenter", onPointerEnter);
+        container.removeEventListener("focusin", onFocusIn);
       };
     },
     [
@@ -533,8 +567,13 @@ export function useTerminalViewportLifecycle({
     xtermRef,
   ]);
 
+  const claimViewport = useCallback((reason: string) => {
+    claimViewportRef.current?.(reason);
+  }, []);
+
   return {
     attachViewportLifecycle,
     applyTerminalConfig,
+    claimViewport,
   };
 }
