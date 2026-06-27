@@ -1,5 +1,13 @@
+import { constants as fsConstants, type Stats } from "node:fs";
+import {
+  type FileHandle,
+  open as fsOpen,
+  realpath as fsRealpath,
+  stat as fsStat,
+} from "node:fs/promises";
+import { resolve as pathResolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { stream } from "hono/streaming";
 import {
   FileAccessError,
@@ -24,6 +32,7 @@ import type { ProjectManager } from "../state/project-manager.js";
  * short video without hogging the server when many clients connect at once.
  */
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+const TEMPORARY_FILE_ROOTS = ["/tmp", "/private/tmp"];
 
 interface ParsedRange {
   start: number;
@@ -101,6 +110,201 @@ function basenameFromRel(relPath: string): string {
   const trimmed = relPath.replace(/[\\/]+$/, "");
   const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+class TemporaryPathAccessError extends Error {
+  constructor() {
+    super("Temporary path access denied");
+    this.name = "TemporaryPathAccessError";
+  }
+}
+
+type OpenedInlineFile = {
+  handle: FileHandle;
+  stats: Stats;
+};
+
+type InlineStreamFactory = FilesystemService["createStreamFromHandle"];
+
+function isWithinPath(root: string, candidate: string): boolean {
+  return candidate === root || candidate.startsWith(root + sep);
+}
+
+function resolveTemporaryPathText(path: string): string {
+  if (!path || path.includes("\0")) {
+    throw new TemporaryPathAccessError();
+  }
+  const resolved = pathResolve(path);
+  if (!TEMPORARY_FILE_ROOTS.some((root) => isWithinPath(root, resolved))) {
+    throw new TemporaryPathAccessError();
+  }
+  return resolved;
+}
+
+async function allowedTemporaryRealRoots(): Promise<string[]> {
+  const roots = new Set<string>();
+  for (const root of TEMPORARY_FILE_ROOTS) {
+    try {
+      roots.add(await fsRealpath(root));
+    } catch {
+      // Missing platform-specific alias; ignore it.
+    }
+  }
+  return [...roots];
+}
+
+async function assertTemporaryRealPath(path: string): Promise<string> {
+  const real = await fsRealpath(path);
+  const roots = await allowedTemporaryRealRoots();
+  if (!roots.some((root) => isWithinPath(root, real))) {
+    throw new TemporaryPathAccessError();
+  }
+  return real;
+}
+
+function isNodeError(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && "code" in err;
+}
+
+async function statTemporaryFile(path: string): Promise<Stats | null> {
+  const resolved = resolveTemporaryPathText(path);
+  let real: string;
+  try {
+    real = await assertTemporaryRealPath(resolved);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    return await fsStat(real);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function openTemporaryInlineFile(
+  path: string,
+): Promise<OpenedInlineFile | null> {
+  const resolved = resolveTemporaryPathText(path);
+  const NONBLOCK = fsConstants.O_NONBLOCK ?? 0;
+  let handle: FileHandle;
+  try {
+    handle = await fsOpen(
+      resolved,
+      fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | NONBLOCK,
+    );
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return null;
+    if (isNodeError(error) && error.code === "ELOOP") {
+      throw new TemporaryPathAccessError();
+    }
+    throw error;
+  }
+
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) {
+      await handle.close();
+      return null;
+    }
+    const real = await assertTemporaryRealPath(resolved);
+    const pathStats = await fsStat(real);
+    if (pathStats.ino !== stats.ino || pathStats.dev !== stats.dev) {
+      await handle.close();
+      throw new TemporaryPathAccessError();
+    }
+    return { handle, stats };
+  } catch (error) {
+    await handle.close().catch(() => {});
+    if (isNodeError(error) && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function serveInlineMedia(
+  c: Context,
+  path: string,
+  opened: OpenedInlineFile,
+  createStreamFromHandle: InlineStreamFactory,
+) {
+  const { handle, stats } = opened;
+
+  // Tracks whether ownership of the handle was transferred to the read
+  // stream (autoClose: true). Every early-return path leaves it false so
+  // the finally block closes the FD; only the streaming success path
+  // flips it to true.
+  let handleTransferred = false;
+  try {
+    if (stats.size > MAX_MEDIA_BYTES) {
+      return c.json({ error: "Media exceeds size limit" }, 413);
+    }
+
+    const detection = await detectMediaFromHandle(handle, path);
+    if (!detection.kind || !detection.contentType) {
+      return c.json({ error: "Not a supported media file" }, 415);
+    }
+
+    const rangeHeader = c.req.header("range");
+    const range = parseRange(rangeHeader, stats.size);
+    if (range === "unsatisfiable") {
+      c.header("Content-Range", `bytes */${stats.size}`);
+      c.header("Accept-Ranges", "bytes");
+      return c.body(null, 416);
+    }
+
+    const filename = basenameFromRel(path);
+    c.header("Content-Type", detection.contentType);
+    c.header("Content-Disposition", buildContentDisposition(filename));
+    c.header("Cache-Control", "private, max-age=0, must-revalidate");
+    c.header("Accept-Ranges", "bytes");
+    c.header("X-Content-Type-Options", "nosniff");
+    // SVG remains a document-like image format with active content risk, so
+    // keep it in a strict sandbox. PDF native viewers need a normal browsing
+    // context; a CSP sandbox breaks Chromium's built-in PDF viewer.
+    if (detection.contentType === "image/svg+xml") {
+      c.header(
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+      );
+    }
+    if (detection.contentType === "application/pdf") {
+      c.header(
+        "Content-Security-Policy",
+        "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      );
+    }
+
+    const streamHandle = createStreamFromHandle(
+      handle,
+      stats.size,
+      range ? { start: range.start, end: range.end } : undefined,
+    );
+    handleTransferred = true;
+
+    if (range) {
+      const length = streamHandle.end - streamHandle.start + 1;
+      c.header("Content-Length", String(length));
+      c.header(
+        "Content-Range",
+        `bytes ${streamHandle.start}-${streamHandle.end}/${stats.size}`,
+      );
+      c.status(206);
+    } else {
+      c.header("Content-Length", String(stats.size));
+    }
+
+    return stream(c, async (s) => {
+      const webStream = Readable.toWeb(
+        streamHandle.stream,
+      ) as ReadableStream<Uint8Array>;
+      await s.pipe(webStream);
+    });
+  } finally {
+    if (!handleTransferred) {
+      await handle.close().catch(() => {});
+    }
+  }
 }
 
 interface FileRoutesOptions {
@@ -402,6 +606,62 @@ export function createFileRoutes(
     }
   });
 
+  routes.get("/temp-stat", async (c) => {
+    const path = c.req.query("path");
+    if (!path) return c.json({ error: "path required" }, 400);
+
+    try {
+      const stats = await statTemporaryFile(path);
+      if (!stats) return c.json({ error: "File not found" }, 404);
+      return c.json({
+        size: stats.size,
+        mtimeMs: stats.mtimeMs,
+        isFile: stats.isFile(),
+      });
+    } catch (error) {
+      if (error instanceof TemporaryPathAccessError) {
+        return c.json({ error: "Access denied" }, 403);
+      }
+      throw error;
+    }
+  });
+
+  routes.get("/temp-raw", async (c) => {
+    const path = c.req.query("path");
+    if (!path) return c.json({ error: "path required" }, 400);
+
+    if (!isMediaExtension(path)) {
+      return c.json({ error: "Not a supported media file" }, 415);
+    }
+
+    let opened: OpenedInlineFile | null;
+    try {
+      opened = await openTemporaryInlineFile(path);
+    } catch (error) {
+      if (error instanceof TemporaryPathAccessError) {
+        return c.json({ error: "Access denied" }, 403);
+      }
+      throw error;
+    }
+    if (!opened) {
+      return c.json({ error: "File not found" }, 404);
+    }
+
+    return serveInlineMedia(c, path, opened, (handle, size, range) => {
+      let start = 0;
+      let end = size === 0 ? 0 : size - 1;
+      if (range) {
+        start = range.start;
+        end = range.end;
+      }
+      const streamHandle =
+        size === 0
+          ? handle.createReadStream({ autoClose: true })
+          : handle.createReadStream({ autoClose: true, start, end });
+      return { stream: streamHandle, start, end };
+    });
+  });
+
   routes.get("/raw", async (c) => {
     const projectId = c.req.query("projectId");
     const path = c.req.query("path");
@@ -460,83 +720,12 @@ export function createFileRoutes(
     if (!opened) {
       return c.json({ error: "File not found" }, 404);
     }
-    const { handle, stats } = opened;
-
-    // Tracks whether ownership of the handle was transferred to the read
-    // stream (autoClose: true). Every early-return path leaves it false so
-    // the finally block closes the FD; only the streaming success path
-    // flips it to true.
-    let handleTransferred = false;
-    try {
-      if (stats.size > MAX_MEDIA_BYTES) {
-        return c.json({ error: "Media exceeds size limit" }, 413);
-      }
-
-      const detection = await detectMediaFromHandle(handle, path);
-      if (!detection.kind || !detection.contentType) {
-        return c.json({ error: "Not a supported media file" }, 415);
-      }
-
-      const rangeHeader = c.req.header("range");
-      const range = parseRange(rangeHeader, stats.size);
-      if (range === "unsatisfiable") {
-        c.header("Content-Range", `bytes */${stats.size}`);
-        c.header("Accept-Ranges", "bytes");
-        return c.body(null, 416);
-      }
-
-      const filename = basenameFromRel(path);
-      c.header("Content-Type", detection.contentType);
-      c.header("Content-Disposition", buildContentDisposition(filename));
-      c.header("Cache-Control", "private, max-age=0, must-revalidate");
-      c.header("Accept-Ranges", "bytes");
-      c.header("X-Content-Type-Options", "nosniff");
-      // SVG remains a document-like image format with active content risk, so
-      // keep it in a strict sandbox. PDF native viewers need a normal browsing
-      // context; a CSP sandbox breaks Chromium's built-in PDF viewer.
-      if (detection.contentType === "image/svg+xml") {
-        c.header(
-          "Content-Security-Policy",
-          "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
-        );
-      }
-      if (detection.contentType === "application/pdf") {
-        c.header(
-          "Content-Security-Policy",
-          "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
-        );
-      }
-
-      const streamHandle = service.createStreamFromHandle(
-        handle,
-        stats.size,
-        range ? { start: range.start, end: range.end } : undefined,
-      );
-      handleTransferred = true;
-
-      if (range) {
-        const length = streamHandle.end - streamHandle.start + 1;
-        c.header("Content-Length", String(length));
-        c.header(
-          "Content-Range",
-          `bytes ${streamHandle.start}-${streamHandle.end}/${stats.size}`,
-        );
-        c.status(206);
-      } else {
-        c.header("Content-Length", String(stats.size));
-      }
-
-      return stream(c, async (s) => {
-        const webStream = Readable.toWeb(
-          streamHandle.stream,
-        ) as ReadableStream<Uint8Array>;
-        await s.pipe(webStream);
-      });
-    } finally {
-      if (!handleTransferred) {
-        await handle.close().catch(() => {});
-      }
-    }
+    return serveInlineMedia(
+      c,
+      path,
+      opened,
+      service.createStreamFromHandle.bind(service),
+    );
   });
 
   return routes;
