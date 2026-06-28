@@ -50,11 +50,9 @@ import {
 } from "../../../lib/terminal-replay-cache.js";
 import {
   isTerminalTraceEnabled,
-  registerTerminalBottomRowsSnapshotProvider,
   scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
   traceTerminalEvent,
-  traceTerminalEventLazy,
 } from "../../../lib/terminal-trace.js";
 import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
@@ -64,6 +62,7 @@ import {
   type TerminalSelectionHandle,
   TerminalSelectionOverlay,
 } from "./TerminalSelectionOverlay.js";
+import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
 import { applyCtrlModifier } from "./terminal-ctrl-modifier.js";
 import {
   isIosWebKit,
@@ -72,10 +71,9 @@ import {
 } from "./terminal-environment.js";
 import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
-import {
-  attachWebglRendererAndFontAtlas,
-  type TerminalRendererFontEvent,
-} from "./terminal-renderer-fonts.js";
+import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
+import { attachWebglRendererAndFontAtlas } from "./terminal-renderer-fonts.js";
+import { createTerminalRendererFontEventHandler } from "./terminal-renderer-trace-events.js";
 import {
   captureScrollAnchor,
   restoreScrollAnchor,
@@ -92,11 +90,7 @@ import {
   getTerminalSelectionRange,
   type TerminalSelectionRange,
 } from "./terminal-touch-selection.js";
-import {
-  type TerminalRendererTrace,
-  terminalBottomRowsTrace,
-  terminalBufferTrace,
-} from "./terminal-trace-snapshot.js";
+import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
@@ -1217,27 +1211,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         // they balloon heap on long-running tabs with multiple terminals.
         scrollback: 10000,
       });
-      const bottomRowsSnapshotProvider = (rowCount?: number) =>
-        xtermRef.current === term
-          ? terminalBottomRowsTrace(
-              term,
-              rowCount,
-              rendererTraceRef.current ?? undefined,
-            )
-          : null;
-      let unregisterBottomRowsSnapshot =
-        registerTerminalBottomRowsSnapshotProvider(bottomRowsSnapshotProvider, {
-          sessionId,
-          paneId,
-        });
-      const markBottomRowsSnapshotActive = () => {
-        unregisterBottomRowsSnapshot();
-        unregisterBottomRowsSnapshot =
-          registerTerminalBottomRowsSnapshotProvider(
-            bottomRowsSnapshotProvider,
-            { sessionId, paneId },
-          );
-      };
+      const bottomRowsSnapshot = attachTerminalBottomRowsSnapshotProvider({
+        sessionId,
+        paneId,
+        term,
+        getActiveTerm: () => xtermRef.current,
+        rendererTraceRef,
+      });
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -1261,65 +1241,14 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         ),
       );
       term.open(container);
-      container.addEventListener("focusin", markBottomRowsSnapshotActive);
+      container.addEventListener("focusin", bottomRowsSnapshot.markActive);
       traceTerminalEvent("xterm-open", { sessionId });
-      const maybeTerm = term as XTerm & {
-        onRender?: XTerm["onRender"];
-        onCursorMove?: XTerm["onCursorMove"];
-      };
-      const renderDisposable =
-        typeof maybeTerm.onRender === "function"
-          ? maybeTerm.onRender(({ start, end }) => {
-              traceTerminalEventLazy("xterm-render", () => ({
-                sessionId,
-                renderStart: start,
-                renderEnd: end,
-                ...terminalBufferTrace(term),
-              }));
-            })
-          : { dispose: () => {} };
-      const SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS = 1200;
-      let synchronizedCursorRefreshFrame: number | null = null;
-      let synchronizedCursorRefreshStartedAt = 0;
-      const cancelSynchronizedCursorRefresh = () => {
-        if (synchronizedCursorRefreshFrame === null) return;
-        cancelAnimationFrame(synchronizedCursorRefreshFrame);
-        synchronizedCursorRefreshFrame = null;
-      };
-      const runSynchronizedCursorRefresh = () => {
-        synchronizedCursorRefreshFrame = null;
-        if (xtermRef.current !== term) return;
-        if (
-          term.modes.synchronizedOutputMode &&
-          performance.now() - synchronizedCursorRefreshStartedAt <
-            SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS
-        ) {
-          synchronizedCursorRefreshFrame = requestAnimationFrame(
-            runSynchronizedCursorRefresh,
-          );
-          return;
-        }
-        refreshVisibleRows(term);
-      };
-      const scheduleSynchronizedCursorRefresh = () => {
-        if (synchronizedCursorRefreshFrame !== null) return;
-        synchronizedCursorRefreshStartedAt = performance.now();
-        synchronizedCursorRefreshFrame = requestAnimationFrame(
-          runSynchronizedCursorRefresh,
-        );
-      };
-      const cursorMoveDisposable =
-        typeof maybeTerm.onCursorMove === "function"
-          ? maybeTerm.onCursorMove(() => {
-              traceTerminalEventLazy("xterm-cursor-move", () => ({
-                sessionId,
-                ...terminalBufferTrace(term),
-              }));
-              if (term.modes.synchronizedOutputMode) {
-                scheduleSynchronizedCursorRefresh();
-              }
-            })
-          : { dispose: () => {} };
+      const cleanupRenderObservers = attachTerminalRenderObservers({
+        sessionId,
+        term,
+        getActiveTerm: () => xtermRef.current,
+        refreshVisibleRows,
+      });
       // Coalesce scroll-derived UI state into one update per frame. This
       // drives both older-history loading near the top and the restored
       // jump-to-bottom affordance when the user scrolls away from the tail.
@@ -1458,65 +1387,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         }
       });
 
-      const emitRendererTrace = (type: string) => {
-        const renderer = rendererTraceRef.current;
-        traceTerminalEvent(type, {
-          sessionId,
-          requestedWebgl: renderer?.requestedWebgl,
-          effectiveRenderer: renderer?.effectiveRenderer,
-          webglStatus: renderer?.webglStatus,
-          webglFailureReason: renderer?.webglFailureReason,
-          contextLossCount: renderer?.contextLossCount,
-          fontLoadingDoneCount: renderer?.fontLoadingDoneCount,
-          atlasRebuildCount: renderer?.atlasRebuildCount,
-          iosFontPrefetchStatus: renderer?.iosFontPrefetchStatus,
-          unicodeVersion: renderer?.unicodeVersion,
-          isTouch: renderer?.isTouch,
-          isIos: renderer?.isIos,
-        });
-      };
-      const onRendererFontEvent = (event: TerminalRendererFontEvent) => {
-        const renderer = rendererTraceRef.current;
-        if (!renderer) return;
-        switch (event.type) {
-          case "webgl-skip":
-            renderer.requestedWebgl = false;
-            renderer.effectiveRenderer = "dom";
-            renderer.webglStatus = "disabled";
-            renderer.webglFailureReason = event.reason;
-            emitRendererTrace("terminal-renderer-webgl-skip");
-            break;
-          case "webgl-attach":
-            renderer.effectiveRenderer = "webgl";
-            renderer.webglStatus = "attached";
-            renderer.webglFailureReason = undefined;
-            emitRendererTrace("terminal-renderer-webgl-attach");
-            break;
-          case "webgl-error":
-            renderer.effectiveRenderer = "dom";
-            renderer.webglStatus = "failed";
-            renderer.webglFailureReason = event.reason;
-            emitRendererTrace("terminal-renderer-webgl-error");
-            break;
-          case "webgl-context-loss":
-            renderer.effectiveRenderer = "dom";
-            renderer.webglStatus = "context-lost";
-            renderer.contextLossCount += 1;
-            emitRendererTrace("terminal-renderer-webgl-context-loss");
-            break;
-          case "font-loadingdone":
-            renderer.fontLoadingDoneCount += 1;
-            renderer.atlasRebuildCount += 1;
-            renderer.fontFamily =
-              term.options.fontFamily ?? terminalConfigRef.current.fontFamily;
-            emitRendererTrace("terminal-renderer-font-loadingdone");
-            break;
-          case "ios-font-prefetch":
-            renderer.iosFontPrefetchStatus = event.status;
-            emitRendererTrace("terminal-renderer-ios-font-prefetch");
-            break;
-        }
-      };
+      const onRendererFontEvent = createTerminalRendererFontEventHandler({
+        sessionId,
+        term,
+        rendererTraceRef,
+        getFallbackFontFamily: () => terminalConfigRef.current.fontFamily,
+      });
       const detachRendererFontAtlas = attachWebglRendererAndFontAtlas(term, {
         isIos,
         enableWebgl: webglEnabled,
@@ -1840,19 +1716,17 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           window.clearTimeout(timer);
         }
         inputDiagnosticTimersRef.current.clear();
-        container.removeEventListener("focusin", markBottomRowsSnapshotActive);
+        container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
-        renderDisposable.dispose();
-        cursorMoveDisposable.dispose();
         selectionDisposable.dispose();
         scrollDisposable.dispose();
-        unregisterBottomRowsSnapshot();
+        bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
         if (pendingScrollFrame !== null) {
           cancelAnimationFrame(pendingScrollFrame);
           pendingScrollFrame = null;
         }
-        cancelSynchronizedCursorRefresh();
+        cleanupRenderObservers();
         setHasSelection(false);
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
