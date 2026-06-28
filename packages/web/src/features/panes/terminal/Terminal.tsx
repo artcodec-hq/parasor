@@ -50,7 +50,6 @@ import {
 } from "../../../lib/terminal-replay-cache.js";
 import {
   isTerminalTraceEnabled,
-  registerTerminalBottomRowsSnapshotProvider,
   scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
   traceTerminalEvent,
@@ -63,6 +62,7 @@ import {
   type TerminalSelectionHandle,
   TerminalSelectionOverlay,
 } from "./TerminalSelectionOverlay.js";
+import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
 import { applyCtrlModifier } from "./terminal-ctrl-modifier.js";
 import {
   isIosWebKit,
@@ -90,10 +90,7 @@ import {
   getTerminalSelectionRange,
   type TerminalSelectionRange,
 } from "./terminal-touch-selection.js";
-import {
-  type TerminalRendererTrace,
-  terminalBottomRowsTrace,
-} from "./terminal-trace-snapshot.js";
+import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
@@ -1214,27 +1211,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         // they balloon heap on long-running tabs with multiple terminals.
         scrollback: 10000,
       });
-      const bottomRowsSnapshotProvider = (rowCount?: number) =>
-        xtermRef.current === term
-          ? terminalBottomRowsTrace(
-              term,
-              rowCount,
-              rendererTraceRef.current ?? undefined,
-            )
-          : null;
-      let unregisterBottomRowsSnapshot =
-        registerTerminalBottomRowsSnapshotProvider(bottomRowsSnapshotProvider, {
-          sessionId,
-          paneId,
-        });
-      const markBottomRowsSnapshotActive = () => {
-        unregisterBottomRowsSnapshot();
-        unregisterBottomRowsSnapshot =
-          registerTerminalBottomRowsSnapshotProvider(
-            bottomRowsSnapshotProvider,
-            { sessionId, paneId },
-          );
-      };
+      const bottomRowsSnapshot = attachTerminalBottomRowsSnapshotProvider({
+        sessionId,
+        paneId,
+        term,
+        getActiveTerm: () => xtermRef.current,
+        rendererTraceRef,
+      });
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -1258,7 +1241,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         ),
       );
       term.open(container);
-      container.addEventListener("focusin", markBottomRowsSnapshotActive);
+      container.addEventListener("focusin", bottomRowsSnapshot.markActive);
       traceTerminalEvent("xterm-open", { sessionId });
       const cleanupRenderObservers = attachTerminalRenderObservers({
         sessionId,
@@ -1733,11 +1716,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           window.clearTimeout(timer);
         }
         inputDiagnosticTimersRef.current.clear();
-        container.removeEventListener("focusin", markBottomRowsSnapshotActive);
+        container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
         selectionDisposable.dispose();
         scrollDisposable.dispose();
-        unregisterBottomRowsSnapshot();
+        bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
         if (pendingScrollFrame !== null) {
           cancelAnimationFrame(pendingScrollFrame);
