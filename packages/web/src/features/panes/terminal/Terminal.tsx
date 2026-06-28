@@ -1278,22 +1278,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               }));
             })
           : { dispose: () => {} };
-      // Mobile DOM rendering can leave stale rows visible during Codex/Claude-
-      // style synchronized TUI updates. Keep desktop behavior, but render touch
-      // terminals continuously so normal-buffer transcript scrollback stays
-      // visually contiguous.
-      const synchronizedOutputModeDisposables = isTouch
-        ? [
-            term.parser.registerCsiHandler(
-              { prefix: "?", final: "h" },
-              (params) => params.length === 1 && params[0] === 2026,
-            ),
-            term.parser.registerCsiHandler(
-              { prefix: "?", final: "l" },
-              (params) => params.length === 1 && params[0] === 2026,
-            ),
-          ]
-        : [];
       const SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS = 1200;
       let synchronizedCursorRefreshFrame: number | null = null;
       let synchronizedCursorRefreshStartedAt = 0;
@@ -1869,9 +1853,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           pendingScrollFrame = null;
         }
         cancelSynchronizedCursorRefresh();
-        for (const disposable of synchronizedOutputModeDisposables) {
-          disposable.dispose();
-        }
         setHasSelection(false);
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
