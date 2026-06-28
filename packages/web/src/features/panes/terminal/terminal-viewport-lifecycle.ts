@@ -4,7 +4,6 @@ import type { Terminal as XTerm } from "@xterm/xterm";
 import type { MutableRefObject, RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
-  isTerminalTraceEnabled,
   scheduleTerminalInputDiagnosticCapture,
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
@@ -142,22 +141,6 @@ export function useTerminalViewportLifecycle({
         if (isEnded) return false;
         send({ type: "resize", cols: term.cols, rows: term.rows });
         return true;
-      };
-
-      const refreshVisibleTerminal = (reason: string) => {
-        refreshVisibleRows(term);
-        if (!isTerminalTraceEnabled()) return;
-        const event = {
-          type: "terminal-visible-refresh",
-          sessionId,
-          reason,
-          ...terminalBufferTrace(term),
-        };
-        traceTerminalEvent("terminal-visible-refresh", event);
-        scheduleTerminalInputDiagnosticCapture(
-          "terminal-visible-refresh",
-          event,
-        );
       };
 
       const commitInit = () => {
@@ -459,7 +442,6 @@ export function useTerminalViewportLifecycle({
         });
         if (!visible) return;
         setLastForegroundAtMs(Date.now());
-        refreshVisibleTerminal("foreground");
         // Foreground is the touch device's engagement signal. On desktop a bare
         // window focus (e.g. alt-tab) is not intent to interact, so we don't
         // claim the width there unless the pointer is already over the

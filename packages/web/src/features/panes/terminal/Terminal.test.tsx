@@ -32,7 +32,6 @@ const {
   textareaEventListeners,
   scrollListeners,
   cursorMoveListeners,
-  registeredCsiHandlers,
   registeredLinkProviders,
   mockFitAddonFit,
   mockFitAddonProposeDimensions,
@@ -71,11 +70,6 @@ const {
   >();
   const scrollListeners: Array<() => void> = [];
   const cursorMoveListeners: Array<() => void> = [];
-  const registeredCsiHandlers: Array<{
-    id: { prefix?: string; final: string };
-    callback: (params: (number | number[])[]) => boolean | Promise<boolean>;
-    dispose: ReturnType<typeof vi.fn>;
-  }> = [];
   const registeredLinkProviders: Array<{
     provideLinks: (
       bufferLineNumber: number,
@@ -156,13 +150,6 @@ const {
       ) => {
         customKeyHandlerRef.handler = handler;
       },
-      parser: {
-        registerCsiHandler: vi.fn((id, callback) => {
-          const dispose = vi.fn();
-          registeredCsiHandlers.push({ id, callback, dispose });
-          return { dispose };
-        }),
-      },
       buffer: {
         active: {
           viewportY: 5,
@@ -222,7 +209,6 @@ const {
     textareaEventListeners,
     scrollListeners,
     cursorMoveListeners,
-    registeredCsiHandlers,
     registeredLinkProviders,
     mockFitAddonFit,
     mockFitAddonProposeDimensions,
@@ -616,7 +602,6 @@ describe("Terminal", () => {
     textareaEventListeners.clear();
     scrollListeners.length = 0;
     cursorMoveListeners.length = 0;
-    registeredCsiHandlers.length = 0;
     registeredLinkProviders.length = 0;
     mockSocketStatus.current = "attached";
     customKeyHandlerRef.handler = undefined;
@@ -744,33 +729,6 @@ describe("Terminal", () => {
     await flushAnimationFrame();
 
     expect(mockTermRefresh).not.toHaveBeenCalled();
-  });
-
-  it("disables synchronized output mode on touch devices", () => {
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: (q: string) => ({ matches: q === "(pointer: coarse)" }),
-    });
-    render(<Terminal sessionId="s1" />, { wrapper });
-
-    expect(registeredCsiHandlers).toHaveLength(2);
-    expect(registeredCsiHandlers[0]?.id).toEqual({
-      prefix: "?",
-      final: "h",
-    });
-    expect(registeredCsiHandlers[1]?.id).toEqual({
-      prefix: "?",
-      final: "l",
-    });
-    expect(registeredCsiHandlers[0]?.callback([2026])).toBe(true);
-    expect(registeredCsiHandlers[1]?.callback([2026])).toBe(true);
-    expect(registeredCsiHandlers[0]?.callback([25])).toBe(false);
-  });
-
-  it("keeps synchronized output mode enabled on desktop devices", () => {
-    render(<Terminal sessionId="s1" />, { wrapper });
-
-    expect(registeredCsiHandlers).toHaveLength(0);
   });
 
   it("keeps the reconnect overlay hidden longer after mobile foreground", () => {
@@ -1697,29 +1655,17 @@ describe("Terminal", () => {
   it("claims the terminal width on desktop terminal focus or cursor enter, not on bare window focus", () => {
     // Non-touch (no matchMedia mock -> isTouch false). The shared PTY width is
     // claimed only on terminal engagement: focus inside xterm or cursor enter.
-    enableTerminalTrace();
     render(<Terminal sessionId="s1" />, { wrapper });
     const termContainer = must(document.querySelector(".xterm")).parentElement;
     mockTermResize.mockClear();
-    mockTermRefresh.mockClear();
     mockSend.mockClear();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
 
-    // A bare window focus (alt-tab back) must repaint locally without
-    // re-claiming the shared PTY width.
+    // A bare window focus (alt-tab back) must NOT re-claim the width.
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(mockTermResize).not.toHaveBeenCalled();
-    expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
-    expect(window.parasorTerminalTrace?.dump()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "terminal-visible-refresh",
-          reason: "foreground",
-        }),
-      ]),
-    );
 
     // Keyboard-only or restored-pane focus still means this terminal is about
     // to send desktop input, so it must reclaim before that input is written.
