@@ -54,7 +54,6 @@ import {
   scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
   traceTerminalEvent,
-  traceTerminalEventLazy,
 } from "../../../lib/terminal-trace.js";
 import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
@@ -72,6 +71,7 @@ import {
 } from "./terminal-environment.js";
 import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
+import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import {
   attachWebglRendererAndFontAtlas,
   type TerminalRendererFontEvent,
@@ -95,7 +95,6 @@ import {
 import {
   type TerminalRendererTrace,
   terminalBottomRowsTrace,
-  terminalBufferTrace,
 } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
@@ -1263,63 +1262,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       term.open(container);
       container.addEventListener("focusin", markBottomRowsSnapshotActive);
       traceTerminalEvent("xterm-open", { sessionId });
-      const maybeTerm = term as XTerm & {
-        onRender?: XTerm["onRender"];
-        onCursorMove?: XTerm["onCursorMove"];
-      };
-      const renderDisposable =
-        typeof maybeTerm.onRender === "function"
-          ? maybeTerm.onRender(({ start, end }) => {
-              traceTerminalEventLazy("xterm-render", () => ({
-                sessionId,
-                renderStart: start,
-                renderEnd: end,
-                ...terminalBufferTrace(term),
-              }));
-            })
-          : { dispose: () => {} };
-      const SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS = 1200;
-      let synchronizedCursorRefreshFrame: number | null = null;
-      let synchronizedCursorRefreshStartedAt = 0;
-      const cancelSynchronizedCursorRefresh = () => {
-        if (synchronizedCursorRefreshFrame === null) return;
-        cancelAnimationFrame(synchronizedCursorRefreshFrame);
-        synchronizedCursorRefreshFrame = null;
-      };
-      const runSynchronizedCursorRefresh = () => {
-        synchronizedCursorRefreshFrame = null;
-        if (xtermRef.current !== term) return;
-        if (
-          term.modes.synchronizedOutputMode &&
-          performance.now() - synchronizedCursorRefreshStartedAt <
-            SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS
-        ) {
-          synchronizedCursorRefreshFrame = requestAnimationFrame(
-            runSynchronizedCursorRefresh,
-          );
-          return;
-        }
-        refreshVisibleRows(term);
-      };
-      const scheduleSynchronizedCursorRefresh = () => {
-        if (synchronizedCursorRefreshFrame !== null) return;
-        synchronizedCursorRefreshStartedAt = performance.now();
-        synchronizedCursorRefreshFrame = requestAnimationFrame(
-          runSynchronizedCursorRefresh,
-        );
-      };
-      const cursorMoveDisposable =
-        typeof maybeTerm.onCursorMove === "function"
-          ? maybeTerm.onCursorMove(() => {
-              traceTerminalEventLazy("xterm-cursor-move", () => ({
-                sessionId,
-                ...terminalBufferTrace(term),
-              }));
-              if (term.modes.synchronizedOutputMode) {
-                scheduleSynchronizedCursorRefresh();
-              }
-            })
-          : { dispose: () => {} };
+      const cleanupRenderObservers = attachTerminalRenderObservers({
+        sessionId,
+        term,
+        getActiveTerm: () => xtermRef.current,
+        refreshVisibleRows,
+      });
       // Coalesce scroll-derived UI state into one update per frame. This
       // drives both older-history loading near the top and the restored
       // jump-to-bottom affordance when the user scrolls away from the tail.
@@ -1842,8 +1790,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         inputDiagnosticTimersRef.current.clear();
         container.removeEventListener("focusin", markBottomRowsSnapshotActive);
         detachRendererFontAtlas();
-        renderDisposable.dispose();
-        cursorMoveDisposable.dispose();
         selectionDisposable.dispose();
         scrollDisposable.dispose();
         unregisterBottomRowsSnapshot();
@@ -1852,7 +1798,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           cancelAnimationFrame(pendingScrollFrame);
           pendingScrollFrame = null;
         }
-        cancelSynchronizedCursorRefresh();
+        cleanupRenderObservers();
         setHasSelection(false);
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
