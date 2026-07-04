@@ -50,7 +50,6 @@ import {
 } from "../../../lib/terminal-replay-cache.js";
 import {
   isTerminalTraceEnabled,
-  scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
@@ -70,6 +69,10 @@ import {
   resolveTerminalWebglEnabled,
 } from "./terminal-environment.js";
 import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
+import {
+  clearTerminalInputDiagnosticTimers,
+  scheduleTerminalInputDiagnostics,
+} from "./terminal-input-diagnostics.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachWebglRendererAndFontAtlas } from "./terminal-renderer-fonts.js";
@@ -110,7 +113,6 @@ const HISTORY_LOAD_SUPPRESS_MS = 750;
 const IME_DUPLICATE_SUPPRESS_MS = 120;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
-const TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS = [80, 250] as const;
 const TERMINAL_UNICODE_VERSION = "11";
 const DESKTOP_INPUT_CLAIM_MIN_INTERVAL_MS = 1000;
 
@@ -342,39 +344,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       historyTopLoadArmedRef.current = false;
     }
     const pendingFullReplayCursorRef = useRef<TerminalLastSeen | null>(null);
-    const scheduleInputDiagnostics = useCallback(
-      (term: XTerm, dataLength: number, status: string) => {
-        const buildEvent = (delayMs: number) => ({
-          type: "terminal-input-diagnostic",
-          sessionId,
-          dataLength,
-          status,
-          cols: term.cols,
-          rows: term.rows,
-          cursorX: term.buffer.active.cursorX,
-          cursorY: term.buffer.active.cursorY,
-          viewportY: term.buffer.active.viewportY,
-          baseY: term.buffer.active.baseY,
-          delayMs,
-        });
-
-        scheduleTerminalInputDiagnosticCapture(
-          "terminal-input-sent",
-          buildEvent(0),
-        );
-        for (const delayMs of TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS) {
-          const timer = window.setTimeout(() => {
-            inputDiagnosticTimersRef.current.delete(timer);
-            scheduleTerminalInputDiagnosticCapture(
-              `terminal-input-after-${delayMs}ms`,
-              buildEvent(delayMs),
-            );
-          }, delayMs);
-          inputDiagnosticTimersRef.current.add(timer);
-        }
-      },
-      [sessionId],
-    );
     const handleReplayWriteComplete = useCallback(
       (data: string, term: XTerm) => {
         setIsReplayRestoring(false);
@@ -1463,7 +1432,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             }
           }
           send({ type: "input", data: out });
-          scheduleInputDiagnostics(term, out.length, inputStatus);
+          scheduleTerminalInputDiagnostics({
+            sessionId,
+            term,
+            dataLength: out.length,
+            status: inputStatus,
+            timers: inputDiagnosticTimersRef.current,
+          });
         });
       }
 
@@ -1712,10 +1687,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         textarea?.removeEventListener("compositionend", onImeCompositionEnd);
         textarea?.removeEventListener("blur", onTextareaBlur);
         textarea?.removeEventListener("paste", onPaste);
-        for (const timer of inputDiagnosticTimersRef.current) {
-          window.clearTimeout(timer);
-        }
-        inputDiagnosticTimersRef.current.clear();
+        clearTerminalInputDiagnosticTimers(inputDiagnosticTimersRef.current);
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
         selectionDisposable.dispose();
@@ -1749,7 +1721,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       refreshVisibleRows,
       commitSelectionOverlay,
       send,
-      scheduleInputDiagnostics,
       sessionId,
       paneId,
       setCtrl,
