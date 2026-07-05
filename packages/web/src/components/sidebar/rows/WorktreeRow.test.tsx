@@ -58,7 +58,7 @@ const selection: SidebarSelection = {
 };
 
 describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
-  it("uses compact added/deleted dirty metrics and keeps the normal label color", () => {
+  it("uses compact added/deleted dirty metrics and modified label color", () => {
     render(
       <WorktreeRow
         project={project}
@@ -81,7 +81,7 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(label.getAttribute("title")).toBe(
       "2 added lines, 1 deleted line, 4 live ports",
     );
-    expect(label.className).toContain("text-text-secondary");
+    expect(label.className).toContain("text-warning");
     expect(screen.getByText("+2")).toBeTruthy();
     expect(screen.getByText("-1")).toBeTruthy();
     expect(screen.getByText("4")).toBeTruthy();
@@ -102,8 +102,8 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     ).toBeNull();
   });
 
-  it("falls back to the modified dot when only dirtyCount is available", () => {
-    const { container } = render(
+  it("falls back to muted modified title color when only dirtyCount is available", () => {
+    render(
       <WorktreeRow
         project={project}
         worktree={makeWorktree(1)}
@@ -116,12 +116,12 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(
       screen.getByRole("button", { name: "main, 1 uncommitted change" }),
     ).not.toBeNull();
-    expect(
-      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
-    ).not.toBeNull();
+    expect(screen.queryByText("~1")).toBeNull();
+    expect(screen.getByText("main").className).toContain("text-warning");
+    expect(screen.queryByLabelText("Modified worktree")).toBeNull();
   });
 
-  it("shows tracked line stats instead of the modified dot when available", () => {
+  it("shows tracked line stats instead of the dirty count when available", () => {
     const { container } = render(
       <WorktreeRow
         project={project}
@@ -142,10 +142,12 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(
       container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
     ).toBeNull();
+    expect(screen.getByText("main").className).toContain("text-warning");
+    expect(screen.queryByText("~3")).toBeNull();
   });
 
-  it("falls back to the modified dot when dirty has no tracked line stats", () => {
-    const { container } = render(
+  it("falls back to dirty title color when dirty has no tracked line stats", () => {
+    render(
       <WorktreeRow
         project={project}
         worktree={{ ...makeWorktree(2), dirtyAdded: 0, dirtyDeleted: 0 }}
@@ -154,9 +156,9 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     );
     expect(screen.queryByText("+0")).toBeNull();
     expect(screen.queryByText("-0")).toBeNull();
-    expect(
-      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
-    ).not.toBeNull();
+    expect(screen.queryByText("~2")).toBeNull();
+    expect(screen.getByText("main").className).toContain("text-warning");
+    expect(screen.queryByLabelText("Modified worktree")).toBeNull();
   });
 
   it("uses the normal worktree label color when dirty === 0", () => {

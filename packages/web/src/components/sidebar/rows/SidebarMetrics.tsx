@@ -2,6 +2,8 @@ export interface SidebarRowMetrics {
   /** Added/deleted line counts for compact dirty diffstat display. */
   dirtyAdded?: number;
   dirtyDeleted?: number;
+  /** Changed file entries when line counts are unavailable. */
+  dirtyCount?: number;
   serviceCount?: number;
 }
 
@@ -38,11 +40,7 @@ export function SidebarMetricsView({
 }
 
 export function hasVisibleMetrics(metrics: SidebarRowMetrics): boolean {
-  return (
-    (metrics.dirtyAdded ?? 0) > 0 ||
-    (metrics.dirtyDeleted ?? 0) > 0 ||
-    (metrics.serviceCount ?? 0) > 0
-  );
+  return hasDirtyLineMetrics(metrics) || (metrics.serviceCount ?? 0) > 0;
 }
 
 export function formatSidebarMetricsTitle(metrics: SidebarRowMetrics): string {
@@ -55,9 +53,21 @@ export function formatSidebarMetricsTitle(metrics: SidebarRowMetrics): string {
   if (dirtyDeleted > 0) {
     parts.push(`${dirtyDeleted} deleted line${dirtyDeleted === 1 ? "" : "s"}`);
   }
+  if (dirtyAdded === 0 && dirtyDeleted === 0) {
+    const dirtyCount = metrics.dirtyCount ?? 0;
+    if (dirtyCount > 0) {
+      parts.push(
+        `${dirtyCount} uncommitted change${dirtyCount === 1 ? "" : "s"}`,
+      );
+    }
+  }
   const serviceCount = metrics.serviceCount ?? 0;
   if (serviceCount > 0) {
     parts.push(`${serviceCount} live port${serviceCount === 1 ? "" : "s"}`);
   }
   return parts.join(", ");
+}
+
+function hasDirtyLineMetrics(metrics: SidebarRowMetrics): boolean {
+  return (metrics.dirtyAdded ?? 0) > 0 || (metrics.dirtyDeleted ?? 0) > 0;
 }

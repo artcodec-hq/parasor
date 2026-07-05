@@ -81,16 +81,15 @@ export function WorktreeRow({
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
   const orphan = worktree.orphan === true;
-  const labelClassName = orphan
-    ? "text-text-secondary line-through decoration-danger"
-    : "text-text-secondary";
   const rowMetrics = metricsForWorktree(worktree);
   const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
-  const dirtyFallbackTitle =
-    !metricsTitle && worktree.dirty > 0
-      ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
-      : undefined;
-  const rowTitle = metricsTitle || dirtyFallbackTitle;
+  const rowTitle = metricsTitle || undefined;
+  const dirtyStatus = hasDirtyStatus(rowMetrics);
+  const labelClassName = orphan
+    ? "text-text-secondary line-through decoration-danger"
+    : dirtyStatus
+      ? "text-warning/80"
+      : "text-text-secondary";
 
   return (
     <div className={showTopBorder ? "border-t border-border" : undefined}>
@@ -177,13 +176,6 @@ export function WorktreeRow({
           )}
         </button>
         <SidebarMetricsView metrics={rowMetrics} />
-        {dirtyFallbackTitle && (
-          <span
-            aria-hidden
-            title={dirtyFallbackTitle}
-            className="h-1.5 w-1.5 shrink-0 rounded-tag bg-[var(--theme-git-modified)]"
-          />
-        )}
         <WorktreeRowActions
           label={label}
           onNewSession={
@@ -212,6 +204,15 @@ function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
   return {
     dirtyAdded: worktree.dirtyAdded,
     dirtyDeleted: worktree.dirtyDeleted,
+    dirtyCount: worktree.dirty,
     serviceCount: worktree.serviceCount,
   };
+}
+
+function hasDirtyStatus(metrics: SidebarRowMetrics): boolean {
+  return hasDirtyLineMetrics(metrics) || (metrics.dirtyCount ?? 0) > 0;
+}
+
+function hasDirtyLineMetrics(metrics: SidebarRowMetrics): boolean {
+  return (metrics.dirtyAdded ?? 0) > 0 || (metrics.dirtyDeleted ?? 0) > 0;
 }
