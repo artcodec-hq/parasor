@@ -111,8 +111,9 @@ export function WorktreeRow({
         >
           <span
             aria-hidden
-            className={`transition-transform duration-[120ms] ${isOpen ? "rotate-90" : "rotate-0"
-              }`}
+            className={`transition-transform duration-[120ms] ${
+              isOpen ? "rotate-90" : "rotate-0"
+            }`}
           >
             <PaGlyph.disclosure />
           </span>
