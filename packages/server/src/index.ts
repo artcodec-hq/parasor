@@ -434,6 +434,7 @@ const runtimeLoops = startRuntimeLoops({
   ptyManager,
   projectRuntime,
   uploadStaging,
+  worktreeCache,
   portForwarder,
   serviceRegistry,
   advertisedUrlWatcher,

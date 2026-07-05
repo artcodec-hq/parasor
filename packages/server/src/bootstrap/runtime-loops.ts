@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { Notification, PortInfo, ServiceConfig } from "@parasor/shared";
+import type {
+  Notification,
+  PortInfo,
+  ServiceConfig,
+  Worktree,
+} from "@parasor/shared";
 import type { UploadStaging } from "../fs/upload-staging.js";
 import { resolveForwarderBindHost } from "../net/reachable-host.js";
 import { PortForwarder } from "../port-forwarder/forwarder.js";
@@ -11,6 +16,7 @@ import {
   RuntimeServiceRegistry,
 } from "../runtime-services/service-registry.js";
 import type { AppStateStore } from "../state/app-state.js";
+import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
 import type { ProjectRuntime } from "./project-runtime.js";
 
@@ -36,9 +42,10 @@ export interface StartRuntimeLoopsDeps {
   ptyManager: PtyHost;
   projectRuntime: ProjectRuntime;
   uploadStaging: UploadStaging;
+  worktreeCache: WorktreeCache;
   reconcileWorktrees?: (
     projectId: string,
-    prefetched?: import("@parasor/shared").Worktree[],
+    prefetched?: Worktree[],
   ) => Promise<void>;
   /**
    * The address parasor's own HTTP server is bound to (`hostname` from
@@ -132,6 +139,7 @@ export function startRuntimeLoops({
   ptyManager,
   projectRuntime,
   uploadStaging,
+  worktreeCache,
   reconcileWorktrees,
   bindHost = "0.0.0.0",
   portForwarder,
@@ -164,7 +172,7 @@ export function startRuntimeLoops({
     const services = registry.syncProject({
       projectId,
       projectPath: projectPathFor(appStateStore, projectId),
-      worktreePaths: worktreePathsFor(appStateStore, projectId),
+      worktreePaths: worktreePathsFor(appStateStore, worktreeCache, projectId),
       ports,
       forwarder,
     });
@@ -298,6 +306,7 @@ function projectPathFor(
 
 function worktreePathsFor(
   appStateStore: AppStateStore,
+  worktreeCache: WorktreeCache,
   projectId: string,
 ): string[] {
   const state = appStateStore.get();
@@ -305,6 +314,9 @@ function worktreePathsFor(
     state.projects.find((project) => project.id === projectId)?.path ?? "";
   const paths = new Set<string>();
   if (projectPath) paths.add(projectPath);
+  for (const worktree of worktreeCache.get()[projectId] ?? []) {
+    paths.add(worktree.path);
+  }
   for (const worktree of state.projectStates?.[projectId]?.worktrees ?? []) {
     paths.add(worktree.path);
   }

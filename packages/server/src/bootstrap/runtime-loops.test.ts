@@ -2,6 +2,7 @@ import type {
   Notification,
   PortDetectionMode,
   PortInfo,
+  Worktree,
 } from "@parasor/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PortForwarder } from "../port-forwarder/forwarder.js";
@@ -138,6 +139,7 @@ describe("startRuntimeLoops port-detected notifications", () => {
       inert?: boolean;
       advertisedUrlWatcher?: RuntimeServiceAdvertisedUrlWatcher;
       serviceRegistry?: RuntimeServiceRegistry;
+      worktrees?: Worktree[];
     },
   ) {
     const handlerRef: {
@@ -164,6 +166,9 @@ describe("startRuntimeLoops port-detected notifications", () => {
     };
     const ptyManager = { list: () => [] };
     const projectRuntime = { pollGitChanges: vi.fn() };
+    const worktreeCache = {
+      get: () => ({ p1: opts?.worktrees ?? [] }),
+    };
 
     const uploadStaging = {
       sweepStale: vi.fn().mockResolvedValue({ swept: [] }),
@@ -176,6 +181,7 @@ describe("startRuntimeLoops port-detected notifications", () => {
       ptyManager: ptyManager as never,
       projectRuntime: projectRuntime as never,
       uploadStaging: uploadStaging as never,
+      worktreeCache: worktreeCache as never,
       portForwarder: fake.forwarder,
       ...(opts?.serviceRegistry
         ? { serviceRegistry: opts.serviceRegistry }
@@ -312,6 +318,45 @@ describe("startRuntimeLoops port-detected notifications", () => {
         expect.objectContaining({
           advertisedUrl: expect.objectContaining({
             origin: "http://localhost:5173",
+          }),
+        }),
+      ],
+    });
+  });
+
+  it("attributes session-owned ports to linked worktrees from the runtime cache", () => {
+    const { trigger, broadcast } = setup("all-interfaces", {
+      worktrees: [
+        {
+          path: "/repo.worktrees/feature",
+          head: "abc123",
+          branch: "feature",
+        },
+      ],
+    });
+
+    trigger("p1", [
+      {
+        port: 7764,
+        pid: 100,
+        bindHost: "127.0.0.1",
+        bindsAll: false,
+        sessionId: "s1",
+        sessionCwd: "/repo.worktrees/feature/packages/app",
+      },
+    ]);
+
+    expect(broadcast).toHaveBeenCalledWith({
+      type: "services-updated",
+      projectId: "p1",
+      services: [
+        expect.objectContaining({
+          kind: "workspace",
+          port: 7764,
+          attribution: expect.objectContaining({
+            source: "session-process-tree",
+            sessionId: "s1",
+            worktreePath: "/repo.worktrees/feature",
           }),
         }),
       ],
