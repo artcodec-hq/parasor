@@ -17,6 +17,7 @@ interface SidebarRowLabelProps {
   selected?: boolean;
   /** Override the default `selected ? semibold : normal` mapping. */
   weight?: Weight;
+  grow?: boolean;
   className?: string;
   title?: string;
   children: ReactNode;
@@ -25,15 +26,17 @@ interface SidebarRowLabelProps {
 export function SidebarRowLabel({
   selected,
   weight,
+  grow = true,
   className,
   title,
   children,
 }: SidebarRowLabelProps) {
   const w = weight ?? (selected ? "semibold" : "normal");
+  const widthClass = grow ? "flex-1" : "shrink";
   return (
     <span
       title={title}
-      className={`min-w-0 flex-1 truncate text-sm leading-tight ${WEIGHT_CLASS[w]} ${className ?? ""}`}
+      className={`min-w-0 ${widthClass} truncate text-sm leading-tight ${WEIGHT_CLASS[w]} ${className ?? ""}`}
     >
       {children}
     </span>

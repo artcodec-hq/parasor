@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from "react";
+import type { ComponentType, HTMLAttributes, SVGProps } from "react";
 import { PaGlyph } from "../../primitives/index.js";
 import type {
   SidebarProject,
@@ -90,6 +90,7 @@ export function WorktreeRow({
     : dirtyStatus
       ? "text-warning/80"
       : "text-text-secondary";
+  const externalWorktreeTitle = externalWorktreeStatusTitle(worktree);
 
   return (
     <div className={showTopBorder ? "border-t border-border" : undefined}>
@@ -110,9 +111,8 @@ export function WorktreeRow({
         >
           <span
             aria-hidden
-            className={`transition-transform duration-[120ms] ${
-              isOpen ? "rotate-90" : "rotate-0"
-            }`}
+            className={`transition-transform duration-[120ms] ${isOpen ? "rotate-90" : "rotate-0"
+              }`}
           >
             <PaGlyph.disclosure />
           </span>
@@ -135,6 +135,7 @@ export function WorktreeRow({
             title={rowTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
+            grow={false}
             className={labelClassName}
           >
             {label}
@@ -144,36 +145,10 @@ export function WorktreeRow({
               <PaGlyph.readOnlyProject />
             </span>
           )}
-          {worktree.origin === "agent" && (
-            <span
-              role="img"
-              aria-label="Agent worktree"
-              title="Created by an agent (Agent Team isolated checkout)"
-              className="shrink-0 rounded-tag border border-accent/40 bg-accent/10 px-1 text-[10px] font-medium leading-tight text-accent"
-            >
-              agent
-            </span>
-          )}
-          {worktree.provenance === "imported" && (
-            <span
-              role="img"
-              aria-label="Imported worktree"
-              title="Created outside Parasor"
-              className="shrink-0 rounded-tag border border-text-secondary/30 bg-bg-primary px-1 text-[10px] font-medium leading-tight text-text-secondary"
-            >
-              imported
-            </span>
-          )}
-          {worktree.orphan && (
-            <span
-              role="img"
-              aria-label="Missing worktree"
-              title="Path is missing on disk - prune the stale worktree entry"
-              className="shrink-0 rounded-tag border border-danger/40 bg-danger/10 px-1 text-[10px] font-medium leading-tight text-danger"
-            >
-              missing
-            </span>
-          )}
+          <WorktreeStatusIcons
+            externalTitle={externalWorktreeTitle}
+            missing={worktree.orphan === true}
+          />
         </button>
         <SidebarMetricsView metrics={rowMetrics} />
         <WorktreeRowActions
@@ -215,4 +190,77 @@ function hasDirtyStatus(metrics: SidebarRowMetrics): boolean {
 
 function hasDirtyLineMetrics(metrics: SidebarRowMetrics): boolean {
   return (metrics.dirtyAdded ?? 0) > 0 || (metrics.dirtyDeleted ?? 0) > 0;
+}
+
+function externalWorktreeStatusTitle(worktree: SidebarWorktree): string | null {
+  const externalReasons: string[] = [];
+  if (worktree.origin === "agent") {
+    externalReasons.push("agent-created");
+  }
+  if (worktree.provenance === "imported") {
+    externalReasons.push("imported");
+  }
+  if (externalReasons.length === 0) return null;
+  return `External worktree: ${externalReasons.join(", ")}`;
+}
+
+function WorktreeStatusIcons({
+  externalTitle,
+  missing,
+}: {
+  externalTitle: string | null;
+  missing: boolean;
+}) {
+  if (!externalTitle && !missing) return null;
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {externalTitle && (
+        <WorktreeStatusIcon
+          glyph={PaGlyph.link}
+          label="Linked worktree"
+          title={externalTitle}
+          tone="secondary"
+        />
+      )}
+      {missing && (
+        <WorktreeStatusIcon
+          glyph={PaGlyph.circleOff}
+          label="Missing worktree"
+          title="Path is missing on disk - prune the stale worktree entry"
+          tone="danger"
+        />
+      )}
+    </span>
+  );
+}
+
+type WorktreeStatusIconTone = "secondary" | "danger";
+
+const WORKTREE_STATUS_ICON_TONE: Record<WorktreeStatusIconTone, string> = {
+  danger: "text-danger/80",
+  secondary: "text-text-secondary/75",
+};
+
+function WorktreeStatusIcon({
+  glyph: Glyph,
+  label,
+  title,
+  tone,
+}: {
+  glyph: ComponentType<SVGProps<SVGSVGElement>>;
+  label: string;
+  title: string;
+  tone: WorktreeStatusIconTone;
+}) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={title}
+      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center ${WORKTREE_STATUS_ICON_TONE[tone]}`}
+    >
+      <Glyph className="h-3.5 w-3.5" />
+    </span>
+  );
 }

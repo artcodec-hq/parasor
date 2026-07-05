@@ -206,8 +206,8 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
   });
 });
 
-describe("WorktreeRow agent / missing-path pills", () => {
-  it("renders an 'agent' pill when origin is agent", () => {
+describe("WorktreeRow external / missing-path icons", () => {
+  it("renders a linked status icon when origin is agent", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -215,10 +215,15 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(getByLabelText("Agent worktree").textContent).toBe("agent");
+    const icon = getByLabelText("Linked worktree");
+    expect(icon.textContent).toBe("");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.className).not.toContain("border");
+    expect(icon.className).not.toContain("bg-");
+    expect(icon.getAttribute("title")).toBe("External worktree: agent-created");
   });
 
-  it("renders a 'missing' pill when orphan flag is set", () => {
+  it("renders a missing status icon when orphan flag is set", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -226,7 +231,11 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(getByLabelText("Missing worktree").textContent).toBe("missing");
+    const icon = getByLabelText("Missing worktree");
+    expect(icon.textContent).toBe("");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.className).not.toContain("border");
+    expect(icon.className).not.toContain("bg-");
   });
 
   it("strikes through the worktree label when orphan flag is set", () => {
@@ -262,11 +271,10 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(queryByLabelText("Imported worktree")).toBeNull();
     expect(queryByLabelText("Linked worktree")).toBeNull();
   });
 
-  it("renders an imported pill when provenance is imported", () => {
+  it("renders a linked status icon when provenance is imported", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -274,9 +282,59 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    const pill = getByLabelText("Imported worktree");
-    expect(pill.textContent).toBe("imported");
-    expect(pill.getAttribute("title")).toBe("Created outside Parasor");
+    const icon = getByLabelText("Linked worktree");
+    expect(icon.textContent).toBe("");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.getAttribute("title")).toBe("External worktree: imported");
+  });
+
+  it("renders one linked status icon when both external flags are set", () => {
+    const { getAllByLabelText } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{
+          ...makeWorktree(0),
+          origin: "agent",
+          provenance: "imported",
+        }}
+        selection={selection}
+      />,
+    );
+    const icons = getAllByLabelText("Linked worktree");
+    expect(icons).toHaveLength(1);
+    expect(icons[0].getAttribute("title")).toBe(
+      "External worktree: agent-created, imported",
+    );
+  });
+
+  it("places status icons after the title and before right-side metrics/actions", () => {
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{
+          ...makeWorktree(2),
+          dirtyAdded: 12,
+          dirtyDeleted: 4,
+          origin: "agent",
+        }}
+        selection={selection}
+        onNewSession={vi.fn()}
+      />,
+    );
+    const label = screen.getByText("main");
+    const added = screen.getByText("+12");
+    const linked = screen.getByLabelText("Linked worktree");
+    const action = screen.getByRole("button", { name: "New session in main" });
+
+    expect(
+      label.compareDocumentPosition(linked) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      linked.compareDocumentPosition(added) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      added.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("omits both pills when neither flag is set", () => {
@@ -287,8 +345,7 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(queryByLabelText("Agent worktree")).toBeNull();
-    expect(queryByLabelText("Imported worktree")).toBeNull();
+    expect(queryByLabelText("Linked worktree")).toBeNull();
     expect(queryByLabelText("Missing worktree")).toBeNull();
   });
 });
