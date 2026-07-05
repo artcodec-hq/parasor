@@ -30,17 +30,11 @@ import {
 import { SessionErrorState } from "../../../components/overlays/SessionErrorState.js";
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
-import { extractImageFiles } from "../../../lib/clipboard-images.js";
-import { copyTextToNativeClipboard } from "../../../lib/native-clipboard.js";
 import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
-import {
-  hasTerminalPasteCandidate,
-  readTerminalInternalClipboard,
-  writeTerminalInternalClipboard,
-} from "../../../lib/terminal-internal-clipboard.js";
+import { hasTerminalPasteCandidate } from "../../../lib/terminal-internal-clipboard.js";
 import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
 import {
   getTerminalReplayCache,
@@ -60,7 +54,7 @@ import {
   TerminalSelectionOverlay,
 } from "./TerminalSelectionOverlay.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
-import { applyCtrlModifier } from "./terminal-ctrl-modifier.js";
+import { attachTerminalClipboardImagePaste } from "./terminal-clipboard-image-paste.js";
 import { attachTerminalDomDiagnostics } from "./terminal-dom-diagnostics.js";
 import {
   isIosWebKit,
@@ -74,10 +68,12 @@ import {
   loadOlderTerminalHistory,
   type TerminalHistoryLoadStatusState,
 } from "./terminal-history-loader.js";
+import { clearTerminalInputDiagnosticTimers } from "./terminal-input-diagnostics.js";
 import {
-  clearTerminalInputDiagnosticTimers,
-  scheduleTerminalInputDiagnostics,
-} from "./terminal-input-diagnostics.js";
+  attachTerminalDataInput,
+  attachTerminalImeLifecycle,
+  attachTerminalShiftEnterHandler,
+} from "./terminal-input-lifecycle.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachWebglRendererAndFontAtlas } from "./terminal-renderer-fonts.js";
@@ -100,6 +96,7 @@ import {
 } from "./terminal-touch-selection.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
+import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
 
@@ -112,26 +109,15 @@ const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
 // that load for one window -- a single duration for every trigger so the
 // coverage is symmetric whether or not the resize changed dimensions.
 const HISTORY_LOAD_SUPPRESS_MS = 750;
-const IME_DUPLICATE_SUPPRESS_MS = 120;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_UNICODE_VERSION = "11";
-const DESKTOP_INPUT_CLAIM_MIN_INTERVAL_MS = 1000;
 
 type SelectionOverlayState = {
   range: TerminalSelectionRange;
   toolbarAnchor: { clientX: number; clientY: number } | null;
   draggingHandle: TerminalSelectionHandle | null;
 };
-
-function isPrintableImeData(data: string): boolean {
-  if (data.length === 0) return false;
-  for (let i = 0; i < data.length; i += 1) {
-    const code = data.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return false;
-  }
-  return true;
-}
 
 function clampNumber(value: number, min: number, max: number): number {
   if (max < min) return min;
@@ -166,19 +152,6 @@ function createInitialRendererTrace(input: {
     fontFamily: input.fontFamily,
     fontSize: input.fontSize,
   };
-}
-
-function getErrorName(err: unknown): string {
-  if (
-    err &&
-    typeof err === "object" &&
-    "name" in err &&
-    typeof err.name === "string" &&
-    err.name.length > 0
-  ) {
-    return err.name;
-  }
-  return "unknown";
 }
 
 function pointToOverlayPosition(
@@ -555,9 +528,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       useState<SelectionOverlayState | null>(null);
     const selectionOverlayRef = useRef<SelectionOverlayState | null>(null);
     selectionOverlayRef.current = selectionOverlay;
-    const [externalCopyText, setExternalCopyText] = useState<string | null>(
-      null,
-    );
     const [inputToolbarAnchor, setInputToolbarAnchor] = useState<{
       clientX: number;
       clientY: number;
@@ -625,6 +595,24 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       [send],
     );
     const focusTerm = useCallback(() => xtermRef.current?.focus(), []);
+    const clearSelectionUi = useCallback(() => {
+      setHasSelection(false);
+      setSelectionOverlay(null);
+      setInputToolbarAnchor(null);
+    }, []);
+    const {
+      externalCopyText,
+      closeExternalCopyDialog,
+      handleCopySelection,
+      openExternalCopyDialog,
+      copyExternalText,
+      handlePasteFromTerminalToolbar,
+    } = useTerminalClipboardActions({
+      sessionId,
+      xtermRef,
+      send,
+      clearSelectionUi,
+    });
     const {
       uploadState,
       isDragOver,
@@ -714,164 +702,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       },
       [sessionId],
     );
-
-    const handleCopySelection = useCallback(async () => {
-      const term = xtermRef.current;
-      if (!term) return;
-      const text = term.getSelection();
-      if (!text) {
-        traceTerminalEvent("terminal-toolbar-copy-skipped", {
-          sessionId,
-          reason: "empty-selection",
-        });
-        return;
-      }
-
-      traceTerminalEvent("terminal-toolbar-copy-attempt", {
-        sessionId,
-        dataLength: text.length,
-      });
-
-      const internalWritten = writeTerminalInternalClipboard(text);
-      if (internalWritten) {
-        traceTerminalEvent("terminal-toolbar-copy", {
-          sessionId,
-          status: "internal",
-          dataLength: text.length,
-        });
-      } else {
-        traceTerminalEvent("terminal-toolbar-copy-failed", {
-          sessionId,
-          status: "internal",
-          reason: "local-storage-unavailable",
-        });
-      }
-
-      const nativeCopyResult = await copyTextToNativeClipboard(text);
-      if (nativeCopyResult.ok) {
-        traceTerminalEvent("terminal-toolbar-copy", {
-          sessionId,
-          status: "native",
-          dataLength: text.length,
-        });
-      } else {
-        traceTerminalEvent("terminal-toolbar-copy-failed", {
-          sessionId,
-          status: "native",
-          reason: nativeCopyResult.reason,
-        });
-      }
-
-      if (!internalWritten && !nativeCopyResult.ok) return;
-      traceTerminalEvent("terminal-toolbar-copy-complete", {
-        sessionId,
-        dataLength: text.length,
-      });
-      term.clearSelection();
-      setHasSelection(false);
-      setSelectionOverlay(null);
-      setInputToolbarAnchor(null);
-    }, [sessionId]);
-
-    const openExternalCopyDialog = useCallback(() => {
-      const text = xtermRef.current?.getSelection() ?? "";
-      if (!text) return;
-      setExternalCopyText(text);
-      traceTerminalEvent("terminal-external-copy-dialog-open", {
-        sessionId,
-        dataLength: text.length,
-      });
-    }, [sessionId]);
-
-    const copyExternalText = useCallback(
-      async (text: string): Promise<boolean> => {
-        if (!text) return false;
-        const internalWritten = writeTerminalInternalClipboard(text);
-        if (internalWritten) {
-          traceTerminalEvent("terminal-external-copy-dialog-copy", {
-            sessionId,
-            status: "internal",
-            dataLength: text.length,
-          });
-        } else {
-          traceTerminalEvent("terminal-external-copy-dialog-copy-failed", {
-            sessionId,
-            status: "internal",
-            reason: "local-storage-unavailable",
-          });
-        }
-        const result = await copyTextToNativeClipboard(text);
-        traceTerminalEvent(
-          result.ok
-            ? "terminal-external-copy-dialog-copy"
-            : "terminal-external-copy-dialog-copy-failed",
-          {
-            sessionId,
-            status: "native",
-            dataLength: text.length,
-            ...(result.ok ? {} : { reason: result.reason }),
-          },
-        );
-        return internalWritten || result.ok;
-      },
-      [sessionId],
-    );
-
-    const handlePasteFromTerminalToolbar = useCallback(async () => {
-      const term = xtermRef.current;
-      const readText = navigator.clipboard?.readText;
-      const pasteText = (text: string, source: "native" | "internal") => {
-        send({ type: "input", data: text });
-        traceTerminalEvent("terminal-toolbar-paste", {
-          sessionId,
-          status: source,
-          dataLength: text.length,
-        });
-        term?.clearSelection();
-        setHasSelection(false);
-        setSelectionOverlay(null);
-        setInputToolbarAnchor(null);
-      };
-
-      try {
-        if (readText) {
-          const text = await readText.call(navigator.clipboard);
-          if (text) {
-            pasteText(text, "native");
-            return;
-          }
-          traceTerminalEvent("terminal-toolbar-paste-skipped", {
-            sessionId,
-            status: "native",
-            reason: "empty-clipboard",
-          });
-        } else {
-          traceTerminalEvent("terminal-toolbar-paste-failed", {
-            sessionId,
-            status: "native",
-            reason: "clipboard-api-unavailable",
-          });
-        }
-      } catch (err) {
-        traceTerminalEvent("terminal-toolbar-paste-failed", {
-          sessionId,
-          status: "native",
-          reason: getErrorName(err),
-        });
-      }
-
-      const internalText = readTerminalInternalClipboard();
-      if (internalText) {
-        pasteText(internalText, "internal");
-        return;
-      }
-
-      traceTerminalEvent("terminal-toolbar-paste-failed", {
-        sessionId,
-        status: "internal",
-        reason: "internal-clipboard-empty",
-      });
-    }, [send, sessionId]);
 
     const applySelectionHandleDrag = useCallback(
       (
@@ -1176,33 +1006,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       };
       const scrollDisposable = term.onScroll(updateScrollState);
       updateScrollState();
-      // Shift+Enter -> ESC+CR. Chat TUIs (Claude Code etc) parse ESC+CR as
-      // newline. preventDefault stops the hidden textarea from also receiving
-      // a newline that would re-fire xterm.onData and submit the prompt.
-      // IME guard: while composition is active (isComposing or legacy
-      // keyCode=229), return false to also block xterm's default Enter->CR
-      // path. xterm's CompositionHelper.keydown finalizes composition and
-      // returns true for non-229 keys, which would otherwise convert Enter to
-      // CR and submit the JP/CJK candidate as a prompt on browsers that fire
-      // keydown before compositionend (e.g. Firefox).
-      term.attachCustomKeyEventHandler((event) => {
-        const composing =
-          event.isComposing ||
-          (event as KeyboardEvent & { keyCode?: number }).keyCode === 229;
-        if (
-          event.type === "keydown" &&
-          event.key === "Enter" &&
-          event.shiftKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !event.metaKey
-        ) {
-          if (composing) return false;
-          event.preventDefault();
-          if (!isEnded) send({ type: "input", data: "\x1b\r" });
-          return false;
-        }
-        return true;
+      attachTerminalShiftEnterHandler({
+        term,
+        isEnded,
+        send,
       });
       const screenElement =
         term.element?.querySelector(".xterm-screen") ??
@@ -1290,60 +1097,19 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       // slow layout). `useTerminalSocket.send()` queues frames until init
       // has been sent, so the payloads here are preserved and flushed in
       // order once sendInit lands.
-      if (!isEnded) {
-        term.onData((data) => {
-          const now = performance.now();
-          const imeGate = imeDuplicateGateRef.current;
-          const inImeWindow = imeGate.composing || now <= imeGate.suppressUntil;
-          const isImeText = isPrintableImeData(data);
-          if (
-            inImeWindow &&
-            isImeText &&
-            imeGate.lastSentSerial === imeGate.activeSerial &&
-            imeGate.lastSentText === data &&
-            now - imeGate.lastSentAt <= IME_DUPLICATE_SUPPRESS_MS
-          ) {
-            traceTerminalEvent("terminal-ime-duplicate-suppressed", {
-              sessionId,
-              dataLength: data.length,
-              durationMs: Math.round((now - imeGate.lastSentAt) * 10) / 10,
-              reason: "same-composition-text",
-            });
-            return;
-          }
-          if (inImeWindow && isImeText) {
-            imeGate.lastSentText = data;
-            imeGate.lastSentAt = now;
-            imeGate.lastSentSerial = imeGate.activeSerial;
-          }
-          traceTerminalEvent("xterm-on-data", {
-            sessionId,
-            dataLength: data.length,
-          });
-          const out = ctrlStickyRef.current ? applyCtrlModifier(data) : data;
-          const inputStatus = ctrlStickyRef.current ? "ctrl-modified" : "raw";
-          if (ctrlStickyRef.current) setCtrl(false);
-          traceTerminalEvent("terminal-send-input", {
-            sessionId,
-            dataLength: out.length,
-          });
-          if (!isTouch) {
-            const sinceLastClaim = now - lastDesktopInputClaimAtRef.current;
-            if (sinceLastClaim >= DESKTOP_INPUT_CLAIM_MIN_INTERVAL_MS) {
-              lastDesktopInputClaimAtRef.current = now;
-              claimViewport("desktop-input");
-            }
-          }
-          send({ type: "input", data: out });
-          scheduleTerminalInputDiagnostics({
-            sessionId,
-            term,
-            dataLength: out.length,
-            status: inputStatus,
-            timers: inputDiagnosticTimersRef.current,
-          });
-        });
-      }
+      const cleanupTerminalDataInput = attachTerminalDataInput({
+        enabled: !isEnded,
+        sessionId,
+        term,
+        isTouch,
+        send,
+        setCtrl,
+        ctrlStickyRef,
+        imeDuplicateGateRef,
+        lastDesktopInputClaimAtRef,
+        inputDiagnosticTimersRef,
+        claimViewport,
+      });
 
       const cleanupViewportLifecycle = attachViewportLifecycle({
         container,
@@ -1358,21 +1124,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       // transition -- blur is the most direct signal that no soft-keyboard
       // input is coming next, so we key the clear off it as well.
       const textarea = term.textarea;
-      const onImeCompositionStart = () => {
-        const imeGate = imeDuplicateGateRef.current;
-        imeGate.composing = true;
-        imeGate.serial += 1;
-        imeGate.activeSerial = imeGate.serial;
-        imeGate.suppressUntil = 0;
-        imeGate.lastSentText = "";
-        imeGate.lastSentAt = 0;
-        imeGate.lastSentSerial = -1;
-      };
-      const onImeCompositionEnd = () => {
-        const imeGate = imeDuplicateGateRef.current;
-        imeGate.composing = false;
-        imeGate.suppressUntil = performance.now() + IME_DUPLICATE_SUPPRESS_MS;
-      };
       const suppressSyntheticMouseAfterToolbarAction = (event: Event) => {
         if (performance.now() > toolbarSyntheticMouseSuppressUntilRef.current) {
           return;
@@ -1403,40 +1154,16 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         textarea,
         screenElement,
       });
-      textarea?.addEventListener("compositionstart", onImeCompositionStart);
-      textarea?.addEventListener("compositionend", onImeCompositionEnd);
-      const onTextareaBlur = () => {
-        const imeGate = imeDuplicateGateRef.current;
-        imeGate.composing = false;
-        imeGate.suppressUntil = 0;
-        setCtrl(false);
-      };
-      textarea?.addEventListener("blur", onTextareaBlur);
-
-      // Clipboard image paste: when the user hits ⌘V / Ctrl+V inside xterm
-      // and the clipboard carries image data, upload via the same
-      // `/api/projects/:id/drops` endpoint as OS-file DnD and inject the
-      // returned absolute paths (POSIX single-quoted, space-joined). Text-
-      // only paste falls through to xterm's default handling untouched.
-      // iOS Safari may expose an empty `clipboardData.items` for image
-      // paste -- `extractImageFiles` returns `[]` in that case and we also
-      // fall through silently (no toast).
-      const onPaste = (e: ClipboardEvent): void => {
-        // Same gate as OS-file DnD: attached PTY + !isEnded. Otherwise let
-        // xterm handle text fallback normally. Read via ref so socket
-        // reconnect / runUpload identity changes do not re-run this effect.
-        if (!dropEnabledRef.current) return;
-        // serviceConfig.dropSizeMaxBytes is not available in this component
-        // without a new store subscription -- rely on the server's 413 for
-        // oversize instead.
-        const images = extractImageFiles(e.clipboardData);
-        if (images.length === 0) return;
-        // Text+image combo: preventDefault the whole paste so binary
-        // content doesn't get dumped into the pty.
-        e.preventDefault();
-        void runUploadRef.current(images);
-      };
-      textarea?.addEventListener("paste", onPaste);
+      const cleanupImeLifecycle = attachTerminalImeLifecycle({
+        textarea,
+        imeDuplicateGateRef,
+        setCtrl,
+      });
+      const cleanupClipboardImagePaste = attachTerminalClipboardImagePaste({
+        textarea,
+        dropEnabledRef,
+        runUploadRef,
+      });
 
       return () => {
         cleanupViewportLifecycle();
@@ -1455,13 +1182,8 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           { capture: true },
         );
         cleanupDomDiagnostics();
-        textarea?.removeEventListener(
-          "compositionstart",
-          onImeCompositionStart,
-        );
-        textarea?.removeEventListener("compositionend", onImeCompositionEnd);
-        textarea?.removeEventListener("blur", onTextareaBlur);
-        textarea?.removeEventListener("paste", onPaste);
+        cleanupImeLifecycle();
+        cleanupClipboardImagePaste();
         clearTerminalInputDiagnosticTimers(inputDiagnosticTimersRef.current);
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
@@ -1478,6 +1200,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
         resetOutputPipeline(true);
+        cleanupTerminalDataInput();
         term.dispose();
         xtermRef.current = null;
         fitRef.current = null;
@@ -1642,7 +1365,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           open={externalCopyText !== null}
           text={externalCopyText ?? ""}
           isMobile={isTouch}
-          onClose={() => setExternalCopyText(null)}
+          onClose={closeExternalCopyDialog}
           onCopy={copyExternalText}
         />
         {isDragOver && dropEnabled && (
