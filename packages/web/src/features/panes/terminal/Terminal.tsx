@@ -48,7 +48,6 @@ import {
 import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
 import {
-  type OverlayPoint,
   type TerminalSelectionAction,
   type TerminalSelectionHandle,
   TerminalSelectionOverlay,
@@ -84,6 +83,11 @@ import {
   type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
 import {
+  resolveSelectionOverlayLayout,
+  type SelectionOverlayState,
+  toolbarPositionFromAnchor,
+} from "./terminal-selection-layout.js";
+import {
   attachTerminalTapGestures,
   attachTerminalTouchSelection,
   attachTerminalTouchWheel,
@@ -92,7 +96,6 @@ import {
   applyBoundarySelection,
   getSelectionPointFromHandleDrag,
   getTerminalSelectionRange,
-  type TerminalSelectionRange,
 } from "./terminal-touch-selection.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
@@ -112,17 +115,6 @@ const HISTORY_LOAD_SUPPRESS_MS = 750;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_UNICODE_VERSION = "11";
-
-type SelectionOverlayState = {
-  range: TerminalSelectionRange;
-  toolbarAnchor: { clientX: number; clientY: number } | null;
-  draggingHandle: TerminalSelectionHandle | null;
-};
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (max < min) return min;
-  return Math.min(Math.max(value, min), max);
-}
 
 function replayCacheMatchesDimensions(
   entry: TerminalReplayCacheEntry | null,
@@ -154,29 +146,6 @@ function createInitialRendererTrace(input: {
   };
 }
 
-function pointToOverlayPosition(
-  rangePoint: { col: number; row: number },
-  term: XTerm,
-  screenElement: Element,
-  rootElement: HTMLElement,
-): OverlayPoint | null {
-  const screenRect = screenElement.getBoundingClientRect();
-  const rootRect = rootElement.getBoundingClientRect();
-  if (screenRect.width <= 0 || screenRect.height <= 0) return null;
-  const cellWidth = screenRect.width / term.cols;
-  const cellHeight = screenRect.height / term.rows;
-  const viewportRow = rangePoint.row - term.buffer.active.viewportY;
-  if (viewportRow < 0 || viewportRow >= term.rows) return null;
-  const localLeft =
-    screenRect.left - rootRect.left + rangePoint.col * cellWidth;
-  const localTop =
-    screenRect.top - rootRect.top + (viewportRow + 1) * cellHeight;
-  return {
-    left: clampNumber(localLeft, 0, rootRect.width),
-    top: clampNumber(localTop, 0, rootRect.height),
-  };
-}
-
 function getXtermScreenElement(
   term: XTerm,
   fallbackContainer: HTMLElement | null,
@@ -186,34 +155,6 @@ function getXtermScreenElement(
     fallbackContainer?.querySelector(".xterm-screen") ??
     null
   );
-}
-
-function toolbarPositionFromAnchor(
-  anchor: { clientX: number; clientY: number },
-  rootElement: HTMLElement,
-  toolbarWidth = 132,
-): OverlayPoint {
-  const rootRect = rootElement.getBoundingClientRect();
-  const toolbarHeight = 40;
-  const gap = 12;
-  const padding = 8;
-  const localX = anchor.clientX - rootRect.left;
-  const localY = anchor.clientY - rootRect.top;
-  const above = localY - toolbarHeight - gap;
-  const below = localY + gap;
-
-  return {
-    left: clampNumber(
-      localX - toolbarWidth / 2,
-      padding,
-      rootRect.width - toolbarWidth - padding,
-    ),
-    top: clampNumber(
-      above >= padding ? above : below,
-      padding,
-      rootRect.height - toolbarHeight - padding,
-    ),
-  };
 }
 
 /**
@@ -1241,27 +1182,15 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       const term = xtermRef.current;
       const rootElement = rootRef.current;
       const overlay = selectionOverlay;
-      if (!term || !rootElement || !overlay || !hasSelection) return null;
-      const screenElement = getXtermScreenElement(term, containerRef.current);
-      if (!screenElement) return null;
-      return {
-        startHandle: pointToOverlayPosition(
-          overlay.range.start,
-          term,
-          screenElement,
-          rootElement,
-        ),
-        endHandle: pointToOverlayPosition(
-          overlay.range.end,
-          term,
-          screenElement,
-          rootElement,
-        ),
-        toolbar:
-          overlay.toolbarAnchor && !overlay.draggingHandle
-            ? toolbarPositionFromAnchor(overlay.toolbarAnchor, rootElement, 72)
-            : null,
-      };
+      return resolveSelectionOverlayLayout({
+        term,
+        rootElement,
+        screenElement: term
+          ? getXtermScreenElement(term, containerRef.current)
+          : null,
+        overlay,
+        hasSelection,
+      });
     })();
     const inputToolbarPosition =
       inputToolbarAnchor && rootRef.current
