@@ -49,7 +49,6 @@ import {
   type TerminalReplayCacheEntry,
 } from "../../../lib/terminal-replay-cache.js";
 import {
-  isTerminalTraceEnabled,
   startTerminalMainThreadTrace,
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
@@ -63,6 +62,7 @@ import {
 } from "./TerminalSelectionOverlay.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
 import { applyCtrlModifier } from "./terminal-ctrl-modifier.js";
+import { attachTerminalDomDiagnostics } from "./terminal-dom-diagnostics.js";
 import {
   isIosWebKit,
   isTouchDevice,
@@ -1470,50 +1470,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         imeGate.composing = false;
         imeGate.suppressUntil = performance.now() + IME_DUPLICATE_SUPPRESS_MS;
       };
-      const traceDomInputEvent = (event: Event) => {
-        const inputEvent = event as InputEvent;
-        traceTerminalEvent(`dom-${event.type}`, {
-          sessionId,
-          dataLength:
-            typeof inputEvent.data === "string" ? inputEvent.data.length : 0,
-          inputType:
-            typeof inputEvent.inputType === "string"
-              ? inputEvent.inputType
-              : undefined,
-          isComposing:
-            typeof inputEvent.isComposing === "boolean"
-              ? inputEvent.isComposing
-              : undefined,
-        });
-      };
-      const traceDomKeyEvent = (event: Event) => {
-        const keyEvent = event as KeyboardEvent;
-        traceTerminalEvent(`dom-${event.type}`, {
-          sessionId,
-          dataLength:
-            typeof keyEvent.key === "string" ? keyEvent.key.length : 0,
-          isComposing: keyEvent.isComposing,
-        });
-      };
-      const traceTextareaFocusState = (event: Event) => {
-        traceTerminalEvent(`dom-${event.type}`, {
-          sessionId,
-          surface: "xterm-textarea",
-          visible: document.activeElement === textarea,
-        });
-      };
-      const traceTerminalSurfaceEvent = (event: Event) => {
-        traceTerminalEvent("terminal-surface-event", {
-          sessionId,
-          status: event.type,
-          surface:
-            event.target instanceof Element
-              ? event.target.className.toString()
-              : undefined,
-          visible: document.activeElement === textarea,
-          skipped: event.defaultPrevented,
-        });
-      };
       const suppressSyntheticMouseAfterToolbarAction = (event: Event) => {
         if (performance.now() > toolbarSyntheticMouseSuppressUntilRef.current) {
           return;
@@ -1529,7 +1485,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
               : undefined,
         });
       };
-      const traceDomEvents = isTerminalTraceEnabled();
       screenElement?.addEventListener(
         "mousedown",
         suppressSyntheticMouseAfterToolbarAction,
@@ -1540,50 +1495,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         suppressSyntheticMouseAfterToolbarAction,
         { capture: true },
       );
-      if (traceDomEvents) {
-        textarea?.addEventListener("focus", traceTextareaFocusState);
-        textarea?.addEventListener("blur", traceTextareaFocusState);
-        textarea?.addEventListener("keydown", traceDomKeyEvent);
-        textarea?.addEventListener("beforeinput", traceDomInputEvent);
-        textarea?.addEventListener("input", traceDomInputEvent);
-        textarea?.addEventListener("compositionstart", traceDomInputEvent);
-        textarea?.addEventListener("compositionupdate", traceDomInputEvent);
-        textarea?.addEventListener("compositionend", traceDomInputEvent);
-        screenElement?.addEventListener(
-          "pointerdown",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener(
-          "pointerup",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener(
-          "touchstart",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener("touchend", traceTerminalSurfaceEvent, {
-          capture: true,
-        });
-        screenElement?.addEventListener(
-          "mousedown",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener("click", traceTerminalSurfaceEvent, {
-          capture: true,
-        });
-      }
+      const cleanupDomDiagnostics = attachTerminalDomDiagnostics({
+        sessionId,
+        textarea,
+        screenElement,
+      });
       textarea?.addEventListener("compositionstart", onImeCompositionStart);
       textarea?.addEventListener("compositionend", onImeCompositionEnd);
       const onTextareaBlur = () => {
@@ -1635,51 +1551,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           suppressSyntheticMouseAfterToolbarAction,
           { capture: true },
         );
-        if (traceDomEvents) {
-          textarea?.removeEventListener("focus", traceTextareaFocusState);
-          textarea?.removeEventListener("blur", traceTextareaFocusState);
-          textarea?.removeEventListener("keydown", traceDomKeyEvent);
-          textarea?.removeEventListener("beforeinput", traceDomInputEvent);
-          textarea?.removeEventListener("input", traceDomInputEvent);
-          textarea?.removeEventListener("compositionstart", traceDomInputEvent);
-          textarea?.removeEventListener(
-            "compositionupdate",
-            traceDomInputEvent,
-          );
-          textarea?.removeEventListener("compositionend", traceDomInputEvent);
-          screenElement?.removeEventListener(
-            "pointerdown",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "pointerup",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "touchstart",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "touchend",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "mousedown",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "click",
-            traceTerminalSurfaceEvent,
-            {
-              capture: true,
-            },
-          );
-        }
+        cleanupDomDiagnostics();
         textarea?.removeEventListener(
           "compositionstart",
           onImeCompositionStart,
