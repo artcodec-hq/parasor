@@ -30,7 +30,6 @@ import {
 import { SessionErrorState } from "../../../components/overlays/SessionErrorState.js";
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
-import { extractImageFiles } from "../../../lib/clipboard-images.js";
 import { copyTextToNativeClipboard } from "../../../lib/native-clipboard.js";
 import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
@@ -60,6 +59,7 @@ import {
   TerminalSelectionOverlay,
 } from "./TerminalSelectionOverlay.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
+import { attachTerminalClipboardImagePaste } from "./terminal-clipboard-image-paste.js";
 import { attachTerminalDomDiagnostics } from "./terminal-dom-diagnostics.js";
 import {
   isIosWebKit,
@@ -77,6 +77,7 @@ import { clearTerminalInputDiagnosticTimers } from "./terminal-input-diagnostics
 import {
   attachTerminalDataInput,
   attachTerminalImeLifecycle,
+  attachTerminalShiftEnterHandler,
 } from "./terminal-input-lifecycle.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
@@ -1165,33 +1166,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       };
       const scrollDisposable = term.onScroll(updateScrollState);
       updateScrollState();
-      // Shift+Enter -> ESC+CR. Chat TUIs (Claude Code etc) parse ESC+CR as
-      // newline. preventDefault stops the hidden textarea from also receiving
-      // a newline that would re-fire xterm.onData and submit the prompt.
-      // IME guard: while composition is active (isComposing or legacy
-      // keyCode=229), return false to also block xterm's default Enter->CR
-      // path. xterm's CompositionHelper.keydown finalizes composition and
-      // returns true for non-229 keys, which would otherwise convert Enter to
-      // CR and submit the JP/CJK candidate as a prompt on browsers that fire
-      // keydown before compositionend (e.g. Firefox).
-      term.attachCustomKeyEventHandler((event) => {
-        const composing =
-          event.isComposing ||
-          (event as KeyboardEvent & { keyCode?: number }).keyCode === 229;
-        if (
-          event.type === "keydown" &&
-          event.key === "Enter" &&
-          event.shiftKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !event.metaKey
-        ) {
-          if (composing) return false;
-          event.preventDefault();
-          if (!isEnded) send({ type: "input", data: "\x1b\r" });
-          return false;
-        }
-        return true;
+      attachTerminalShiftEnterHandler({
+        term,
+        isEnded,
+        send,
       });
       const screenElement =
         term.element?.querySelector(".xterm-screen") ??
@@ -1341,31 +1319,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         imeDuplicateGateRef,
         setCtrl,
       });
-
-      // Clipboard image paste: when the user hits ⌘V / Ctrl+V inside xterm
-      // and the clipboard carries image data, upload via the same
-      // `/api/projects/:id/drops` endpoint as OS-file DnD and inject the
-      // returned absolute paths (POSIX single-quoted, space-joined). Text-
-      // only paste falls through to xterm's default handling untouched.
-      // iOS Safari may expose an empty `clipboardData.items` for image
-      // paste -- `extractImageFiles` returns `[]` in that case and we also
-      // fall through silently (no toast).
-      const onPaste = (e: ClipboardEvent): void => {
-        // Same gate as OS-file DnD: attached PTY + !isEnded. Otherwise let
-        // xterm handle text fallback normally. Read via ref so socket
-        // reconnect / runUpload identity changes do not re-run this effect.
-        if (!dropEnabledRef.current) return;
-        // serviceConfig.dropSizeMaxBytes is not available in this component
-        // without a new store subscription -- rely on the server's 413 for
-        // oversize instead.
-        const images = extractImageFiles(e.clipboardData);
-        if (images.length === 0) return;
-        // Text+image combo: preventDefault the whole paste so binary
-        // content doesn't get dumped into the pty.
-        e.preventDefault();
-        void runUploadRef.current(images);
-      };
-      textarea?.addEventListener("paste", onPaste);
+      const cleanupClipboardImagePaste = attachTerminalClipboardImagePaste({
+        textarea,
+        dropEnabledRef,
+        runUploadRef,
+      });
 
       return () => {
         cleanupViewportLifecycle();
@@ -1385,7 +1343,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         );
         cleanupDomDiagnostics();
         cleanupImeLifecycle();
-        textarea?.removeEventListener("paste", onPaste);
+        cleanupClipboardImagePaste();
         clearTerminalInputDiagnosticTimers(inputDiagnosticTimersRef.current);
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();

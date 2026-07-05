@@ -37,6 +37,12 @@ type AttachTerminalImeLifecycleArgs = {
   setCtrl: (value: boolean) => void;
 };
 
+type AttachTerminalShiftEnterHandlerArgs = {
+  term: XTerm;
+  isEnded: boolean;
+  send: (msg: { type: "input"; data: string }) => void;
+};
+
 function isPrintableImeData(data: string): boolean {
   if (data.length === 0) return false;
   for (let i = 0; i < data.length; i += 1) {
@@ -115,6 +121,37 @@ export function attachTerminalDataInput({
   });
 
   return () => disposable?.dispose?.();
+}
+
+export function attachTerminalShiftEnterHandler({
+  term,
+  isEnded,
+  send,
+}: AttachTerminalShiftEnterHandlerArgs): void {
+  // Shift+Enter -> ESC+CR. Chat TUIs (Claude Code etc) parse ESC+CR as
+  // newline. preventDefault stops the hidden textarea from also receiving a
+  // newline that would re-fire xterm.onData and submit the prompt.
+  // IME guard: while composition is active (isComposing or legacy keyCode=229),
+  // return false to also block xterm's default Enter->CR path.
+  term.attachCustomKeyEventHandler((event) => {
+    const composing =
+      event.isComposing ||
+      (event as KeyboardEvent & { keyCode?: number }).keyCode === 229;
+    if (
+      event.type === "keydown" &&
+      event.key === "Enter" &&
+      event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey
+    ) {
+      if (composing) return false;
+      event.preventDefault();
+      if (!isEnded) send({ type: "input", data: "\x1b\r" });
+      return false;
+    }
+    return true;
+  });
 }
 
 export function attachTerminalImeLifecycle({
