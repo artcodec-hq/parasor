@@ -30,7 +30,6 @@ import {
 import { SessionErrorState } from "../../../components/overlays/SessionErrorState.js";
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
-import { authFetch } from "../../../lib/auth-fetch.js";
 import { extractImageFiles } from "../../../lib/clipboard-images.js";
 import { copyTextToNativeClipboard } from "../../../lib/native-clipboard.js";
 import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
@@ -70,6 +69,12 @@ import {
 } from "./terminal-environment.js";
 import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
 import {
+  createInitialTerminalHistoryLoadState,
+  INITIAL_HISTORY_LOAD_BYTES,
+  loadOlderTerminalHistory,
+  type TerminalHistoryLoadStatusState,
+} from "./terminal-history-loader.js";
+import {
   clearTerminalInputDiagnosticTimers,
   scheduleTerminalInputDiagnostics,
 } from "./terminal-input-diagnostics.js";
@@ -101,9 +106,6 @@ import "@xterm/xterm/css/xterm.css";
 const FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS = 2500;
 const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
 
-const INITIAL_HISTORY_LOAD_BYTES = 256 * 1024;
-const MIN_NEXT_HISTORY_LOAD_BYTES = 512 * 1024;
-const MAX_HISTORY_LOAD_BYTES = 4 * 1024 * 1024;
 // After a viewport change shifts the buffer (keyboard open/close settling, or
 // any applied resize) the viewport can momentarily land near the top, which
 // would otherwise trip the scroll-to-top "load older history" path. Suppress
@@ -308,10 +310,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     const [isReplayRestoring, setIsReplayRestoring] = useState(false);
     const replayRestoringRef = useRef(false);
     const pendingFullReplayViewportRef = useRef<ScrollAnchor | null>(null);
-    const [historyLoadStatus, setHistoryLoadStatus] = useState<{
-      sessionId: string;
-      status: "hidden" | "ready" | "loading";
-    }>({ sessionId, status: "hidden" });
+    const [historyLoadStatus, setHistoryLoadStatus] =
+      useState<TerminalHistoryLoadStatusState>({
+        sessionId,
+        status: "hidden",
+      });
     const visibleHistoryLoadStatus =
       historyLoadStatus.sessionId === sessionId
         ? historyLoadStatus.status
@@ -320,12 +323,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       sessionId: string;
       entry: TerminalReplayCacheEntry | null;
     } | null>(null);
-    const historyLoadRef = useRef({
-      loading: false,
-      maxBytes: INITIAL_HISTORY_LOAD_BYTES,
-      exhausted: false,
-      lastRequestedAt: 0,
-    });
+    const historyLoadRef = useRef(createInitialTerminalHistoryLoadState());
     const historyTopLoadArmedRef = useRef(false);
     const encoderRef = useRef<TextEncoder | null>(null);
     const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
@@ -335,12 +333,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         sessionId,
         entry: getTerminalReplayCache(sessionId),
       };
-      historyLoadRef.current = {
-        loading: false,
-        maxBytes: INITIAL_HISTORY_LOAD_BYTES,
-        exhausted: false,
-        lastRequestedAt: 0,
-      };
+      historyLoadRef.current = createInitialTerminalHistoryLoadState();
       historyTopLoadArmedRef.current = false;
     }
     const pendingFullReplayCursorRef = useRef<TerminalLastSeen | null>(null);
@@ -465,106 +458,16 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       const term = xtermRef.current;
       const encoder = encoderRef.current;
       if (!term || !encoder) return;
-      if (replayRestoringRef.current) {
-        traceTerminalEvent("terminal-history-load-suppressed", {
-          sessionId,
-          viewportY: term.buffer.active.viewportY,
-          baseY: term.buffer.active.baseY,
-          reason: "replay-restoring",
-        });
-        return;
-      }
-      const state = historyLoadRef.current;
-      if (state.loading || state.exhausted) return;
-      const now = performance.now();
-      if (now - state.lastRequestedAt < 500) return;
-      const nextMaxBytes = Math.min(
-        Math.max(state.maxBytes * 2, MIN_NEXT_HISTORY_LOAD_BYTES),
-        MAX_HISTORY_LOAD_BYTES,
-      );
-      if (nextMaxBytes <= state.maxBytes) {
-        state.exhausted = true;
-        setHistoryLoadStatus({ sessionId, status: "hidden" });
-        return;
-      }
-      state.loading = true;
-      state.lastRequestedAt = now;
-      const replayAnchor = captureScrollAnchor(term);
-      setHistoryLoadStatus({ sessionId, status: "loading" });
-      traceTerminalEvent("terminal-history-load-start", {
+      await loadOlderTerminalHistory({
         sessionId,
-        maxBytes: nextMaxBytes,
-        cols: term.cols,
-        rows: term.rows,
+        term,
+        encoder,
+        replayRestoring: replayRestoringRef.current,
+        historyState: historyLoadRef.current,
+        cachedReplayRef,
+        setHistoryLoadStatus,
+        restoreExpandedReplay,
       });
-      try {
-        const params = new URLSearchParams({
-          cols: String(term.cols),
-          rows: String(term.rows),
-          maxBytes: String(nextMaxBytes),
-        });
-        const res = await authFetch(
-          `/api/sessions/${encodeURIComponent(sessionId)}/scrollback-snapshot?${params}`,
-        );
-        if (!res.ok) {
-          traceTerminalEvent("terminal-history-load-failed", {
-            sessionId,
-            status: String(res.status),
-            maxBytes: nextMaxBytes,
-          });
-          setHistoryLoadStatus({ sessionId, status: "ready" });
-          return;
-        }
-        const data = (await res.json()) as {
-          text?: unknown;
-          replayBytes?: unknown;
-          maxBytes?: unknown;
-          hasMore?: unknown;
-        };
-        if (typeof data.text !== "string") return;
-        const replayBytes =
-          typeof data.replayBytes === "number"
-            ? data.replayBytes
-            : encoder.encode(data.text).byteLength;
-        state.maxBytes =
-          typeof data.maxBytes === "number" ? data.maxBytes : nextMaxBytes;
-        state.exhausted =
-          data.hasMore === false || state.maxBytes >= MAX_HISTORY_LOAD_BYTES;
-        setHistoryLoadStatus({
-          sessionId,
-          status: state.exhausted ? "hidden" : "ready",
-        });
-        if (data.text.length === 0) return;
-        restoreExpandedReplay(term, data.text, replayAnchor);
-        const lastSeen = cachedReplayRef.current?.entry?.lastSeen ?? null;
-        if (lastSeen) {
-          setTerminalReplayCache(sessionId, {
-            data: data.text,
-            lastSeen,
-            cols: term.cols,
-            rows: term.rows,
-          });
-          cachedReplayRef.current = {
-            sessionId,
-            entry: getTerminalReplayCache(sessionId),
-          };
-        }
-        traceTerminalEvent("terminal-history-load-complete", {
-          sessionId,
-          dataLength: data.text.length,
-          byteLength: replayBytes,
-          maxBytes: state.maxBytes,
-        });
-      } catch (err) {
-        setHistoryLoadStatus({ sessionId, status: "ready" });
-        traceTerminalEvent("terminal-history-load-failed", {
-          sessionId,
-          status: err instanceof Error ? err.name : "unknown",
-          maxBytes: nextMaxBytes,
-        });
-      } finally {
-        state.loading = false;
-      }
     }, [restoreExpandedReplay, sessionId]);
 
     const {
