@@ -26,7 +26,7 @@ function renderSplit() {
   const handle = screen.getByRole("separator", {
     name: "Resize navigation pane",
   });
-  const container = handle.parentElement as HTMLDivElement;
+  const container = handle.parentElement?.parentElement as HTMLDivElement;
   vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
     bottom: 500,
     height: 500,
@@ -45,7 +45,9 @@ describe("AppShellSplit", () => {
   it("supports pointer resizing with split-style handle", () => {
     const handle = renderSplit();
 
-    expect(handle.className).toContain("before:-inset-x-3");
+    expect(handle.parentElement?.className).toContain("w-px");
+    expect(handle.className).toContain("absolute");
+    expect(handle.className).toContain("w-2");
     fireEvent.pointerDown(handle, { clientX: 240, pointerId: 1 });
     fireEvent.pointerMove(handle, {
       buttons: 1,
