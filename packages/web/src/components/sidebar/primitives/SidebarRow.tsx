@@ -19,7 +19,7 @@ interface SidebarRowProps {
 
 export const SIDEBAR_ROW_INSET_CLASS: Record<SidebarRowDepth, string> = {
   0: "px-3",
-  1: "pr-3 pl-9",
+  1: "pr-3 pl-6",
 };
 
 const SELECTED_CLASS =
@@ -66,7 +66,7 @@ export function SidebarRow({
       onKeyDown={handleKeyDown}
       {...restRootProps}
       className={`
-        relative flex h-bar min-w-0 ${interactive ? "cursor-pointer" : "cursor-default"} items-center gap-2 ${SIDEBAR_ROW_INSET_CLASS[depth]} text-text-primary
+        relative flex h-bar min-w-0 ${interactive ? "cursor-pointer" : "cursor-default"} items-center gap-1.5 ${SIDEBAR_ROW_INSET_CLASS[depth]} text-text-primary
         ${selected ? SELECTED_CLASS : interactive ? "hover:bg-row-hover-bg" : ""}
         ${rootClassName ?? ""}
         ${className ?? ""}

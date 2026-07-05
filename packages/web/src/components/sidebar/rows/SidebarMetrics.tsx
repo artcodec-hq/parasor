@@ -30,7 +30,7 @@ export function SidebarMetricsView({
         </span>
       )}
       {(metrics.serviceCount ?? 0) > 0 && (
-        <span className="flex items-center gap-0.5 text-accent">
+        <span className="flex items-center text-accent">
           <span className="h-1 w-1 rounded-full border border-current" />
           {metrics.serviceCount}
         </span>

@@ -128,7 +128,7 @@ export function WorktreeRow({
         )}
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           aria-label={rowTitle ? `${label}, ${rowTitle}` : undefined}
           onClick={() => onSelectWorktree?.(project.id, worktree.id)}
         >
