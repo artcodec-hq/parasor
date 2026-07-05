@@ -13,15 +13,17 @@ export function WorktreeRowActions({
   if (!onNewSession) return null;
 
   return (
-    <SidebarRowActionButton
-      aria-label={`New session in ${label}`}
-      tone="accentHover"
-      onClick={(event) => {
-        event.stopPropagation();
-        onNewSession();
-      }}
-    >
-      <PaGlyph.add />
-    </SidebarRowActionButton>
+    <span className="shrink-0 opacity-45 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <SidebarRowActionButton
+        aria-label={`New session in ${label}`}
+        tone="accentHover"
+        onClick={(event) => {
+          event.stopPropagation();
+          onNewSession();
+        }}
+      >
+        <PaGlyph.add />
+      </SidebarRowActionButton>
+    </span>
   );
 }
