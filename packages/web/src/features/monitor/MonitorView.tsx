@@ -8,9 +8,11 @@ import type {
 import { deriveAgentStatusContext } from "@parasor/shared";
 import {
   lazy,
+  type Ref,
+  type RefObject,
   Suspense,
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -63,46 +65,110 @@ interface MonitorViewProps {
   onTogglePin: (sessionId: string) => Promise<void> | void;
 }
 
-const MIN_COL_PX = 320;
-const MAX_COL_PX = 1200;
-const DEFAULT_COL_PX = 420;
-const COL_WIDTHS_KEY = "parasor:monitor-col-widths";
+const MIN_AGENT_COL_PX = 380;
 
-function clampColWidth(n: number): number {
-  if (Number.isNaN(n)) return DEFAULT_COL_PX;
-  return Math.min(MAX_COL_PX, Math.max(MIN_COL_PX, Math.round(n)));
+interface MonitorVisibleRange {
+  start: number;
+  end: number;
 }
 
-function loadColWidths(): Record<string, number> {
-  try {
-    const raw = localStorage.getItem(COL_WIDTHS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
-    }
-    const out: Record<string, number> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof v === "number") out[k] = clampColWidth(v);
-    }
-    return out;
-  } catch {
-    return {};
+export function computeMonitorColumnLayout(
+  containerWidth: number,
+  entryCount: number,
+): { visibleColumns: number; columnWidth: number } {
+  const safeEntryCount = Number.isFinite(entryCount)
+    ? Math.max(0, Math.floor(entryCount))
+    : 0;
+  if (safeEntryCount === 0) {
+    return { visibleColumns: 0, columnWidth: MIN_AGENT_COL_PX };
   }
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+    return { visibleColumns: 1, columnWidth: MIN_AGENT_COL_PX };
+  }
+  const visibleColumns = Math.min(
+    safeEntryCount,
+    Math.max(1, Math.floor(containerWidth / MIN_AGENT_COL_PX)),
+  );
+  return {
+    visibleColumns,
+    columnWidth: Math.floor(containerWidth / visibleColumns),
+  };
 }
 
-function saveColWidths(widths: Record<string, number>): void {
-  try {
-    localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths));
-  } catch {
-    /* quota or disabled storage -- non-fatal */
+export function computeMonitorVisibleRange(
+  scrollLeft: number,
+  viewportWidth: number,
+  columnWidth: number,
+  entryCount: number,
+): MonitorVisibleRange {
+  const safeEntryCount = Number.isFinite(entryCount)
+    ? Math.max(0, Math.floor(entryCount))
+    : 0;
+  if (safeEntryCount === 0) {
+    return { start: 0, end: -1 };
   }
+  if (
+    !Number.isFinite(scrollLeft) ||
+    !Number.isFinite(viewportWidth) ||
+    !Number.isFinite(columnWidth) ||
+    viewportWidth <= 0 ||
+    columnWidth <= 0
+  ) {
+    return { start: 0, end: 0 };
+  }
+  const viewportStart = Math.max(0, scrollLeft);
+  const viewportEnd = viewportStart + viewportWidth;
+  const minVisibleWidth = columnWidth / 2;
+  let start = -1;
+  let end = -1;
+  for (let index = 0; index < safeEntryCount; index += 1) {
+    const columnStart = index * columnWidth;
+    const columnEnd = columnStart + columnWidth;
+    const visibleWidth =
+      Math.min(columnEnd, viewportEnd) - Math.max(columnStart, viewportStart);
+    if (visibleWidth >= minVisibleWidth) {
+      if (start < 0) start = index;
+      end = index;
+    }
+  }
+  if (start < 0) {
+    const fallback = Math.min(
+      safeEntryCount - 1,
+      Math.max(0, Math.floor(viewportStart / columnWidth)),
+    );
+    return { start: fallback, end: fallback };
+  }
+  return { start, end };
+}
+
+function useMeasuredElementWidth(ref: RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const update = () => {
+      setWidth(Math.round(el.getBoundingClientRect().width));
+    };
+    update();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
 }
 
 /**
- * Cross-project read-only live tail for pinned terminals. Desktop =
- * horizontal-scroll fixed-width columns (Tweetdeck lanes); mobile =
- * single-column pager.
+ * Cross-project read-only live tail for pinned terminals. Desktop lays out
+ * as many readable columns as fit the viewport; mobile = single-column pager.
  */
 export function MonitorView({
   projects,
@@ -169,6 +235,13 @@ export function MonitorView({
     const i = pinned.findIndex((e) => e.session.id === focusedSessionId);
     return i < 0 ? 0 : i;
   }, [pinned, focusedSessionId]);
+  const [visibleRange, setVisibleRange] = useState<MonitorVisibleRange>({
+    start: 0,
+    end: 0,
+  });
+  const headerVisibleRange = isMobile
+    ? { start: focusedIndex, end: focusedIndex }
+    : visibleRange;
 
   const goToIndex = (i: number) => {
     const next = pinned[Math.max(0, Math.min(pinned.length - 1, i))];
@@ -184,6 +257,7 @@ export function MonitorView({
         onToggleDrawer={onToggleDrawer}
         entries={pinned}
         focusedIndex={focusedIndex}
+        visibleRange={headerVisibleRange}
         onGoToIndex={goToIndex}
       />
       {pinned.length === 0 ? (
@@ -208,6 +282,7 @@ export function MonitorView({
             focusedSessionId ?? pinned[focusedIndex]?.session.id ?? null
           }
           focusedIndex={focusedIndex}
+          onVisibleRangeChange={setVisibleRange}
           onFocusSession={setFocusedSessionId}
           onRestartSession={onRestartSession}
           onOpenUrl={onOpenUrl}
@@ -225,6 +300,7 @@ interface MonitorHeaderProps {
   onToggleDrawer?: () => void;
   entries: PinnedTerminalEntry[];
   focusedIndex: number;
+  visibleRange: MonitorVisibleRange;
   onGoToIndex: (index: number) => void;
 }
 
@@ -235,6 +311,7 @@ function MonitorHeader({
   onToggleDrawer,
   entries,
   focusedIndex,
+  visibleRange,
   onGoToIndex,
 }: MonitorHeaderProps) {
   const count = entries.length;
@@ -271,6 +348,7 @@ function MonitorHeader({
         <MonitorPager
           entries={entries}
           focusedIndex={focusedIndex}
+          visibleRange={visibleRange}
           onGoToIndex={onGoToIndex}
         />
       )}
@@ -287,6 +365,7 @@ interface MonitorPagerProps {
 function MonitorPager({
   entries,
   focusedIndex,
+  visibleRange,
   onGoToIndex,
 }: MonitorPagerProps) {
   const count = entries.length;
@@ -303,17 +382,12 @@ function MonitorPager({
       </PaneIconButton>
       <div className="flex items-center gap-[5px]">
         {entries.map((e, i) => (
-          <button
+          <MonitorPagerDot
             key={e.session.id}
-            type="button"
-            onClick={() => onGoToIndex(i)}
-            aria-label={`Go to pinned terminal ${i + 1}`}
-            aria-current={i === focusedIndex ? "true" : undefined}
-            className={`h-[5px] cursor-pointer rounded-control transition-all ${
-              i === focusedIndex
-                ? "w-3.5 bg-accent"
-                : "w-[5px] bg-text-secondary/35 hover:bg-text-secondary/60"
-            }`}
+            index={i}
+            focused={i === focusedIndex}
+            visible={i >= visibleRange.start && i <= visibleRange.end}
+            onGoToIndex={onGoToIndex}
           />
         ))}
       </div>
@@ -330,12 +404,41 @@ function MonitorPager({
   );
 }
 
+function MonitorPagerDot({
+  index,
+  focused,
+  visible,
+  onGoToIndex,
+}: {
+  index: number;
+  focused: boolean;
+  visible: boolean;
+  onGoToIndex: (index: number) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onGoToIndex(index)}
+      aria-label={`Go to pinned terminal ${index + 1}`}
+      aria-current={focused ? "true" : undefined}
+      className={`h-[5px] cursor-pointer rounded-control transition-all ${
+        focused
+          ? "w-3.5 bg-accent"
+          : visible
+            ? "w-[5px] bg-accent"
+            : "w-[5px] bg-text-secondary/25 hover:bg-text-secondary/55"
+      }`}
+    />
+  );
+}
+
 interface ColumnsProps {
   entries: PinnedTerminalEntry[];
   statuses: Map<string, AgentDotState>;
   statusContexts: Map<string, AgentStatusContext>;
   focusedSessionId: string | null;
   focusedIndex: number;
+  onVisibleRangeChange: (range: MonitorVisibleRange) => void;
   onFocusSession: (sessionId: string | null) => void;
   onRestartSession: (sessionId: string) => Promise<void> | void;
   onOpenUrl: (url: string, options?: OpenUrlOptions) => Promise<void> | void;
@@ -348,13 +451,48 @@ function MonitorColumns({
   statusContexts,
   focusedSessionId,
   focusedIndex,
+  onVisibleRangeChange,
   onFocusSession,
   onRestartSession,
   onOpenUrl,
   onTogglePin,
 }: ColumnsProps) {
-  const overflow = Math.max(0, entries.length - 3);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const containerWidth = useMeasuredElementWidth(scrollRef);
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const { columnWidth } = computeMonitorColumnLayout(
+    containerWidth,
+    entries.length,
+  );
+  const [edgeState, setEdgeState] = useState({
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const updateViewportState = () => {
+      const nextRange = computeMonitorVisibleRange(
+        el.scrollLeft,
+        el.clientWidth,
+        columnWidth,
+        entries.length,
+      );
+      onVisibleRangeChange(nextRange);
+
+      const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+      setEdgeState({
+        canScrollLeft: el.scrollLeft > 1,
+        canScrollRight: el.scrollLeft < maxScrollLeft - 1,
+      });
+    };
+
+    updateViewportState();
+    el.addEventListener("scroll", updateViewportState, { passive: true });
+    return () => el.removeEventListener("scroll", updateViewportState);
+  }, [columnWidth, entries.length, onVisibleRangeChange]);
   // Pager / column-click -> focus moves -> ensure the focused column is in
   // view. `inline:'nearest'` keeps the column from re-centering when it
   // is already partially visible, matching the user's expectation that
@@ -370,27 +508,13 @@ function MonitorColumns({
     });
   }, [focusedIndex, focusedSessionId]);
 
-  const [widths, setWidths] = useState<Record<string, number>>(loadColWidths);
-
-  // Debounce persistence: drag fires onResize per pointermove; commit once idle.
-  useEffect(() => {
-    const id = setTimeout(() => saveColWidths(widths), 200);
-    return () => clearTimeout(id);
-  }, [widths]);
-
-  const setSessionWidth = useCallback((sessionId: string, w: number) => {
-    setWidths((prev) => {
-      const next = clampColWidth(w);
-      if (prev[sessionId] === next) return prev;
-      return { ...prev, [sessionId]: next };
-    });
-  }, []);
-
   return (
     <div className="relative min-h-0 flex-1">
-      <div className="cm-scroll absolute inset-0 flex flex-row items-stretch justify-start overflow-x-auto overflow-y-hidden">
+      <div
+        ref={scrollRef}
+        className="cm-scroll absolute inset-0 flex flex-row items-stretch justify-start overflow-x-auto overflow-y-hidden"
+      >
         {entries.map((entry, i) => {
-          const width = widths[entry.session.id] ?? DEFAULT_COL_PX;
           return (
             <MonitorColumn
               key={entry.session.id}
@@ -401,9 +525,8 @@ function MonitorColumns({
               status={statuses.get(entry.session.id) ?? "idle"}
               statusContext={statusContexts.get(entry.session.id)}
               focused={focusedSessionId === entry.session.id}
-              width={width}
+              width={columnWidth}
               onFocus={() => onFocusSession(entry.session.id)}
-              onResize={(w) => setSessionWidth(entry.session.id, w)}
               onRestartSession={onRestartSession}
               onOpenUrl={onOpenUrl}
               onTogglePin={onTogglePin}
@@ -411,23 +534,25 @@ function MonitorColumns({
           );
         })}
       </div>
-      {overflow > 0 && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute top-0 right-0 bottom-0 w-14"
-            style={{
-              background:
-                "linear-gradient(to right, transparent, var(--color-bg-primary))",
-            }}
-          />
-          <div
-            aria-hidden
-            className="cm-mono pointer-events-none absolute top-2 right-2 rounded-tag border border-border bg-bg-tertiary px-2 py-px text-xs text-text-secondary"
-          >
-            {"->"} {overflow} more
-          </div>
-        </>
+      {edgeState.canScrollLeft && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-0 bottom-0 left-0 w-10"
+          style={{
+            background:
+              "linear-gradient(to right, var(--color-bg-primary), transparent)",
+          }}
+        />
+      )}
+      {edgeState.canScrollRight && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-0 right-0 bottom-0 w-10"
+          style={{
+            background:
+              "linear-gradient(to left, var(--color-bg-primary), transparent)",
+          }}
+        />
       )}
     </div>
   );
@@ -440,11 +565,10 @@ interface ColumnProps {
   focused: boolean;
   width: number;
   onFocus: () => void;
-  onResize: (width: number) => void;
   onRestartSession: (sessionId: string) => Promise<void> | void;
   onOpenUrl: (url: string, options?: OpenUrlOptions) => Promise<void> | void;
   onTogglePin: (sessionId: string) => Promise<void> | void;
-  ref?: React.Ref<HTMLDivElement>;
+  ref?: Ref<HTMLDivElement>;
 }
 
 function MonitorColumn({
@@ -455,136 +579,44 @@ function MonitorColumn({
   focused,
   width,
   onFocus,
-  onResize,
   onRestartSession,
   onOpenUrl,
   onTogglePin,
 }: ColumnProps) {
-  const resizerLabel = `Resize column for ${displayTitleForTerminal(entry.session)}`;
   return (
-    <>
-      <div
-        ref={ref}
-        className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-bg-primary"
-        style={{ width: `${width}px` }}
-        onPointerDownCapture={onFocus}
-        onFocusCapture={onFocus}
-      >
-        <MonitorColumnHeader
-          entry={entry}
-          status={status}
-          statusContext={statusContext}
-          onTogglePin={onTogglePin}
-        />
-        {/* touch-pan-y: xterm 6.1 attaches non-passive document touch listeners; iOS needs this to keep momentum scroll on the compositor. */}
-        <div className="min-h-0 flex-1 touch-pan-y">
-          <Suspense fallback={<div className="h-full bg-bg-terminal" />}>
-            <LazyTerminalPane
-              paneId={`monitor:${entry.session.id}`}
-              sessionId={entry.session.id}
-              session={entry.session}
-              onRestartSession={onRestartSession}
-              onOpenUrl={onOpenUrl}
-            />
-          </Suspense>
-        </div>
-        {/* Overlay so the focus ring paints on top of the xterm canvas. */}
-        {focused && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 border-2 border-accent"
-          />
-        )}
-      </div>
-      <MonitorColumnResizer
-        width={width}
-        onResize={onResize}
-        ariaLabel={resizerLabel}
+    <div
+      ref={ref}
+      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-bg-primary"
+      style={{ width: `${width}px` }}
+      onPointerDownCapture={onFocus}
+      onFocusCapture={onFocus}
+    >
+      <MonitorColumnHeader
+        entry={entry}
+        status={status}
+        statusContext={statusContext}
+        onTogglePin={onTogglePin}
       />
-    </>
-  );
-}
-
-interface ResizerProps {
-  width: number;
-  onResize: (width: number) => void;
-  ariaLabel: string;
-}
-
-/**
- * Drag handle on the right edge of each Monitor column. Uses the same
- * className/handler shape as `Split2Col` so the visual + keyboard +
- * pointer-capture story stays identical across files / git / monitor.
- * `touch-action: none` keeps the gesture from competing with the parent
- * `overflow-x-auto` scroll on touch devices.
- */
-function MonitorColumnResizer({ width, onResize, ariaLabel }: ResizerProps) {
-  const draggingRef = useRef(false);
-  const startXRef = useRef(0);
-  const startWidthRef = useRef(width);
-
-  const stopDrag = useCallback((e?: React.PointerEvent<HTMLDivElement>) => {
-    draggingRef.current = false;
-    if (!e) return;
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-      draggingRef.current = true;
-      startXRef.current = e.clientX;
-      startWidthRef.current = width;
-    },
-    [width],
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!draggingRef.current) return;
-      // Drop the drag if the primary button was released outside the capture window.
-      if (e.buttons === 0) {
-        stopDrag(e);
-        return;
-      }
-      const next = startWidthRef.current + (e.clientX - startXRef.current);
-      onResize(next);
-    },
-    [onResize, stopDrag],
-  );
-
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      e.preventDefault();
-      const delta = e.key === "ArrowLeft" ? -1 : 1;
-      const step = e.shiftKey ? 50 : 10;
-      onResize(width + delta * step);
-    },
-    [onResize, width],
-  );
-
-  return (
-    <hr
-      aria-label={ariaLabel}
-      aria-orientation="vertical"
-      aria-valuenow={width}
-      aria-valuemin={MIN_COL_PX}
-      aria-valuemax={MAX_COL_PX}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={stopDrag}
-      onPointerCancel={stopDrag}
-      onKeyDown={onKeyDown}
-      style={{ touchAction: "none" }}
-      className="cm-split-resizer relative z-[2] w-px shrink-0 cursor-col-resize bg-border before:absolute before:inset-y-0 before:-inset-x-3 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-    />
+      {/* touch-pan-y: xterm 6.1 attaches non-passive document touch listeners; iOS needs this to keep momentum scroll on the compositor. */}
+      <div className="min-h-0 flex-1 touch-pan-y">
+        <Suspense fallback={<div className="h-full bg-bg-terminal" />}>
+          <LazyTerminalPane
+            paneId={`monitor:${entry.session.id}`}
+            sessionId={entry.session.id}
+            session={entry.session}
+            onRestartSession={onRestartSession}
+            onOpenUrl={onOpenUrl}
+          />
+        </Suspense>
+      </div>
+      {/* Overlay so the focus ring paints on top of the xterm canvas. */}
+      {focused && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 border-2 border-accent"
+        />
+      )}
+    </div>
   );
 }
 
