@@ -46,10 +46,8 @@ import {
 } from "../../../lib/terminal-trace.js";
 import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
-import {
-  type TerminalSelectionAction,
-  TerminalSelectionOverlay,
-} from "./TerminalSelectionOverlay.js";
+import type { TerminalSelectionAction } from "./TerminalSelectionOverlay.js";
+import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
 import { attachTerminalClipboardImagePaste } from "./terminal-clipboard-image-paste.js";
 import { attachTerminalDomDiagnostics } from "./terminal-dom-diagnostics.js";
@@ -1145,41 +1143,21 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             </button>
           )}
         </div>
-        {selectionOverlayLayout && externalCopyText === null && (
-          <TerminalSelectionOverlay
-            startHandle={selectionOverlayLayout.startHandle}
-            endHandle={selectionOverlayLayout.endHandle}
-            toolbar={selectionOverlayLayout.toolbar}
-            draggingHandle={selectionOverlay?.draggingHandle ?? null}
-            onHandlePointerDown={handleSelectionHandlePointerDown}
-            onCopy={() => {
-              void handleCopySelection();
-            }}
-            onCopyLongPress={openExternalCopyDialog}
-            onPaste={() => {
-              void handlePasteFromTerminalToolbar();
-            }}
-            onActionEvent={handleToolbarActionEvent}
-            pasteEnabled={false}
-          />
-        )}
-        {inputToolbarPosition && (
-          <TerminalSelectionOverlay
-            startHandle={null}
-            endHandle={null}
-            toolbar={inputToolbarPosition}
-            draggingHandle={null}
-            copyEnabled={false}
-            onHandlePointerDown={handleSelectionHandlePointerDown}
-            onCopy={() => {
-              void handleCopySelection();
-            }}
-            onPaste={() => {
-              void handlePasteFromTerminalToolbar();
-            }}
-            onActionEvent={handleToolbarActionEvent}
-          />
-        )}
+        <TerminalSelectionOverlays
+          selectionLayout={selectionOverlayLayout}
+          selectionDraggingHandle={selectionOverlay?.draggingHandle ?? null}
+          inputToolbarPosition={inputToolbarPosition}
+          externalCopyOpen={externalCopyText !== null}
+          onHandlePointerDown={handleSelectionHandlePointerDown}
+          onCopy={() => {
+            void handleCopySelection();
+          }}
+          onCopyLongPress={openExternalCopyDialog}
+          onPaste={() => {
+            void handlePasteFromTerminalToolbar();
+          }}
+          onActionEvent={handleToolbarActionEvent}
+        />
         <TerminalExternalCopyDialog
           open={externalCopyText !== null}
           text={externalCopyText ?? ""}
