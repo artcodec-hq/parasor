@@ -10,7 +10,6 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import {
   forwardRef,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -49,7 +48,6 @@ import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
 import {
   type TerminalSelectionAction,
-  type TerminalSelectionHandle,
   TerminalSelectionOverlay,
 } from "./TerminalSelectionOverlay.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
@@ -83,8 +81,8 @@ import {
   type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
 import {
+  getXtermScreenElement,
   resolveSelectionOverlayLayout,
-  type SelectionOverlayState,
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
 import {
@@ -92,14 +90,11 @@ import {
   attachTerminalTouchSelection,
   attachTerminalTouchWheel,
 } from "./terminal-touch-gestures.js";
-import {
-  applyBoundarySelection,
-  getSelectionPointFromHandleDrag,
-  getTerminalSelectionRange,
-} from "./terminal-touch-selection.js";
+import { getTerminalSelectionRange } from "./terminal-touch-selection.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
+import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
 
@@ -144,17 +139,6 @@ function createInitialRendererTrace(input: {
     fontFamily: input.fontFamily,
     fontSize: input.fontSize,
   };
-}
-
-function getXtermScreenElement(
-  term: XTerm,
-  fallbackContainer: HTMLElement | null,
-): Element | null {
-  return (
-    term.element?.querySelector(".xterm-screen") ??
-    fallbackContainer?.querySelector(".xterm-screen") ??
-    null
-  );
 }
 
 /**
@@ -464,17 +448,30 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const [lastForegroundAtMs, setLastForegroundAtMs] = useState(0);
     const showKeyBar = isTouch && !isEnded;
-    const [hasSelection, setHasSelection] = useState(false);
-    const [selectionOverlay, setSelectionOverlay] =
-      useState<SelectionOverlayState | null>(null);
-    const selectionOverlayRef = useRef<SelectionOverlayState | null>(null);
-    selectionOverlayRef.current = selectionOverlay;
     const [inputToolbarAnchor, setInputToolbarAnchor] = useState<{
       clientX: number;
       clientY: number;
     } | null>(null);
     const inputToolbarAnchorRef = useRef<typeof inputToolbarAnchor>(null);
     inputToolbarAnchorRef.current = inputToolbarAnchor;
+    const getSelectionScreenElement = useCallback(
+      (term: XTerm) => getXtermScreenElement(term, containerRef.current),
+      [],
+    );
+    const {
+      hasSelection,
+      setHasSelection,
+      selectionOverlay,
+      setSelectionOverlay,
+      clearSelectionOverlay,
+      commitSelectionOverlay,
+      handleSelectionHandlePointerDown,
+    } = useTerminalSelectionOverlay({
+      sessionId,
+      xtermRef,
+      getScreenElement: getSelectionScreenElement,
+      setInputToolbarAnchor,
+    });
     const inputToolbarDismissSuppressUntilRef = useRef(0);
     const toolbarSyntheticMouseSuppressUntilRef = useRef(0);
     const [showScrollDown, setShowScrollDown] = useState(false);
@@ -537,10 +534,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const focusTerm = useCallback(() => xtermRef.current?.focus(), []);
     const clearSelectionUi = useCallback(() => {
-      setHasSelection(false);
-      setSelectionOverlay(null);
+      clearSelectionOverlay();
       setInputToolbarAnchor(null);
-    }, []);
+    }, [clearSelectionOverlay]);
     const {
       externalCopyText,
       closeExternalCopyDialog,
@@ -594,36 +590,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       };
     }, [send, isEnded]);
 
-    const commitSelectionOverlay = useCallback(
-      (input: { clientX: number; clientY: number; showToolbar: boolean }) => {
-        const term = xtermRef.current;
-        const text = term?.getSelection() ?? "";
-        const range = term ? getTerminalSelectionRange(term) : null;
-        if (!text) {
-          setSelectionOverlay(null);
-          return;
-        }
-        if (!range) return;
-
-        setHasSelection(true);
-        setInputToolbarAnchor(null);
-        setSelectionOverlay({
-          range,
-          toolbarAnchor: input.showToolbar
-            ? { clientX: input.clientX, clientY: input.clientY }
-            : null,
-          draggingHandle: null,
-        });
-
-        traceTerminalEvent("terminal-selection-overlay-commit", {
-          sessionId,
-          dataLength: text.length,
-          visible: input.showToolbar,
-        });
-      },
-      [sessionId],
-    );
-
     const handleToolbarActionEvent = useCallback(
       (input: {
         action: TerminalSelectionAction;
@@ -643,82 +609,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       },
       [sessionId],
     );
-
-    const applySelectionHandleDrag = useCallback(
-      (
-        event: Pick<PointerEvent, "clientX" | "clientY">,
-        showToolbar: boolean,
-      ) => {
-        const term = xtermRef.current;
-        const screenElement = term
-          ? getXtermScreenElement(term, containerRef.current)
-          : null;
-        const overlay = selectionOverlayRef.current;
-        if (!term || !screenElement || !overlay?.draggingHandle) return;
-        const focus = getSelectionPointFromHandleDrag(
-          term,
-          screenElement,
-          event,
-        );
-        if (!focus) return;
-        const fixed =
-          overlay.draggingHandle === "start"
-            ? overlay.range.end
-            : overlay.range.start;
-        const nextRange = applyBoundarySelection(term, fixed, focus);
-        setHasSelection(true);
-        setSelectionOverlay({
-          range: nextRange,
-          toolbarAnchor: showToolbar
-            ? { clientX: event.clientX, clientY: event.clientY }
-            : null,
-          draggingHandle: showToolbar ? null : overlay.draggingHandle,
-        });
-      },
-      [],
-    );
-
-    const handleSelectionHandlePointerDown = useCallback(
-      (
-        handle: TerminalSelectionHandle,
-        event: ReactPointerEvent<HTMLButtonElement>,
-      ) => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        setInputToolbarAnchor(null);
-        setSelectionOverlay((prev) =>
-          prev
-            ? { ...prev, draggingHandle: handle, toolbarAnchor: null }
-            : prev,
-        );
-      },
-      [],
-    );
-
-    useEffect(() => {
-      if (!selectionOverlay?.draggingHandle) return;
-      const handlePointerMove = (event: PointerEvent) => {
-        event.preventDefault();
-        applySelectionHandleDrag(event, false);
-      };
-      const handlePointerUp = (event: PointerEvent) => {
-        event.preventDefault();
-        applySelectionHandleDrag(event, true);
-      };
-      window.addEventListener("pointermove", handlePointerMove, {
-        passive: false,
-      });
-      window.addEventListener("pointerup", handlePointerUp, { passive: false });
-      window.addEventListener("pointercancel", handlePointerUp, {
-        passive: false,
-      });
-      return () => {
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerUp);
-      };
-    }, [selectionOverlay?.draggingHandle, applySelectionHandleDrag]);
 
     // One-shot Ctrl modifier owned here so it can gate BOTH the key bar
     // path and the soft-keyboard path (xterm.onData). Ref mirrors state so
@@ -915,9 +805,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           setShowScrollDown(
             buf.baseY - buf.viewportY > SCROLL_DOWN_THRESHOLD_ROWS,
           );
-          if (selectionOverlayRef.current) {
-            setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
-          }
+          setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
           traceTerminalEvent("terminal-scroll-state", {
             sessionId,
             viewportY: buf.viewportY,
@@ -1163,6 +1051,8 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       sessionId,
       paneId,
       setCtrl,
+      setHasSelection,
+      setSelectionOverlay,
       runUploadRef,
       webglEnabled,
     ]);

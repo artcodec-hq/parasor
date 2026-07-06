@@ -17,6 +17,17 @@ export type SelectionOverlayLayout = {
   toolbar: OverlayPoint | null;
 };
 
+export function getXtermScreenElement(
+  term: XTerm,
+  fallbackContainer: HTMLElement | null,
+): Element | null {
+  return (
+    term.element?.querySelector(".xterm-screen") ??
+    fallbackContainer?.querySelector(".xterm-screen") ??
+    null
+  );
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.min(Math.max(value, min), max);
