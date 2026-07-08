@@ -10,4 +10,5 @@ export {
   buildSidebarProjects,
   readClientBrowserChildPanes,
 } from "./model/index.js";
+export type { SidebarProps } from "./Sidebar.js";
 export { Sidebar } from "./Sidebar.js";

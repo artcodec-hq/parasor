@@ -460,13 +460,11 @@ describe("WorkspacePaneRouter open IDE menu", () => {
     const onCopyWorktreePath = vi.fn();
     const onDeleteProject = vi.fn();
     const onRemoveWorktree = vi.fn();
-    const onRenameWorktree = vi.fn();
     renderBrowserPane({
       isMobile: false,
       onCopyWorktreePath,
       onDeleteProject,
       onRemoveWorktree,
-      onRenameWorktree,
       onOpenWorktreeInIde: vi.fn(),
       canOpenLocalIde: true,
     });
@@ -914,7 +912,6 @@ function renderBrowserPane({
   onCopyWorktreePath,
   onOpenWorktreeInIde,
   canOpenLocalIde,
-  onRenameWorktree,
   onRemoveWorktree,
   onDeleteProject,
 }: {
@@ -940,11 +937,6 @@ function renderBrowserPane({
   ) => void;
   canOpenLocalIde?: boolean;
   onCopyWorktreePath?: (worktreePath: string) => void;
-  onRenameWorktree?: (
-    projectId: string,
-    worktreePath: string,
-    branch: string,
-  ) => void;
   onRemoveWorktree?: (
     projectId: string,
     worktreePath: string,
@@ -965,7 +957,6 @@ function renderBrowserPane({
         ideCommands,
         canOpenLocalIde,
         onCopyWorktreePath,
-        onRenameWorktree,
         onRemoveWorktree,
         onDeleteProject,
       })}
