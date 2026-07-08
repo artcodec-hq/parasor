@@ -4,10 +4,8 @@ import type {
   TerminalLastSeen,
   WsTerminalClientMessage,
 } from "@parasor/shared";
-import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Terminal as XTerm } from "@xterm/xterm";
+import type { FitAddon } from "@xterm/addon-fit";
+import type { Terminal as XTerm } from "@xterm/xterm";
 import {
   forwardRef,
   useCallback,
@@ -55,7 +53,6 @@ import {
   isTouchDevice,
   resolveTerminalWebglEnabled,
 } from "./terminal-environment.js";
-import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
 import {
   createInitialTerminalHistoryLoadState,
   INITIAL_HISTORY_LOAD_BYTES,
@@ -68,6 +65,7 @@ import {
   attachTerminalImeLifecycle,
   attachTerminalShiftEnterHandler,
 } from "./terminal-input-lifecycle.js";
+import { createTerminalInstance } from "./terminal-instance.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachWebglRendererAndFontAtlas } from "./terminal-renderer-fonts.js";
@@ -724,19 +722,17 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         openFilePathRef.current?.(filePath);
       };
 
-      const term = new XTerm({
-        fontFamily: initialConfig.fontFamily,
-        fontSize: initialConfig.fontSize,
-        disableStdin: isEnded,
-        theme: initialConfig.theme,
-        allowProposedApi: true,
-        cursorStyle: "block",
-        cursorBlink: !isEnded,
-        // xterm's default is 1000. Keep a generous window so a multi-screen
-        // build log stays scrollable, but avoid 50k-line buffers per pane --
-        // they balloon heap on long-running tabs with multiple terminals.
-        scrollback: 10000,
-      });
+      const { term, fitAddon, fileLinkProviderDisposable } =
+        createTerminalInstance({
+          fontFamily: initialConfig.fontFamily,
+          fontSize: initialConfig.fontSize,
+          theme: initialConfig.theme,
+          isEnded,
+          unicodeVersion: TERMINAL_UNICODE_VERSION,
+          openUrl: openUrlFromTerminal,
+          getWorktreePath: () => worktreePathRef.current,
+          openFilePath: openFilePathFromTerminal,
+        });
       const bottomRowsSnapshot = attachTerminalBottomRowsSnapshotProvider({
         sessionId,
         paneId,
@@ -745,27 +741,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         rendererTraceRef,
       });
 
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-      /*
-       * Unicode 11 wcwidth addon. The stock xterm wcwidth table predates
-       * Unicode 11's widening of many East Asian / emoji codepoints to
-       * wide (2-cell). Without this, mixed CJK/emoji lines drift a cell
-       * per occurrence and box-drawing/TUIs misalign on CJK locales.
-       */
-      term.loadAddon(new Unicode11Addon());
-      term.unicode.activeVersion = TERMINAL_UNICODE_VERSION;
-      term.loadAddon(
-        new WebLinksAddon((_event, uri) => openUrlFromTerminal(uri)),
-      );
-      const fileLinkProviderDisposable = term.registerLinkProvider(
-        createTerminalFileLinkProvider(
-          (bufferLineNumber) =>
-            term.buffer.active.getLine(bufferLineNumber - 1),
-          () => worktreePathRef.current,
-          openFilePathFromTerminal,
-        ),
-      );
       term.open(container);
       container.addEventListener("focusin", bottomRowsSnapshot.markActive);
       traceTerminalEvent("xterm-open", { sessionId });
