@@ -78,6 +78,7 @@ import {
   restoreScrollAnchor,
   type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
+import { attachTerminalScrollState } from "./terminal-scroll-state.js";
 import {
   getXtermScreenElement,
   resolveSelectionOverlayLayout,
@@ -780,59 +781,19 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         getActiveTerm: () => xtermRef.current,
         refreshVisibleRows,
       });
-      // Coalesce scroll-derived UI state into one update per frame. This
-      // drives both older-history loading near the top and the restored
-      // jump-to-bottom affordance when the user scrolls away from the tail.
-      const HISTORY_LOAD_TOP_THRESHOLD_ROWS = 2;
-      const SCROLL_DOWN_THRESHOLD_ROWS = 3;
-      let pendingScrollFrame: number | null = null;
-      const updateScrollState = () => {
-        if (pendingScrollFrame !== null) return;
-        pendingScrollFrame = requestAnimationFrame(() => {
-          pendingScrollFrame = null;
-          const buf = term.buffer.active;
-          if (replayRestoringRef.current) {
-            traceTerminalEvent("terminal-scroll-state", {
-              sessionId,
-              viewportY: buf.viewportY,
-              baseY: buf.baseY,
-              reason: "replay-restoring",
-            });
-            return;
-          }
-          setShowScrollDown(
-            buf.baseY - buf.viewportY > SCROLL_DOWN_THRESHOLD_ROWS,
-          );
+      const cleanupScrollState = attachTerminalScrollState({
+        sessionId,
+        term,
+        replayRestoringRef,
+        keyboardSettlingRef,
+        keyboardHistoryLoadSuppressUntilRef,
+        historyTopLoadArmedRef,
+        setShowScrollDown,
+        refreshSelectionOverlayLayout: () => {
           setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
-          traceTerminalEvent("terminal-scroll-state", {
-            sessionId,
-            viewportY: buf.viewportY,
-            baseY: buf.baseY,
-            deferred: keyboardSettlingRef.current,
-            reason: historyTopLoadArmedRef.current ? "armed" : "observed",
-          });
-          if (buf.viewportY > HISTORY_LOAD_TOP_THRESHOLD_ROWS) {
-            historyTopLoadArmedRef.current = true;
-          } else if (historyTopLoadArmedRef.current) {
-            if (
-              keyboardSettlingRef.current ||
-              performance.now() < keyboardHistoryLoadSuppressUntilRef.current
-            ) {
-              traceTerminalEvent("terminal-history-load-suppressed", {
-                sessionId,
-                viewportY: buf.viewportY,
-                baseY: buf.baseY,
-                reason: "keyboard-settle",
-              });
-              return;
-            }
-            historyTopLoadArmedRef.current = false;
-            void loadOlderHistory();
-          }
-        });
-      };
-      const scrollDisposable = term.onScroll(updateScrollState);
-      updateScrollState();
+        },
+        loadOlderHistory,
+      });
       attachTerminalShiftEnterHandler({
         term,
         isEnded,
@@ -1015,13 +976,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
         selectionDisposable.dispose();
-        scrollDisposable.dispose();
+        cleanupScrollState();
         bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
-        if (pendingScrollFrame !== null) {
-          cancelAnimationFrame(pendingScrollFrame);
-          pendingScrollFrame = null;
-        }
         cleanupRenderObservers();
         setHasSelection(false);
         setSelectionOverlay(null);
