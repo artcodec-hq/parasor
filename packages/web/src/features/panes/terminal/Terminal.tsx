@@ -10,7 +10,6 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import {
   forwardRef,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -47,12 +46,8 @@ import {
 } from "../../../lib/terminal-trace.js";
 import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
-import {
-  type OverlayPoint,
-  type TerminalSelectionAction,
-  type TerminalSelectionHandle,
-  TerminalSelectionOverlay,
-} from "./TerminalSelectionOverlay.js";
+import type { TerminalSelectionAction } from "./TerminalSelectionOverlay.js";
+import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
 import { attachTerminalClipboardImagePaste } from "./terminal-clipboard-image-paste.js";
 import { attachTerminalDomDiagnostics } from "./terminal-dom-diagnostics.js";
@@ -84,19 +79,20 @@ import {
   type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
 import {
+  getXtermScreenElement,
+  resolveSelectionOverlayLayout,
+  toolbarPositionFromAnchor,
+} from "./terminal-selection-layout.js";
+import {
   attachTerminalTapGestures,
   attachTerminalTouchSelection,
   attachTerminalTouchWheel,
 } from "./terminal-touch-gestures.js";
-import {
-  applyBoundarySelection,
-  getSelectionPointFromHandleDrag,
-  getTerminalSelectionRange,
-  type TerminalSelectionRange,
-} from "./terminal-touch-selection.js";
+import { getTerminalSelectionRange } from "./terminal-touch-selection.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
+import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
 
@@ -112,17 +108,6 @@ const HISTORY_LOAD_SUPPRESS_MS = 750;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_UNICODE_VERSION = "11";
-
-type SelectionOverlayState = {
-  range: TerminalSelectionRange;
-  toolbarAnchor: { clientX: number; clientY: number } | null;
-  draggingHandle: TerminalSelectionHandle | null;
-};
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (max < min) return min;
-  return Math.min(Math.max(value, min), max);
-}
 
 function replayCacheMatchesDimensions(
   entry: TerminalReplayCacheEntry | null,
@@ -151,68 +136,6 @@ function createInitialRendererTrace(input: {
     isIos: input.isIos,
     fontFamily: input.fontFamily,
     fontSize: input.fontSize,
-  };
-}
-
-function pointToOverlayPosition(
-  rangePoint: { col: number; row: number },
-  term: XTerm,
-  screenElement: Element,
-  rootElement: HTMLElement,
-): OverlayPoint | null {
-  const screenRect = screenElement.getBoundingClientRect();
-  const rootRect = rootElement.getBoundingClientRect();
-  if (screenRect.width <= 0 || screenRect.height <= 0) return null;
-  const cellWidth = screenRect.width / term.cols;
-  const cellHeight = screenRect.height / term.rows;
-  const viewportRow = rangePoint.row - term.buffer.active.viewportY;
-  if (viewportRow < 0 || viewportRow >= term.rows) return null;
-  const localLeft =
-    screenRect.left - rootRect.left + rangePoint.col * cellWidth;
-  const localTop =
-    screenRect.top - rootRect.top + (viewportRow + 1) * cellHeight;
-  return {
-    left: clampNumber(localLeft, 0, rootRect.width),
-    top: clampNumber(localTop, 0, rootRect.height),
-  };
-}
-
-function getXtermScreenElement(
-  term: XTerm,
-  fallbackContainer: HTMLElement | null,
-): Element | null {
-  return (
-    term.element?.querySelector(".xterm-screen") ??
-    fallbackContainer?.querySelector(".xterm-screen") ??
-    null
-  );
-}
-
-function toolbarPositionFromAnchor(
-  anchor: { clientX: number; clientY: number },
-  rootElement: HTMLElement,
-  toolbarWidth = 132,
-): OverlayPoint {
-  const rootRect = rootElement.getBoundingClientRect();
-  const toolbarHeight = 40;
-  const gap = 12;
-  const padding = 8;
-  const localX = anchor.clientX - rootRect.left;
-  const localY = anchor.clientY - rootRect.top;
-  const above = localY - toolbarHeight - gap;
-  const below = localY + gap;
-
-  return {
-    left: clampNumber(
-      localX - toolbarWidth / 2,
-      padding,
-      rootRect.width - toolbarWidth - padding,
-    ),
-    top: clampNumber(
-      above >= padding ? above : below,
-      padding,
-      rootRect.height - toolbarHeight - padding,
-    ),
   };
 }
 
@@ -523,17 +446,30 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const [lastForegroundAtMs, setLastForegroundAtMs] = useState(0);
     const showKeyBar = isTouch && !isEnded;
-    const [hasSelection, setHasSelection] = useState(false);
-    const [selectionOverlay, setSelectionOverlay] =
-      useState<SelectionOverlayState | null>(null);
-    const selectionOverlayRef = useRef<SelectionOverlayState | null>(null);
-    selectionOverlayRef.current = selectionOverlay;
     const [inputToolbarAnchor, setInputToolbarAnchor] = useState<{
       clientX: number;
       clientY: number;
     } | null>(null);
     const inputToolbarAnchorRef = useRef<typeof inputToolbarAnchor>(null);
     inputToolbarAnchorRef.current = inputToolbarAnchor;
+    const getSelectionScreenElement = useCallback(
+      (term: XTerm) => getXtermScreenElement(term, containerRef.current),
+      [],
+    );
+    const {
+      hasSelection,
+      setHasSelection,
+      selectionOverlay,
+      setSelectionOverlay,
+      clearSelectionOverlay,
+      commitSelectionOverlay,
+      handleSelectionHandlePointerDown,
+    } = useTerminalSelectionOverlay({
+      sessionId,
+      xtermRef,
+      getScreenElement: getSelectionScreenElement,
+      setInputToolbarAnchor,
+    });
     const inputToolbarDismissSuppressUntilRef = useRef(0);
     const toolbarSyntheticMouseSuppressUntilRef = useRef(0);
     const [showScrollDown, setShowScrollDown] = useState(false);
@@ -596,10 +532,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const focusTerm = useCallback(() => xtermRef.current?.focus(), []);
     const clearSelectionUi = useCallback(() => {
-      setHasSelection(false);
-      setSelectionOverlay(null);
+      clearSelectionOverlay();
       setInputToolbarAnchor(null);
-    }, []);
+    }, [clearSelectionOverlay]);
     const {
       externalCopyText,
       closeExternalCopyDialog,
@@ -653,36 +588,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       };
     }, [send, isEnded]);
 
-    const commitSelectionOverlay = useCallback(
-      (input: { clientX: number; clientY: number; showToolbar: boolean }) => {
-        const term = xtermRef.current;
-        const text = term?.getSelection() ?? "";
-        const range = term ? getTerminalSelectionRange(term) : null;
-        if (!text) {
-          setSelectionOverlay(null);
-          return;
-        }
-        if (!range) return;
-
-        setHasSelection(true);
-        setInputToolbarAnchor(null);
-        setSelectionOverlay({
-          range,
-          toolbarAnchor: input.showToolbar
-            ? { clientX: input.clientX, clientY: input.clientY }
-            : null,
-          draggingHandle: null,
-        });
-
-        traceTerminalEvent("terminal-selection-overlay-commit", {
-          sessionId,
-          dataLength: text.length,
-          visible: input.showToolbar,
-        });
-      },
-      [sessionId],
-    );
-
     const handleToolbarActionEvent = useCallback(
       (input: {
         action: TerminalSelectionAction;
@@ -702,82 +607,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       },
       [sessionId],
     );
-
-    const applySelectionHandleDrag = useCallback(
-      (
-        event: Pick<PointerEvent, "clientX" | "clientY">,
-        showToolbar: boolean,
-      ) => {
-        const term = xtermRef.current;
-        const screenElement = term
-          ? getXtermScreenElement(term, containerRef.current)
-          : null;
-        const overlay = selectionOverlayRef.current;
-        if (!term || !screenElement || !overlay?.draggingHandle) return;
-        const focus = getSelectionPointFromHandleDrag(
-          term,
-          screenElement,
-          event,
-        );
-        if (!focus) return;
-        const fixed =
-          overlay.draggingHandle === "start"
-            ? overlay.range.end
-            : overlay.range.start;
-        const nextRange = applyBoundarySelection(term, fixed, focus);
-        setHasSelection(true);
-        setSelectionOverlay({
-          range: nextRange,
-          toolbarAnchor: showToolbar
-            ? { clientX: event.clientX, clientY: event.clientY }
-            : null,
-          draggingHandle: showToolbar ? null : overlay.draggingHandle,
-        });
-      },
-      [],
-    );
-
-    const handleSelectionHandlePointerDown = useCallback(
-      (
-        handle: TerminalSelectionHandle,
-        event: ReactPointerEvent<HTMLButtonElement>,
-      ) => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        setInputToolbarAnchor(null);
-        setSelectionOverlay((prev) =>
-          prev
-            ? { ...prev, draggingHandle: handle, toolbarAnchor: null }
-            : prev,
-        );
-      },
-      [],
-    );
-
-    useEffect(() => {
-      if (!selectionOverlay?.draggingHandle) return;
-      const handlePointerMove = (event: PointerEvent) => {
-        event.preventDefault();
-        applySelectionHandleDrag(event, false);
-      };
-      const handlePointerUp = (event: PointerEvent) => {
-        event.preventDefault();
-        applySelectionHandleDrag(event, true);
-      };
-      window.addEventListener("pointermove", handlePointerMove, {
-        passive: false,
-      });
-      window.addEventListener("pointerup", handlePointerUp, { passive: false });
-      window.addEventListener("pointercancel", handlePointerUp, {
-        passive: false,
-      });
-      return () => {
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerUp);
-      };
-    }, [selectionOverlay?.draggingHandle, applySelectionHandleDrag]);
 
     // One-shot Ctrl modifier owned here so it can gate BOTH the key bar
     // path and the soft-keyboard path (xterm.onData). Ref mirrors state so
@@ -974,9 +803,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           setShowScrollDown(
             buf.baseY - buf.viewportY > SCROLL_DOWN_THRESHOLD_ROWS,
           );
-          if (selectionOverlayRef.current) {
-            setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
-          }
+          setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
           traceTerminalEvent("terminal-scroll-state", {
             sessionId,
             viewportY: buf.viewportY,
@@ -1222,6 +1049,8 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       sessionId,
       paneId,
       setCtrl,
+      setHasSelection,
+      setSelectionOverlay,
       runUploadRef,
       webglEnabled,
     ]);
@@ -1241,27 +1070,15 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       const term = xtermRef.current;
       const rootElement = rootRef.current;
       const overlay = selectionOverlay;
-      if (!term || !rootElement || !overlay || !hasSelection) return null;
-      const screenElement = getXtermScreenElement(term, containerRef.current);
-      if (!screenElement) return null;
-      return {
-        startHandle: pointToOverlayPosition(
-          overlay.range.start,
-          term,
-          screenElement,
-          rootElement,
-        ),
-        endHandle: pointToOverlayPosition(
-          overlay.range.end,
-          term,
-          screenElement,
-          rootElement,
-        ),
-        toolbar:
-          overlay.toolbarAnchor && !overlay.draggingHandle
-            ? toolbarPositionFromAnchor(overlay.toolbarAnchor, rootElement, 72)
-            : null,
-      };
+      return resolveSelectionOverlayLayout({
+        term,
+        rootElement,
+        screenElement: term
+          ? getXtermScreenElement(term, containerRef.current)
+          : null,
+        overlay,
+        hasSelection,
+      });
     })();
     const inputToolbarPosition =
       inputToolbarAnchor && rootRef.current
@@ -1326,41 +1143,21 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             </button>
           )}
         </div>
-        {selectionOverlayLayout && externalCopyText === null && (
-          <TerminalSelectionOverlay
-            startHandle={selectionOverlayLayout.startHandle}
-            endHandle={selectionOverlayLayout.endHandle}
-            toolbar={selectionOverlayLayout.toolbar}
-            draggingHandle={selectionOverlay?.draggingHandle ?? null}
-            onHandlePointerDown={handleSelectionHandlePointerDown}
-            onCopy={() => {
-              void handleCopySelection();
-            }}
-            onCopyLongPress={openExternalCopyDialog}
-            onPaste={() => {
-              void handlePasteFromTerminalToolbar();
-            }}
-            onActionEvent={handleToolbarActionEvent}
-            pasteEnabled={false}
-          />
-        )}
-        {inputToolbarPosition && (
-          <TerminalSelectionOverlay
-            startHandle={null}
-            endHandle={null}
-            toolbar={inputToolbarPosition}
-            draggingHandle={null}
-            copyEnabled={false}
-            onHandlePointerDown={handleSelectionHandlePointerDown}
-            onCopy={() => {
-              void handleCopySelection();
-            }}
-            onPaste={() => {
-              void handlePasteFromTerminalToolbar();
-            }}
-            onActionEvent={handleToolbarActionEvent}
-          />
-        )}
+        <TerminalSelectionOverlays
+          selectionLayout={selectionOverlayLayout}
+          selectionDraggingHandle={selectionOverlay?.draggingHandle ?? null}
+          inputToolbarPosition={inputToolbarPosition}
+          externalCopyOpen={externalCopyText !== null}
+          onHandlePointerDown={handleSelectionHandlePointerDown}
+          onCopy={() => {
+            void handleCopySelection();
+          }}
+          onCopyLongPress={openExternalCopyDialog}
+          onPaste={() => {
+            void handlePasteFromTerminalToolbar();
+          }}
+          onActionEvent={handleToolbarActionEvent}
+        />
         <TerminalExternalCopyDialog
           open={externalCopyText !== null}
           text={externalCopyText ?? ""}
