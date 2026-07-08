@@ -12,7 +12,7 @@ import { SortableProjects } from "./SortableProjectGroup.js";
 import { filterSidebarProjects } from "./sidebar-filter.js";
 import { useSidebarResize } from "./useSidebarResize.js";
 
-interface SidebarProps {
+export interface SidebarProps {
   projects: SidebarProject[];
   selection: SidebarSelection;
   connected: boolean;

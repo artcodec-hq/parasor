@@ -4,55 +4,40 @@ import type {
   PaneEntry,
   Session,
 } from "@parasor/shared";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DialogRoot, PaGlyph } from "../../components/primitives/index.js";
-import type { PaMenuItem } from "../../components/primitives/PaMenu.js";
 import { useEdgeSwipeBack } from "../../hooks/use-edge-swipe-back.js";
 import type { IdeEditor } from "../../lib/git-api.js";
 import type { OpenUrlOptions } from "../../lib/open-url-options.js";
 import { displayTitleForTerminal } from "../../lib/session-title.js";
-import { traceTerminalEvent } from "../../lib/terminal-trace.js";
 import type { GitGraphSelection } from "../panes/git-graph/GitGraphPane.js";
-import { BrowserPaneView } from "./views/BrowserPaneView.js";
-import { FilesPaneView } from "./views/FilesPaneView.js";
-import { GitPaneView } from "./views/GitPaneView.js";
+import { TerminalPaneLayer } from "./TerminalPaneLayer.js";
+import { useWorktreeMoreMenuItems } from "./useWorktreeMoreMenuItems.js";
 import {
   type SessionCrumb,
   SessionPaneHeader,
   type SessionPaneView,
 } from "./views/SessionPaneHeader.js";
-import { TerminalPaneView } from "./views/TerminalPaneView.js";
 import {
   setFilesPaneSelection,
   useFilesPaneSelection,
 } from "./views/use-files-pane-selection.js";
-import {
-  type WorktreeCounters,
-  type WorktreeGitMenuActions,
-  type WorktreeTab,
-  WorktreeView,
+import type {
+  WorktreeCounters,
+  WorktreeGitMenuActions,
+  WorktreeTab,
 } from "./views/WorktreeView.js";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState.js";
-
-const LazyEditorPane = lazy(() =>
-  import("../panes/editor/EditorPane.js").then(({ EditorPane }) => ({
-    default: EditorPane,
-  })),
-);
-
-function basename(filePath: string): string {
-  const trimmed = filePath.replace(/\/+$/, "");
-  const parts = trimmed.split("/");
-  return parts[parts.length - 1] ?? filePath;
-}
+import {
+  basename,
+  isTemporaryAbsolutePath,
+  WorkspaceFileDisplay,
+  type WorkspaceFileDisplayTarget,
+} from "./WorkspaceFileDisplay.js";
+import {
+  WorkspacePaneBody,
+  type WorkspacePaneBodyPane,
+} from "./WorkspacePaneBody.js";
 
 function worktreeFilesPaneId(worktreePath: string): string {
   return `files:${worktreePath}`;
@@ -62,17 +47,6 @@ function blurActiveEditableElement(): void {
   const active = document.activeElement;
   if (!active || !("blur" in active)) return;
   (active as { blur: () => void }).blur();
-}
-
-interface WorkspaceFileDisplayTarget {
-  worktreePath: string;
-  filePath: string;
-  temporaryFilePath?: string;
-  openerPaneId: string;
-}
-
-function isTemporaryAbsolutePath(filePath: string): boolean {
-  return filePath.startsWith("/tmp/") || filePath.startsWith("/private/tmp/");
 }
 
 interface WorkspacePaneRouterProps {
@@ -130,11 +104,6 @@ interface WorkspacePaneRouterProps {
   ideCommands?: IdeCommandConfig[];
   canOpenLocalIde?: boolean;
   onCopyWorktreePath?: (worktreePath: string) => void;
-  onRenameWorktree?: (
-    projectId: string,
-    worktreePath: string,
-    branch: string,
-  ) => void;
   onRemoveWorktree?: (
     projectId: string,
     worktreePath: string,
@@ -264,6 +233,10 @@ export function WorkspacePaneRouter({
   const outerOnClose = hasInnerPaneChrome ? undefined : onClose;
   const terminalLayerPanes =
     allPanes.length > 0 ? allPanes : focusedPane ? [focusedPane] : [];
+  const bodyPane: WorkspacePaneBodyPane | null =
+    focusedPane && focusedPane.state.kind !== "terminal"
+      ? (focusedPane as WorkspacePaneBodyPane)
+      : null;
   const handleOpenFilePath = useCallback(
     (worktreePath: string, filePath: string) => {
       const openerPaneId = focusedPane?.id ?? worktreeFilesPaneId(worktreePath);
@@ -310,100 +283,20 @@ export function WorkspacePaneRouter({
 
   useEdgeSwipeBack(isMobile ? onBack : null);
 
-  const moreMenuItems = useMemo<PaMenuItem[]>(() => {
-    if (!focusedPane || !activeProjectId) return [];
-    const worktreePath = focusedPane.worktreePath;
-    const isProjectRootPane =
-      !!activeProjectPath && worktreePath === activeProjectPath;
-    const items: PaMenuItem[] = [];
-    if (onCopyWorktreePath) {
-      items.push({
-        id: "copy-path",
-        label: "Copy path",
-        onSelect: () => onCopyWorktreePath(worktreePath),
-      });
-    }
-    if (onOpenWorktreeInFinder) {
-      items.push({
-        id: "open-finder",
-        label: "Open in Finder",
-        separatorBefore: items.length > 0,
-        onSelect: () => onOpenWorktreeInFinder(activeProjectId, worktreePath),
-      });
-    }
-    if (onOpenWorktreeInIde) {
-      const disabled = !canOpenLocalIde;
-      const title = disabled
-        ? "Available when parasor is opened from localhost on the server machine"
-        : undefined;
-      const separatorBefore = items.length > 0 && !onOpenWorktreeInFinder;
-      items.push(
-        {
-          id: "open-cursor",
-          label: "Open in Cursor",
-          disabled,
-          title,
-          separatorBefore,
-          onSelect: () =>
-            onOpenWorktreeInIde(activeProjectId, worktreePath, "cursor"),
-        },
-        {
-          id: "open-vscode",
-          label: "Open in VS Code",
-          disabled,
-          title,
-          onSelect: () =>
-            onOpenWorktreeInIde(activeProjectId, worktreePath, "vscode"),
-        },
-      );
-      for (const command of ideCommands) {
-        items.push({
-          id: `open-custom-ide:${command.id}`,
-          label: `Open in ${command.label}`,
-          disabled,
-          title,
-          onSelect: () =>
-            onOpenWorktreeInIde(activeProjectId, worktreePath, command.id),
-        });
-      }
-    }
-    if (!isProjectRootPane && activeProjectIsRepo && onRemoveWorktree) {
-      items.push({
-        id: "remove",
-        label: "Remove worktree…",
-        separatorBefore: items.length > 0,
-        tone: "danger",
-        onSelect: () =>
-          onRemoveWorktree(
-            activeProjectId,
-            worktreePath,
-            focusedWorktreeDirName ?? "main",
-          ),
-      });
-    }
-    if (isProjectRootPane && onDeleteProject) {
-      items.push({
-        id: "close-project",
-        label: "Close project…",
-        separatorBefore: items.length > 0,
-        onSelect: () => onDeleteProject(activeProjectId),
-      });
-    }
-    return items;
-  }, [
-    focusedPane,
+  const moreMenuItems = useWorktreeMoreMenuItems({
     activeProjectId,
-    activeProjectPath,
     activeProjectIsRepo,
+    activeProjectPath,
+    canOpenLocalIde,
+    focusedPane,
     focusedWorktreeDirName,
+    ideCommands,
+    onCopyWorktreePath,
+    onDeleteProject,
     onOpenWorktreeInFinder,
     onOpenWorktreeInIde,
-    ideCommands,
-    canOpenLocalIde,
-    onCopyWorktreePath,
     onRemoveWorktree,
-    onDeleteProject,
-  ]);
+  });
 
   return (
     <main className="flex-1 min-w-0 bg-bg-terminal flex flex-col touch-pan-y">
@@ -425,18 +318,17 @@ export function WorkspacePaneRouter({
           <>
             <div className="absolute inset-0 flex min-h-0 min-w-0">
               <div className="relative min-h-0 min-w-0 flex-1">
-                {focusedPane.state.kind !== "terminal" && (
+                {bodyPane && (
                   <div className="absolute inset-0 min-h-0 min-w-0">
-                    <PaneBody
+                    <WorkspacePaneBody
                       activeProjectId={activeProjectId}
                       activeProjectPath={activeProjectPath}
-                      focusedPane={focusedPane}
+                      focusedPane={bodyPane}
                       focusedWorktreeDirName={focusedWorktreeDirName}
                       fileChangeSeq={fileChangeSeq}
                       gitState={gitState}
                       gitFileStatuses={gitFileStatuses}
                       filesSelection={filesSelection}
-                      gitBranchName={gitBranchName}
                       counters={counters}
                       gitMenuActions={gitMenuActions}
                       gitGraphSelection={gitGraphSelection}
@@ -446,15 +338,8 @@ export function WorkspacePaneRouter({
                       onClearCommitError={onClearCommitError}
                       onSubmitInlineCommit={onSubmitInlineCommit}
                       isMobile={isMobile}
-                      sessions={sessions}
-                      terminalPin={pin}
-                      terminalOnClose={onClose}
                       browserOnClose={onClose}
-                      onClosePane={onClosePane}
-                      onOpenUrl={onOpenUrl}
                       onBrowserUrlChange={onBrowserUrlChange}
-                      onRestartSession={onRestartSession}
-                      onRenameSession={onRenameSession}
                       onSelectWorktreeTab={onSelectWorktreeTab}
                       onOpenFilePath={handleOpenFilePath}
                     />
@@ -511,326 +396,6 @@ export function WorkspacePaneRouter({
       </div>
     </main>
   );
-}
-
-interface WorkspaceFileDisplayProps {
-  projectId: string;
-  target: WorkspaceFileDisplayTarget;
-  fileChangeSeq: number;
-  onClose: () => void;
-}
-
-function WorkspaceFileDisplay({
-  projectId,
-  target,
-  fileChangeSeq,
-  onClose,
-}: WorkspaceFileDisplayProps) {
-  const paneId = `file-display:${target.openerPaneId}`;
-  return (
-    <div className="h-full min-h-0 min-w-0">
-      <Suspense
-        fallback={
-          <div className="h-full bg-bg-primary text-sm text-text-secondary" />
-        }
-      >
-        <LazyEditorPane
-          paneId={paneId}
-          projectId={projectId}
-          worktreePath={target.worktreePath}
-          filePath={target.filePath}
-          temporaryFilePath={target.temporaryFilePath}
-          fileChangeSeq={fileChangeSeq}
-          onClose={onClose}
-        />
-      </Suspense>
-    </div>
-  );
-}
-
-interface TerminalPaneLayerProps {
-  panes: PaneEntry[];
-  focusedPaneId: string;
-  sessions: Session[];
-  pin: { pinned: boolean; onToggle: () => void } | null;
-  onClose?: () => void;
-  onClosePane: (paneId: string) => Promise<void> | void;
-  onOpenUrl: (url: string, options?: OpenUrlOptions) => Promise<void> | void;
-  onOpenFilePath: (worktreePath: string, filePath: string) => void;
-  onRestartSession: (sessionId: string) => Promise<void> | void;
-  onRenameSession: (sessionId: string, title: string) => Promise<void> | void;
-}
-
-function TerminalPaneLayer({
-  panes,
-  focusedPaneId,
-  sessions,
-  pin,
-  onClose,
-  onClosePane,
-  onOpenUrl,
-  onOpenFilePath,
-  onRestartSession,
-  onRenameSession,
-}: TerminalPaneLayerProps) {
-  const terminalPanes = panes.filter(
-    (pane) => pane.state.kind === "terminal" && pane.id === focusedPaneId,
-  );
-  return (
-    <>
-      {terminalPanes.map((pane) => {
-        if (pane.state.kind !== "terminal") return null;
-        const state = pane.state;
-        const session = sessions.find((s) => s.id === state.sessionId);
-        return (
-          <TerminalPaneLayerItem
-            key={pane.id}
-            pane={pane}
-            state={state}
-            session={session}
-            pin={pin}
-            onClose={onClose}
-            onClosePane={onClosePane}
-            onOpenUrl={onOpenUrl}
-            onOpenFilePath={onOpenFilePath}
-            onRestartSession={onRestartSession}
-            onRenameSession={onRenameSession}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-interface TerminalPaneLayerItemProps {
-  pane: PaneEntry;
-  state: Extract<PaneEntry["state"], { kind: "terminal" }>;
-  session: Session | undefined;
-  pin: { pinned: boolean; onToggle: () => void } | null;
-  onClose?: () => void;
-  onClosePane: (paneId: string) => Promise<void> | void;
-  onOpenUrl: (url: string, options?: OpenUrlOptions) => Promise<void> | void;
-  onOpenFilePath: (worktreePath: string, filePath: string) => void;
-  onRestartSession: (sessionId: string) => Promise<void> | void;
-  onRenameSession: (sessionId: string, title: string) => Promise<void> | void;
-}
-
-function TerminalPaneLayerItem({
-  pane,
-  state,
-  session,
-  pin,
-  onClose,
-  onClosePane,
-  onOpenUrl,
-  onOpenFilePath,
-  onRestartSession,
-  onRenameSession,
-}: TerminalPaneLayerItemProps) {
-  const layerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    traceTerminalEvent("terminal-layer-visibility", {
-      sessionId: state.sessionId,
-      paneId: pane.id,
-      visible: true,
-    });
-    const frame = window.requestAnimationFrame(() => {
-      const rect = layerRef.current?.getBoundingClientRect();
-      traceTerminalEvent("terminal-layer-layout", {
-        sessionId: state.sessionId,
-        paneId: pane.id,
-        visible: true,
-        width: rect?.width ?? 0,
-        height: rect?.height ?? 0,
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [pane.id, state.sessionId]);
-
-  return (
-    <div
-      ref={layerRef}
-      className="pointer-events-auto absolute inset-0 min-h-0 min-w-0"
-    >
-      <TerminalPaneView
-        paneId={pane.id}
-        state={state}
-        worktreePath={pane.worktreePath}
-        session={session}
-        pin={pin}
-        onClose={onClose}
-        onClosePane={onClosePane}
-        onOpenUrl={onOpenUrl}
-        onOpenFilePath={(filePath) =>
-          onOpenFilePath(pane.worktreePath, filePath)
-        }
-        onRestartSession={onRestartSession}
-        onRenameSession={onRenameSession}
-      />
-    </div>
-  );
-}
-
-interface PaneBodyProps {
-  activeProjectId: string;
-  activeProjectPath: string | null;
-  focusedPane: PaneEntry;
-  focusedWorktreeDirName: string | null;
-  fileChangeSeq: number;
-  gitState: GitState | null;
-  gitFileStatuses?: Record<string, string>;
-  filesSelection: string | null;
-  gitBranchName: string | null;
-  counters?: WorktreeCounters;
-  gitMenuActions?: WorktreeGitMenuActions;
-  gitGraphSelection: GitGraphSelection | null;
-  onGitGraphSelectionChange: (next: GitGraphSelection | null) => void;
-  commitBusy: boolean;
-  commitError: string | null;
-  onClearCommitError: () => void;
-  onSubmitInlineCommit: (input: {
-    message: string;
-    paths: string[];
-  }) => Promise<void> | void;
-  isMobile: boolean;
-  sessions: Session[];
-  /** Inner terminal-header pin toggle; null for non-terminal panes. */
-  terminalPin: { pinned: boolean; onToggle: () => void } | null;
-  /** Inner terminal-header × button. */
-  terminalOnClose?: () => void;
-  /** Inner browser-header × button. */
-  browserOnClose?: () => void;
-  onClosePane: (paneId: string) => Promise<void> | void;
-  onOpenUrl: (url: string, options?: OpenUrlOptions) => Promise<void> | void;
-  onBrowserUrlChange?: (paneId: string, url: string) => void;
-  onRestartSession: (sessionId: string) => Promise<void> | void;
-  onRenameSession: (sessionId: string, title: string) => Promise<void> | void;
-  onSelectWorktreeTab: (worktreePath: string, tab: WorktreeTab) => void;
-  onOpenFilePath: (worktreePath: string, filePath: string) => void;
-}
-
-function PaneBody({
-  activeProjectId,
-  activeProjectPath,
-  focusedPane,
-  focusedWorktreeDirName,
-  fileChangeSeq,
-  gitState,
-  gitFileStatuses,
-  filesSelection,
-  counters,
-  gitMenuActions,
-  gitGraphSelection,
-  onGitGraphSelectionChange,
-  commitBusy,
-  commitError,
-  onClearCommitError,
-  onSubmitInlineCommit,
-  isMobile,
-  sessions,
-  terminalPin,
-  terminalOnClose,
-  browserOnClose,
-  onClosePane,
-  onOpenUrl,
-  onBrowserUrlChange,
-  onRestartSession,
-  onRenameSession,
-  onSelectWorktreeTab,
-  onOpenFilePath,
-}: PaneBodyProps) {
-  const { state } = focusedPane;
-  switch (state.kind) {
-    case "files":
-      return (
-        <WorktreeView
-          activeTab="files"
-          worktreeName={focusedWorktreeDirName}
-          worktreePath={focusedPane.worktreePath}
-          counters={counters}
-        >
-          <FilesPaneView
-            paneId={focusedPane.id}
-            projectId={activeProjectId}
-            worktreePath={focusedPane.worktreePath}
-            fileChangeSeq={fileChangeSeq}
-            gitFileStatuses={gitFileStatuses}
-            onChangeTab={(tab) =>
-              onSelectWorktreeTab(focusedPane.worktreePath, tab)
-            }
-            selectedFilePath={filesSelection}
-            onOpenFilePath={(filePath) =>
-              onOpenFilePath(focusedPane.worktreePath, filePath)
-            }
-          />
-        </WorktreeView>
-      );
-    case "terminal": {
-      const session = sessions.find((s) => s.id === state.sessionId);
-      return (
-        <TerminalPaneView
-          paneId={focusedPane.id}
-          state={state}
-          worktreePath={focusedPane.worktreePath}
-          session={session}
-          pin={terminalPin}
-          onClose={terminalOnClose}
-          onClosePane={onClosePane}
-          onOpenUrl={onOpenUrl}
-          onOpenFilePath={(filePath) =>
-            onOpenFilePath(focusedPane.worktreePath, filePath)
-          }
-          onRestartSession={onRestartSession}
-          onRenameSession={onRenameSession}
-        />
-      );
-    }
-    case "browser":
-      return (
-        <BrowserPaneView
-          state={state}
-          paneId={focusedPane.id}
-          onClose={browserOnClose}
-          onUrlChange={
-            onBrowserUrlChange
-              ? (url) => onBrowserUrlChange(focusedPane.id, url)
-              : undefined
-          }
-        />
-      );
-    case "git":
-      return (
-        <WorktreeView
-          activeTab="git"
-          worktreeName={focusedWorktreeDirName}
-          worktreePath={focusedPane.worktreePath}
-          counters={counters}
-        >
-          <GitPaneView
-            projectId={activeProjectId}
-            worktreePath={focusedPane.worktreePath}
-            fileChangeSeq={fileChangeSeq}
-            isMobile={isMobile}
-            gitState={gitState}
-            projectPath={activeProjectPath}
-            selection={gitGraphSelection}
-            onSelectionChange={onGitGraphSelectionChange}
-            commitBusy={commitBusy}
-            commitError={commitError}
-            onClearCommitError={onClearCommitError}
-            onSubmitInlineCommit={onSubmitInlineCommit}
-            onChangeTab={(tab) =>
-              onSelectWorktreeTab(focusedPane.worktreePath, tab)
-            }
-            onOpenFilePath={(filePath) =>
-              onOpenFilePath(focusedPane.worktreePath, filePath)
-            }
-            {...(gitMenuActions && { gitActions: gitMenuActions })}
-          />
-        </WorktreeView>
-      );
-  }
 }
 
 function buildGitChildTitle(selection: GitGraphSelection): string {

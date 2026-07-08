@@ -359,6 +359,7 @@ function MonitorHeader({
 interface MonitorPagerProps {
   entries: PinnedTerminalEntry[];
   focusedIndex: number;
+  visibleRange: MonitorVisibleRange;
   onGoToIndex: (index: number) => void;
 }
 
