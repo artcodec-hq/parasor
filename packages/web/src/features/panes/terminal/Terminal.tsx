@@ -33,7 +33,6 @@ import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
-import { hasTerminalPasteCandidate } from "../../../lib/terminal-internal-clipboard.js";
 import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
 import {
   getTerminalReplayCache,
@@ -84,12 +83,7 @@ import {
   resolveSelectionOverlayLayout,
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
-import {
-  attachTerminalTapGestures,
-  attachTerminalTouchSelection,
-  attachTerminalTouchWheel,
-} from "./terminal-touch-gestures.js";
-import { getTerminalSelectionRange } from "./terminal-touch-selection.js";
+import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
@@ -802,56 +796,19 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       const screenElement =
         term.element?.querySelector(".xterm-screen") ??
         container.querySelector(".xterm-screen");
-      const cleanupTapGestures = attachTerminalTapGestures({
+      const cleanupTouchLifecycle = attachTerminalTouchLifecycle({
+        sessionId,
         term,
         container,
-        screenElement,
-      });
-      const cleanupTouchWheel = attachTerminalTouchWheel({
-        term,
-        screenElement,
-      });
-
-      const cleanupTouchSelection = attachTerminalTouchSelection({
-        term,
         screenElement,
         openUrl: openUrlFromTerminal,
         openFilePath: openFilePathFromTerminal,
         getWorktreePath: () => worktreePathRef.current,
-        onSelectionCleared: () => {
-          setHasSelection(false);
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(null);
-        },
-        onInputToolbarRequest: (anchor) => {
-          if (!hasTerminalPasteCandidate()) return;
-          if (performance.now() < inputToolbarDismissSuppressUntilRef.current) {
-            traceTerminalEvent("terminal-toolbar-request-skipped", {
-              sessionId,
-              surface: "paste",
-              reason: "recent-dismiss",
-            });
-            return;
-          }
-          setHasSelection(false);
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(anchor);
-        },
+        inputToolbarDismissSuppressUntilRef,
+        setHasSelection,
+        setSelectionOverlay,
+        setInputToolbarAnchor,
         onSelectionCommit: commitSelectionOverlay,
-      });
-
-      const selectionDisposable = term.onSelectionChange(() => {
-        const selected = term.getSelection().length > 0;
-        setHasSelection(selected);
-        if (!selected) {
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(null);
-          return;
-        }
-        const range = getTerminalSelectionRange(term);
-        if (range) {
-          setSelectionOverlay((prev) => (prev ? { ...prev, range } : prev));
-        }
       });
 
       const onRendererFontEvent = createTerminalRendererFontEventHandler({
@@ -955,9 +912,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
 
       return () => {
         cleanupViewportLifecycle();
-        cleanupTapGestures();
-        cleanupTouchWheel();
-        cleanupTouchSelection();
+        cleanupTouchLifecycle();
         stopMainThreadTrace();
         screenElement?.removeEventListener(
           "mousedown",
@@ -975,7 +930,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         clearTerminalInputDiagnosticTimers(inputDiagnosticTimersRef.current);
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
-        selectionDisposable.dispose();
         cleanupScrollState();
         bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
