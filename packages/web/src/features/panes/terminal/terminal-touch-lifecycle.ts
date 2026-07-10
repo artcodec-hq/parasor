@@ -36,7 +36,7 @@ export function attachTerminalTouchLifecycle({
   setInputToolbarAnchor: Dispatch<SetStateAction<ToolbarAnchor>>;
   openUrl: (uri: string) => void;
   openFilePath: (filePath: string) => void;
-  getWorktreePath: () => string | null;
+  getWorktreePath: () => string | undefined;
   onSelectionCommit: (input: {
     clientX: number;
     clientY: number;
