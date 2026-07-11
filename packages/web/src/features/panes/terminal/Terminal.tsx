@@ -46,8 +46,7 @@ import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
 import type { TerminalSelectionAction } from "./TerminalSelectionOverlay.js";
 import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
-import { attachTerminalClipboardImagePaste } from "./terminal-clipboard-image-paste.js";
-import { attachTerminalDomDiagnostics } from "./terminal-dom-diagnostics.js";
+import { attachTerminalDomLifecycle } from "./terminal-dom-lifecycle.js";
 import {
   isIosWebKit,
   isTouchDevice,
@@ -59,10 +58,8 @@ import {
   loadOlderTerminalHistory,
   type TerminalHistoryLoadStatusState,
 } from "./terminal-history-loader.js";
-import { clearTerminalInputDiagnosticTimers } from "./terminal-input-diagnostics.js";
 import {
   attachTerminalDataInput,
-  attachTerminalImeLifecycle,
   attachTerminalShiftEnterHandler,
 } from "./terminal-input-lifecycle.js";
 import { createTerminalInstance } from "./terminal-instance.js";
@@ -81,6 +78,7 @@ import {
   resolveSelectionOverlayLayout,
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
+import { attachTerminalTextareaAdjunctLifecycle } from "./terminal-textarea-adjunct-lifecycle.js";
 import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
@@ -844,65 +842,28 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       // transition -- blur is the most direct signal that no soft-keyboard
       // input is coming next, so we key the clear off it as well.
       const textarea = term.textarea;
-      const suppressSyntheticMouseAfterToolbarAction = (event: Event) => {
-        if (performance.now() > toolbarSyntheticMouseSuppressUntilRef.current) {
-          return;
-        }
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        traceTerminalEvent("terminal-toolbar-synthetic-mouse-suppressed", {
-          sessionId,
-          status: event.type,
-          surface:
-            event.target instanceof Element
-              ? event.target.className.toString()
-              : undefined,
-        });
-      };
-      screenElement?.addEventListener(
-        "mousedown",
-        suppressSyntheticMouseAfterToolbarAction,
-        { capture: true },
-      );
-      screenElement?.addEventListener(
-        "click",
-        suppressSyntheticMouseAfterToolbarAction,
-        { capture: true },
-      );
-      const cleanupDomDiagnostics = attachTerminalDomDiagnostics({
+      const cleanupDomLifecycle = attachTerminalDomLifecycle({
         sessionId,
         textarea,
         screenElement,
+        toolbarSyntheticMouseSuppressUntilRef,
       });
-      const cleanupImeLifecycle = attachTerminalImeLifecycle({
-        textarea,
-        imeDuplicateGateRef,
-        setCtrl,
-      });
-      const cleanupClipboardImagePaste = attachTerminalClipboardImagePaste({
-        textarea,
-        dropEnabledRef,
-        runUploadRef,
-      });
+      const cleanupTextareaAdjunctLifecycle =
+        attachTerminalTextareaAdjunctLifecycle({
+          textarea,
+          imeDuplicateGateRef,
+          inputDiagnosticTimersRef,
+          dropEnabledRef,
+          runUploadRef,
+          setCtrl,
+        });
 
       return () => {
         cleanupViewportLifecycle();
         cleanupTouchLifecycle();
         stopMainThreadTrace();
-        screenElement?.removeEventListener(
-          "mousedown",
-          suppressSyntheticMouseAfterToolbarAction,
-          { capture: true },
-        );
-        screenElement?.removeEventListener(
-          "click",
-          suppressSyntheticMouseAfterToolbarAction,
-          { capture: true },
-        );
-        cleanupDomDiagnostics();
-        cleanupImeLifecycle();
-        cleanupClipboardImagePaste();
-        clearTerminalInputDiagnosticTimers(inputDiagnosticTimersRef.current);
+        cleanupDomLifecycle();
+        cleanupTextareaAdjunctLifecycle();
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
         cleanupScrollState();
