@@ -4,10 +4,8 @@ import type {
   TerminalLastSeen,
   WsTerminalClientMessage,
 } from "@parasor/shared";
-import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Terminal as XTerm } from "@xterm/xterm";
+import type { FitAddon } from "@xterm/addon-fit";
+import type { Terminal as XTerm } from "@xterm/xterm";
 import {
   forwardRef,
   useCallback,
@@ -33,7 +31,6 @@ import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
-import { hasTerminalPasteCandidate } from "../../../lib/terminal-internal-clipboard.js";
 import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
 import {
   getTerminalReplayCache,
@@ -56,7 +53,6 @@ import {
   isTouchDevice,
   resolveTerminalWebglEnabled,
 } from "./terminal-environment.js";
-import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
 import {
   createInitialTerminalHistoryLoadState,
   INITIAL_HISTORY_LOAD_BYTES,
@@ -69,6 +65,7 @@ import {
   attachTerminalImeLifecycle,
   attachTerminalShiftEnterHandler,
 } from "./terminal-input-lifecycle.js";
+import { createTerminalInstance } from "./terminal-instance.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachWebglRendererAndFontAtlas } from "./terminal-renderer-fonts.js";
@@ -78,17 +75,13 @@ import {
   restoreScrollAnchor,
   type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
+import { attachTerminalScrollState } from "./terminal-scroll-state.js";
 import {
   getXtermScreenElement,
   resolveSelectionOverlayLayout,
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
-import {
-  attachTerminalTapGestures,
-  attachTerminalTouchSelection,
-  attachTerminalTouchWheel,
-} from "./terminal-touch-gestures.js";
-import { getTerminalSelectionRange } from "./terminal-touch-selection.js";
+import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
@@ -729,19 +722,17 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         openFilePathRef.current?.(filePath);
       };
 
-      const term = new XTerm({
-        fontFamily: initialConfig.fontFamily,
-        fontSize: initialConfig.fontSize,
-        disableStdin: isEnded,
-        theme: initialConfig.theme,
-        allowProposedApi: true,
-        cursorStyle: "block",
-        cursorBlink: !isEnded,
-        // xterm's default is 1000. Keep a generous window so a multi-screen
-        // build log stays scrollable, but avoid 50k-line buffers per pane --
-        // they balloon heap on long-running tabs with multiple terminals.
-        scrollback: 10000,
-      });
+      const { term, fitAddon, fileLinkProviderDisposable } =
+        createTerminalInstance({
+          fontFamily: initialConfig.fontFamily,
+          fontSize: initialConfig.fontSize,
+          theme: initialConfig.theme,
+          isEnded,
+          unicodeVersion: TERMINAL_UNICODE_VERSION,
+          openUrl: openUrlFromTerminal,
+          getWorktreePath: () => worktreePathRef.current,
+          openFilePath: openFilePathFromTerminal,
+        });
       const bottomRowsSnapshot = attachTerminalBottomRowsSnapshotProvider({
         sessionId,
         paneId,
@@ -750,27 +741,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         rendererTraceRef,
       });
 
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-      /*
-       * Unicode 11 wcwidth addon. The stock xterm wcwidth table predates
-       * Unicode 11's widening of many East Asian / emoji codepoints to
-       * wide (2-cell). Without this, mixed CJK/emoji lines drift a cell
-       * per occurrence and box-drawing/TUIs misalign on CJK locales.
-       */
-      term.loadAddon(new Unicode11Addon());
-      term.unicode.activeVersion = TERMINAL_UNICODE_VERSION;
-      term.loadAddon(
-        new WebLinksAddon((_event, uri) => openUrlFromTerminal(uri)),
-      );
-      const fileLinkProviderDisposable = term.registerLinkProvider(
-        createTerminalFileLinkProvider(
-          (bufferLineNumber) =>
-            term.buffer.active.getLine(bufferLineNumber - 1),
-          () => worktreePathRef.current,
-          openFilePathFromTerminal,
-        ),
-      );
       term.open(container);
       container.addEventListener("focusin", bottomRowsSnapshot.markActive);
       traceTerminalEvent("xterm-open", { sessionId });
@@ -780,59 +750,19 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         getActiveTerm: () => xtermRef.current,
         refreshVisibleRows,
       });
-      // Coalesce scroll-derived UI state into one update per frame. This
-      // drives both older-history loading near the top and the restored
-      // jump-to-bottom affordance when the user scrolls away from the tail.
-      const HISTORY_LOAD_TOP_THRESHOLD_ROWS = 2;
-      const SCROLL_DOWN_THRESHOLD_ROWS = 3;
-      let pendingScrollFrame: number | null = null;
-      const updateScrollState = () => {
-        if (pendingScrollFrame !== null) return;
-        pendingScrollFrame = requestAnimationFrame(() => {
-          pendingScrollFrame = null;
-          const buf = term.buffer.active;
-          if (replayRestoringRef.current) {
-            traceTerminalEvent("terminal-scroll-state", {
-              sessionId,
-              viewportY: buf.viewportY,
-              baseY: buf.baseY,
-              reason: "replay-restoring",
-            });
-            return;
-          }
-          setShowScrollDown(
-            buf.baseY - buf.viewportY > SCROLL_DOWN_THRESHOLD_ROWS,
-          );
+      const cleanupScrollState = attachTerminalScrollState({
+        sessionId,
+        term,
+        replayRestoringRef,
+        keyboardSettlingRef,
+        keyboardHistoryLoadSuppressUntilRef,
+        historyTopLoadArmedRef,
+        setShowScrollDown,
+        refreshSelectionOverlayLayout: () => {
           setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
-          traceTerminalEvent("terminal-scroll-state", {
-            sessionId,
-            viewportY: buf.viewportY,
-            baseY: buf.baseY,
-            deferred: keyboardSettlingRef.current,
-            reason: historyTopLoadArmedRef.current ? "armed" : "observed",
-          });
-          if (buf.viewportY > HISTORY_LOAD_TOP_THRESHOLD_ROWS) {
-            historyTopLoadArmedRef.current = true;
-          } else if (historyTopLoadArmedRef.current) {
-            if (
-              keyboardSettlingRef.current ||
-              performance.now() < keyboardHistoryLoadSuppressUntilRef.current
-            ) {
-              traceTerminalEvent("terminal-history-load-suppressed", {
-                sessionId,
-                viewportY: buf.viewportY,
-                baseY: buf.baseY,
-                reason: "keyboard-settle",
-              });
-              return;
-            }
-            historyTopLoadArmedRef.current = false;
-            void loadOlderHistory();
-          }
-        });
-      };
-      const scrollDisposable = term.onScroll(updateScrollState);
-      updateScrollState();
+        },
+        loadOlderHistory,
+      });
       attachTerminalShiftEnterHandler({
         term,
         isEnded,
@@ -841,56 +771,19 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       const screenElement =
         term.element?.querySelector(".xterm-screen") ??
         container.querySelector(".xterm-screen");
-      const cleanupTapGestures = attachTerminalTapGestures({
+      const cleanupTouchLifecycle = attachTerminalTouchLifecycle({
+        sessionId,
         term,
         container,
-        screenElement,
-      });
-      const cleanupTouchWheel = attachTerminalTouchWheel({
-        term,
-        screenElement,
-      });
-
-      const cleanupTouchSelection = attachTerminalTouchSelection({
-        term,
         screenElement,
         openUrl: openUrlFromTerminal,
         openFilePath: openFilePathFromTerminal,
         getWorktreePath: () => worktreePathRef.current,
-        onSelectionCleared: () => {
-          setHasSelection(false);
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(null);
-        },
-        onInputToolbarRequest: (anchor) => {
-          if (!hasTerminalPasteCandidate()) return;
-          if (performance.now() < inputToolbarDismissSuppressUntilRef.current) {
-            traceTerminalEvent("terminal-toolbar-request-skipped", {
-              sessionId,
-              surface: "paste",
-              reason: "recent-dismiss",
-            });
-            return;
-          }
-          setHasSelection(false);
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(anchor);
-        },
+        inputToolbarDismissSuppressUntilRef,
+        setHasSelection,
+        setSelectionOverlay,
+        setInputToolbarAnchor,
         onSelectionCommit: commitSelectionOverlay,
-      });
-
-      const selectionDisposable = term.onSelectionChange(() => {
-        const selected = term.getSelection().length > 0;
-        setHasSelection(selected);
-        if (!selected) {
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(null);
-          return;
-        }
-        const range = getTerminalSelectionRange(term);
-        if (range) {
-          setSelectionOverlay((prev) => (prev ? { ...prev, range } : prev));
-        }
       });
 
       const onRendererFontEvent = createTerminalRendererFontEventHandler({
@@ -994,9 +887,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
 
       return () => {
         cleanupViewportLifecycle();
-        cleanupTapGestures();
-        cleanupTouchWheel();
-        cleanupTouchSelection();
+        cleanupTouchLifecycle();
         stopMainThreadTrace();
         screenElement?.removeEventListener(
           "mousedown",
@@ -1014,14 +905,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         clearTerminalInputDiagnosticTimers(inputDiagnosticTimersRef.current);
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
         detachRendererFontAtlas();
-        selectionDisposable.dispose();
-        scrollDisposable.dispose();
+        cleanupScrollState();
         bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
-        if (pendingScrollFrame !== null) {
-          cancelAnimationFrame(pendingScrollFrame);
-          pendingScrollFrame = null;
-        }
         cleanupRenderObservers();
         setHasSelection(false);
         setSelectionOverlay(null);
