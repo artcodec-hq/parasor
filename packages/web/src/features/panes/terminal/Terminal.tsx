@@ -67,6 +67,7 @@ import {
   attachTerminalShiftEnterHandler,
 } from "./terminal-input-lifecycle.js";
 import { createTerminalInstance } from "./terminal-instance.js";
+import { attachTerminalMountedInstance } from "./terminal-mounted-instance-lifecycle.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
@@ -789,9 +790,14 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         enableWebgl: webglEnabled,
       });
 
-      xtermRef.current = term;
-      fitRef.current = fitAddon;
-      resetOutputPipeline(false);
+      const mountedInstance = attachTerminalMountedInstance({
+        term,
+        fitAddon,
+        xtermRef,
+        fitRef,
+        rendererTraceRef,
+        resetOutputPipeline,
+      });
       const restoreInitialCachedReplay = prepareInitialReplayRestore({
         sessionId,
         term,
@@ -862,12 +868,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         setHasSelection(false);
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
-        resetOutputPipeline(true);
+        mountedInstance.resetOutputPipelineForUnmount();
         cleanupTerminalDataInput();
-        term.dispose();
-        xtermRef.current = null;
-        fitRef.current = null;
-        rendererTraceRef.current = null;
+        mountedInstance.dispose();
       };
     }, [
       attachViewportLifecycle,
