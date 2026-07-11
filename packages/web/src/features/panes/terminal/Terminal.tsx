@@ -27,7 +27,6 @@ import {
 import { SessionErrorState } from "../../../components/overlays/SessionErrorState.js";
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
-import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
@@ -41,7 +40,6 @@ import {
   startTerminalMainThreadTrace,
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
-import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
 import type { TerminalSelectionAction } from "./TerminalSelectionOverlay.js";
 import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
@@ -68,6 +66,7 @@ import {
 } from "./terminal-input-lifecycle.js";
 import { createTerminalInstance } from "./terminal-instance.js";
 import { attachTerminalMountedInstance } from "./terminal-mounted-instance-lifecycle.js";
+import { createTerminalOpenHandlers } from "./terminal-open-handlers.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
@@ -695,27 +694,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       traceTerminalEvent("terminal-mount", { sessionId });
       const stopMainThreadTrace = startTerminalMainThreadTrace(sessionId);
 
-      // Open a terminal link / tapped-URL: a loopback dev-server URL goes
-      // through `App.openUrl`, which rewrites it to a host:port the viewer
-      // device can actually reach before opening a new tab; every other URL
-      // opens directly in a new tab. Shared by the web-links addon (mouse
-      // hover -> click) and the touch tap-to-open hit-test below.
-      const openUrlFromTerminal = (uri: string) => {
-        const openUrl = openUrlRef.current;
-        if (openUrl && shouldOpenInEmbeddedBrowser(uri)) {
-          const terminalProjectId = projectIdRef.current;
-          if (terminalProjectId) {
-            openUrl(uri, { projectId: terminalProjectId });
-          } else {
-            openUrl(uri);
-          }
-        } else {
-          openHttpUrlInNewTab(uri);
-        }
-      };
-      const openFilePathFromTerminal = (filePath: string) => {
-        openFilePathRef.current?.(filePath);
-      };
+      const openHandlers = createTerminalOpenHandlers({
+        openUrlRef,
+        openFilePathRef,
+        projectIdRef,
+        worktreePathRef,
+      });
 
       const { term, fitAddon, fileLinkProviderDisposable } =
         createTerminalInstance({
@@ -724,9 +708,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
           theme: initialConfig.theme,
           isEnded,
           unicodeVersion: TERMINAL_UNICODE_VERSION,
-          openUrl: openUrlFromTerminal,
-          getWorktreePath: () => worktreePathRef.current,
-          openFilePath: openFilePathFromTerminal,
+          openUrl: openHandlers.openUrl,
+          getWorktreePath: openHandlers.getWorktreePath,
+          openFilePath: openHandlers.openFilePath,
         });
       const bottomRowsSnapshot = attachTerminalBottomRowsSnapshotProvider({
         sessionId,
@@ -771,9 +755,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         term,
         container,
         screenElement,
-        openUrl: openUrlFromTerminal,
-        openFilePath: openFilePathFromTerminal,
-        getWorktreePath: () => worktreePathRef.current,
+        openUrl: openHandlers.openUrl,
+        openFilePath: openHandlers.openFilePath,
+        getWorktreePath: openHandlers.getWorktreePath,
         inputToolbarDismissSuppressUntilRef,
         setHasSelection,
         setSelectionOverlay,
