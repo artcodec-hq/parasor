@@ -65,8 +65,7 @@ import {
 import { createTerminalInstance } from "./terminal-instance.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
-import { attachWebglRendererAndFontAtlas } from "./terminal-renderer-fonts.js";
-import { createTerminalRendererFontEventHandler } from "./terminal-renderer-trace-events.js";
+import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
 import {
   captureScrollAnchor,
   restoreScrollAnchor,
@@ -784,16 +783,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         onSelectionCommit: commitSelectionOverlay,
       });
 
-      const onRendererFontEvent = createTerminalRendererFontEventHandler({
+      const detachRendererLifecycle = attachTerminalRendererLifecycle({
         sessionId,
         term,
         rendererTraceRef,
         getFallbackFontFamily: () => terminalConfigRef.current.fontFamily,
-      });
-      const detachRendererFontAtlas = attachWebglRendererAndFontAtlas(term, {
         isIos,
         enableWebgl: webglEnabled,
-        onEvent: onRendererFontEvent,
       });
 
       xtermRef.current = term;
@@ -865,7 +861,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         cleanupDomLifecycle();
         cleanupTextareaAdjunctLifecycle();
         container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
-        detachRendererFontAtlas();
+        detachRendererLifecycle();
         cleanupScrollState();
         bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
