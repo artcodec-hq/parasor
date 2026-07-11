@@ -82,6 +82,7 @@ import {
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
 import { attachTerminalTextareaAdjunctLifecycle } from "./terminal-textarea-adjunct-lifecycle.js";
+import { attachTerminalToolbarDismissLifecycle } from "./terminal-toolbar-dismiss-lifecycle.js";
 import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
@@ -100,7 +101,6 @@ const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
 // coverage is symmetric whether or not the resize changed dimensions.
 const HISTORY_LOAD_SUPPRESS_MS = 750;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
-const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_UNICODE_VERSION = "11";
 
 function createInitialRendererTrace(input: {
@@ -462,49 +462,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     const [showScrollDown, setShowScrollDown] = useState(false);
 
     useEffect(() => {
-      const closeInputToolbarFromOutside = (event: Event) => {
-        if (!inputToolbarAnchorRef.current) return;
-        const target = event.target;
-        if (!(target instanceof Node)) return;
-        const toolbar = document.querySelector(
-          '[role="toolbar"][aria-label="Terminal selection actions"]',
-        );
-        if (toolbar?.contains(target)) return;
-        inputToolbarDismissSuppressUntilRef.current =
-          performance.now() + INPUT_TOOLBAR_DISMISS_SUPPRESS_MS;
-        setInputToolbarAnchor(null);
-        traceTerminalEvent("terminal-toolbar-dismiss", {
-          sessionId,
-          surface: "paste",
-          status: event.type,
-        });
-      };
-      document.addEventListener("pointerdown", closeInputToolbarFromOutside, {
-        capture: true,
+      return attachTerminalToolbarDismissLifecycle({
+        sessionId,
+        inputToolbarAnchorRef,
+        inputToolbarDismissSuppressUntilRef,
+        setInputToolbarAnchor,
       });
-      document.addEventListener("touchstart", closeInputToolbarFromOutside, {
-        capture: true,
-      });
-      document.addEventListener("mousedown", closeInputToolbarFromOutside, {
-        capture: true,
-      });
-      return () => {
-        document.removeEventListener(
-          "pointerdown",
-          closeInputToolbarFromOutside,
-          { capture: true },
-        );
-        document.removeEventListener(
-          "touchstart",
-          closeInputToolbarFromOutside,
-          { capture: true },
-        );
-        document.removeEventListener(
-          "mousedown",
-          closeInputToolbarFromOutside,
-          { capture: true },
-        );
-      };
     }, [sessionId]);
 
     // Only accept drops once the PTY is attached. Before init-ack, send()
