@@ -30,7 +30,6 @@ import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
-import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
 import {
   getTerminalReplayCache,
   setTerminalReplayCache,
@@ -43,6 +42,7 @@ import {
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
 import type { TerminalSelectionAction } from "./TerminalSelectionOverlay.js";
 import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
+import { attachTerminalActiveRegistrationLifecycle } from "./terminal-active-registration-lifecycle.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
 import { attachTerminalDomLifecycle } from "./terminal-dom-lifecycle.js";
 import {
@@ -522,20 +522,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       if (isEnded) return;
       const container = containerRef.current;
       if (!container) return;
-      let unregister: (() => void) | null = null;
-      const register = () => {
-        unregister?.();
-        unregister = registerActiveTerminal((data) =>
-          send({ type: "input", data }),
-        );
-      };
-      const onFocusIn = () => register();
-      container.addEventListener("focusin", onFocusIn);
-      if (container.contains(document.activeElement)) register();
-      return () => {
-        container.removeEventListener("focusin", onFocusIn);
-        unregister?.();
-      };
+      return attachTerminalActiveRegistrationLifecycle({
+        container,
+        sendInput: (data) => send({ type: "input", data }),
+      });
     }, [send, isEnded]);
 
     const handleToolbarActionEvent = useCallback(
