@@ -59,6 +59,10 @@ import {
   type TerminalHistoryLoadStatusState,
 } from "./terminal-history-loader.js";
 import {
+  prepareInitialReplayRestore,
+  replayCacheMatchesDimensions,
+} from "./terminal-initial-replay.js";
+import {
   attachTerminalDataInput,
   attachTerminalShiftEnterHandler,
 } from "./terminal-input-lifecycle.js";
@@ -98,13 +102,6 @@ const HISTORY_LOAD_SUPPRESS_MS = 750;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const INPUT_TOOLBAR_DISMISS_SUPPRESS_MS = 800;
 const TERMINAL_UNICODE_VERSION = "11";
-
-function replayCacheMatchesDimensions(
-  entry: TerminalReplayCacheEntry | null,
-  dims: { cols: number; rows: number },
-): entry is TerminalReplayCacheEntry {
-  return entry?.cols === dims.cols && entry.rows === dims.rows;
-}
 
 function createInitialRendererTrace(input: {
   requestedWebgl: boolean;
@@ -795,16 +792,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       xtermRef.current = term;
       fitRef.current = fitAddon;
       resetOutputPipeline(false);
-      const cachedReplay =
-        cachedReplayRef.current?.entry ?? getTerminalReplayCache(sessionId);
-      if (cachedReplay) {
-        cachedReplayRef.current = { sessionId, entry: cachedReplay };
-      }
-      const restoreInitialCachedReplay = () => {
-        if (replayCacheMatchesDimensions(cachedReplay, term)) {
-          restoreCachedReplay(term, cachedReplay.data);
-        }
-      };
+      const restoreInitialCachedReplay = prepareInitialReplayRestore({
+        sessionId,
+        term,
+        cachedReplayRef,
+        restoreCachedReplay,
+      });
 
       // Register onData outside commitInit so pre-init keystrokes are not
       // dropped while we wait for the container to report real dims (WebView,
