@@ -31,11 +31,6 @@ import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
 import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
 import {
-  getTerminalReplayCache,
-  setTerminalReplayCache,
-  type TerminalReplayCacheEntry,
-} from "../../../lib/terminal-replay-cache.js";
-import {
   startTerminalMainThreadTrace,
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
@@ -50,16 +45,8 @@ import {
   isTouchDevice,
   resolveTerminalWebglEnabled,
 } from "./terminal-environment.js";
-import {
-  createInitialTerminalHistoryLoadState,
-  INITIAL_HISTORY_LOAD_BYTES,
-  loadOlderTerminalHistory,
-  type TerminalHistoryLoadStatusState,
-} from "./terminal-history-loader.js";
-import {
-  prepareInitialReplayRestore,
-  replayCacheMatchesDimensions,
-} from "./terminal-initial-replay.js";
+import { useTerminalHistoryLoadLifecycle } from "./terminal-history-load-lifecycle.js";
+import { prepareInitialReplayRestore } from "./terminal-initial-replay.js";
 import {
   attachTerminalDataInput,
   attachTerminalShiftEnterHandler,
@@ -70,11 +57,6 @@ import { createTerminalOpenHandlers } from "./terminal-open-handlers.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
-import {
-  captureScrollAnchor,
-  restoreScrollAnchor,
-  type ScrollAnchor,
-} from "./terminal-scroll-anchor.js";
 import { attachTerminalScrollState } from "./terminal-scroll-state.js";
 import {
   getXtermScreenElement,
@@ -94,12 +76,6 @@ import "@xterm/xterm/css/xterm.css";
 const FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS = 2500;
 const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
 
-// After a viewport change shifts the buffer (keyboard open/close settling, or
-// any applied resize) the viewport can momentarily land near the top, which
-// would otherwise trip the scroll-to-top "load older history" path. Suppress
-// that load for one window -- a single duration for every trigger so the
-// coverage is symmetric whether or not the resize changed dimensions.
-const HISTORY_LOAD_SUPPRESS_MS = 750;
 const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const TERMINAL_UNICODE_VERSION = "11";
 
@@ -190,96 +166,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     const openFilePathRef = useRef(onOpenFilePath);
     const projectIdRef = useRef(projectId);
     const worktreePathRef = useRef(worktreePath);
-    const [isReplayRestoring, setIsReplayRestoring] = useState(false);
-    const replayRestoringRef = useRef(false);
-    const pendingFullReplayViewportRef = useRef<ScrollAnchor | null>(null);
-    const [historyLoadStatus, setHistoryLoadStatus] =
-      useState<TerminalHistoryLoadStatusState>({
-        sessionId,
-        status: "hidden",
-      });
-    const visibleHistoryLoadStatus =
-      historyLoadStatus.sessionId === sessionId
-        ? historyLoadStatus.status
-        : "hidden";
-    const cachedReplayRef = useRef<{
-      sessionId: string;
-      entry: TerminalReplayCacheEntry | null;
-    } | null>(null);
-    const historyLoadRef = useRef(createInitialTerminalHistoryLoadState());
-    const historyTopLoadArmedRef = useRef(false);
-    const encoderRef = useRef<TextEncoder | null>(null);
     const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
-    if (!encoderRef.current) encoderRef.current = new TextEncoder();
-    if (cachedReplayRef.current?.sessionId !== sessionId) {
-      cachedReplayRef.current = {
-        sessionId,
-        entry: getTerminalReplayCache(sessionId),
-      };
-      historyLoadRef.current = createInitialTerminalHistoryLoadState();
-      historyTopLoadArmedRef.current = false;
-    }
-    const pendingFullReplayCursorRef = useRef<TerminalLastSeen | null>(null);
-    const handleReplayWriteComplete = useCallback(
-      (data: string, term: XTerm) => {
-        setIsReplayRestoring(false);
-        replayRestoringRef.current = false;
-        const lastSeen = pendingFullReplayCursorRef.current;
-        pendingFullReplayCursorRef.current = null;
-        const anchor = pendingFullReplayViewportRef.current;
-        pendingFullReplayViewportRef.current = null;
-        if (!anchor) {
-          term.scrollToBottom();
-          traceTerminalEvent("xterm-replay-scroll-restore", {
-            sessionId,
-            viewportY: term.buffer.active.viewportY,
-            baseY: term.buffer.active.baseY,
-            reason: "was-at-bottom",
-          });
-        } else {
-          const restore = restoreScrollAnchor(term, anchor);
-          traceTerminalEvent("xterm-replay-scroll-restore", {
-            sessionId,
-            viewportY: term.buffer.active.viewportY,
-            baseY: term.buffer.active.baseY,
-            previousViewportY: anchor.viewportY,
-            previousBaseY: anchor.baseY,
-            targetViewportY: restore.targetViewportY,
-            reason: restore.reason,
-          });
-        }
-        const byteLength =
-          encoderRef.current?.encode(data).byteLength ?? data.length;
-        historyLoadRef.current = {
-          loading: false,
-          maxBytes: Math.max(INITIAL_HISTORY_LOAD_BYTES, byteLength),
-          exhausted: false,
-          lastRequestedAt: 0,
-        };
-        setHistoryLoadStatus({
-          sessionId,
-          status: byteLength >= INITIAL_HISTORY_LOAD_BYTES ? "ready" : "hidden",
-        });
-        historyTopLoadArmedRef.current = false;
-        if (!lastSeen) return;
-        setTerminalReplayCache(sessionId, {
-          data,
-          lastSeen,
-          cols: term.cols,
-          rows: term.rows,
-        });
-        cachedReplayRef.current = {
-          sessionId,
-          entry: getTerminalReplayCache(sessionId),
-        };
-        traceTerminalEvent("xterm-replay-cache-store", {
-          sessionId,
-          dataLength: data.length,
-          generation: lastSeen.generation,
-        });
-      },
-      [sessionId],
-    );
 
     // An ended session that is safe to resume stays wired to the WS -- the
     // server will silently re-spawn on init and the pane keeps rendering
@@ -305,6 +192,27 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       worktreePathRef.current = worktreePath;
     }, [worktreePath]);
 
+    const { height: kbHeight, settling: keyboardSettling } =
+      useVirtualKeyboard();
+    const {
+      cachedReplayRef,
+      replayRestoringRef,
+      keyboardSettlingRef,
+      keyboardHistoryLoadSuppressUntilRef,
+      historyTopLoadArmedRef,
+      visibleHistoryLoadStatus,
+      isReplayRestoring,
+      loadOlderHistory: loadOlderHistoryWithRestore,
+      startFullReplay,
+      handleReplayWriteComplete,
+      resolveInitialLastSeen,
+      suppressHistoryLoadAfterResize,
+    } = useTerminalHistoryLoadLifecycle({
+      sessionId,
+      xtermRef,
+      keyboardSettling,
+    });
+
     const {
       firstDataTimerRef,
       hasReceivedDataRef,
@@ -323,35 +231,14 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     });
 
     const handleFullReplay = useCallback(
-      (lastSeen: TerminalLastSeen | null) => {
-        setIsReplayRestoring(true);
-        replayRestoringRef.current = true;
-        const term = xtermRef.current;
-        pendingFullReplayViewportRef.current = term
-          ? captureScrollAnchor(term)
-          : null;
-        historyTopLoadArmedRef.current = false;
-        pendingFullReplayCursorRef.current = lastSeen;
-        onFullReplay();
-      },
-      [onFullReplay],
+      (lastSeen: TerminalLastSeen | null) =>
+        startFullReplay(lastSeen, onFullReplay),
+      [onFullReplay, startFullReplay],
     );
 
     const loadOlderHistory = useCallback(async () => {
-      const term = xtermRef.current;
-      const encoder = encoderRef.current;
-      if (!term || !encoder) return;
-      await loadOlderTerminalHistory({
-        sessionId,
-        term,
-        encoder,
-        replayRestoring: replayRestoringRef.current,
-        historyState: historyLoadRef.current,
-        cachedReplayRef,
-        setHistoryLoadStatus,
-        restoreExpandedReplay,
-      });
-    }, [restoreExpandedReplay, sessionId]);
+      await loadOlderHistoryWithRestore(restoreExpandedReplay);
+    }, [loadOlderHistoryWithRestore, restoreExpandedReplay]);
 
     const {
       send,
@@ -360,12 +247,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       endedReason: socketEndedReason,
     } = useTerminalSocket({
       sessionId: showError ? null : sessionId,
-      resolveInitialLastSeen: (dims) => {
-        const entry = cachedReplayRef.current?.entry ?? null;
-        return replayCacheMatchesDimensions(entry, dims)
-          ? entry.lastSeen
-          : null;
-      },
+      resolveInitialLastSeen,
       onData,
       onFullReplay: handleFullReplay,
     });
@@ -390,40 +272,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       [send],
     );
 
-    const { height: kbHeight, settling: keyboardSettling } =
-      useVirtualKeyboard();
-    const keyboardSettlingRef = useRef(keyboardSettling);
-    keyboardSettlingRef.current = keyboardSettling;
-    const keyboardHistoryLoadSuppressUntilRef = useRef(0);
-    const armHistoryLoadSuppression = useCallback(
-      (reason: string) => {
-        keyboardHistoryLoadSuppressUntilRef.current =
-          performance.now() + HISTORY_LOAD_SUPPRESS_MS;
-        traceTerminalEvent("terminal-history-load-suppress-window", {
-          sessionId,
-          reason,
-          timeoutMs: HISTORY_LOAD_SUPPRESS_MS,
-        });
-      },
-      [sessionId],
-    );
-    // Arm the window when the keyboard finishes settling (the deferred resize
-    // flushes right after and shifts the viewport) rather than when settling
-    // starts: during settling, `keyboardSettlingRef` already gates the load,
-    // and anchoring to the settle edge gives the same coverage whether or not
-    // the flush changes dimensions.
-    const wasKeyboardSettlingRef = useRef(keyboardSettling);
-    useEffect(() => {
-      const wasSettling = wasKeyboardSettlingRef.current;
-      wasKeyboardSettlingRef.current = keyboardSettling;
-      if (wasSettling && !keyboardSettling) {
-        armHistoryLoadSuppression("keyboard-settled");
-      }
-    }, [keyboardSettling, armHistoryLoadSuppression]);
-    const suppressHistoryLoadAfterResize = useCallback(
-      () => armHistoryLoadSuppression("resize-applied"),
-      [armHistoryLoadSuppression],
-    );
     const [isTouch] = useState<boolean>(() => isTouchDevice());
     const [isIos] = useState<boolean>(() =>
       isIosWebKit(navigator.userAgent, navigator.maxTouchPoints),
@@ -811,13 +659,18 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       };
     }, [
       attachViewportLifecycle,
+      cachedReplayRef,
       claimViewport,
       dropEnabledRef,
+      historyTopLoadArmedRef,
+      keyboardHistoryLoadSuppressUntilRef,
+      keyboardSettlingRef,
       isIos,
       isTouch,
       isEnded,
       loadOlderHistory,
       resetOutputPipeline,
+      replayRestoringRef,
       restoreCachedReplay,
       refreshVisibleRows,
       commitSelectionOverlay,
