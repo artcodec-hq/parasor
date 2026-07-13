@@ -20,10 +20,7 @@ import {
   HistoryLoadingIcon,
 } from "../../../components/icons/index.js";
 import { MobileKeyBar } from "../../../components/mobile/MobileKeyBar.js";
-import {
-  DEFAULT_RECONNECTING_OVERLAY_DELAY_MS,
-  ReconnectingOverlay,
-} from "../../../components/overlays/ReconnectingOverlay.js";
+import { ReconnectingOverlay } from "../../../components/overlays/ReconnectingOverlay.js";
 import { SessionErrorState } from "../../../components/overlays/SessionErrorState.js";
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
@@ -53,6 +50,7 @@ import { createTerminalInstance } from "./terminal-instance.js";
 import { attachTerminalMountedInstance } from "./terminal-mounted-instance-lifecycle.js";
 import { createTerminalOpenHandlers } from "./terminal-open-handlers.js";
 import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
+import { resolveTerminalReconnectingOverlayDelay } from "./terminal-reconnecting-overlay.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
 import { attachTerminalScrollState } from "./terminal-scroll-state.js";
@@ -77,9 +75,6 @@ import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js
 import { useTerminalToolbarInteractions } from "./use-terminal-toolbar-interactions.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
-
-const FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS = 2500;
-const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
 
 const TERMINAL_UNICODE_VERSION = "11";
 
@@ -619,12 +614,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       applyTerminalConfig();
     }, [applyTerminalConfig]);
 
-    const reconnectingOverlayDelayMs =
-      isTouch &&
-      lastForegroundAtMs > 0 &&
-      Date.now() - lastForegroundAtMs <= FOREGROUND_RECONNECTING_GRACE_MS
-        ? FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS
-        : DEFAULT_RECONNECTING_OVERLAY_DELAY_MS;
+    const reconnectingOverlayDelayMs = resolveTerminalReconnectingOverlayDelay({
+      isTouch,
+      lastForegroundAtMs,
+    });
 
     const selectionOverlayLayout = (() => {
       const term = xtermRef.current;
