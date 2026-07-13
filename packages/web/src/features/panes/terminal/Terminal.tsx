@@ -35,7 +35,6 @@ import {
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
 import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
-import type { TerminalSelectionAction } from "./TerminalSelectionOverlay.js";
 import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
 import { attachTerminalActiveRegistrationLifecycle } from "./terminal-active-registration-lifecycle.js";
 import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
@@ -64,20 +63,19 @@ import {
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
 import { attachTerminalTextareaAdjunctLifecycle } from "./terminal-textarea-adjunct-lifecycle.js";
-import { attachTerminalToolbarDismissLifecycle } from "./terminal-toolbar-dismiss-lifecycle.js";
 import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
 import { useTerminalKeyboardControls } from "./use-terminal-keyboard-controls.js";
 import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
+import { useTerminalToolbarInteractions } from "./use-terminal-toolbar-interactions.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
 
 const FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS = 2500;
 const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
 
-const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
 const TERMINAL_UNICODE_VERSION = "11";
 
 function createInitialRendererTrace(input: {
@@ -306,18 +304,16 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       getScreenElement: getSelectionScreenElement,
       setInputToolbarAnchor,
     });
-    const inputToolbarDismissSuppressUntilRef = useRef(0);
-    const toolbarSyntheticMouseSuppressUntilRef = useRef(0);
     const [showScrollDown, setShowScrollDown] = useState(false);
-
-    useEffect(() => {
-      return attachTerminalToolbarDismissLifecycle({
-        sessionId,
-        inputToolbarAnchorRef,
-        inputToolbarDismissSuppressUntilRef,
-        setInputToolbarAnchor,
-      });
-    }, [sessionId]);
+    const {
+      inputToolbarDismissSuppressUntilRef,
+      toolbarSyntheticMouseSuppressUntilRef,
+      handleToolbarActionEvent,
+    } = useTerminalToolbarInteractions({
+      sessionId,
+      inputToolbarAnchorRef,
+      setInputToolbarAnchor,
+    });
 
     // Only accept drops once the PTY is attached. Before init-ack, send()
     // would queue silently, which makes the drop look accepted but nothing
@@ -376,26 +372,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         sendInput: (data) => send({ type: "input", data }),
       });
     }, [send, isEnded]);
-
-    const handleToolbarActionEvent = useCallback(
-      (input: {
-        action: TerminalSelectionAction;
-        eventType: string;
-        deduped: boolean;
-      }) => {
-        if (!input.deduped) {
-          toolbarSyntheticMouseSuppressUntilRef.current =
-            performance.now() + TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS;
-        }
-        traceTerminalEvent("terminal-toolbar-action", {
-          sessionId,
-          surface: input.action,
-          status: input.eventType,
-          skipped: input.deduped,
-        });
-      },
-      [sessionId],
-    );
 
     const imeDuplicateGateRef = useRef({
       composing: false,
@@ -632,6 +608,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       ctrlStickyRef,
       dropEnabledRef,
       historyTopLoadArmedRef,
+      inputToolbarDismissSuppressUntilRef,
       keyboardHistoryLoadSuppressUntilRef,
       keyboardSettlingRef,
       isIos,
@@ -650,6 +627,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       setHasSelection,
       setSelectionOverlay,
       runUploadRef,
+      toolbarSyntheticMouseSuppressUntilRef,
       webglEnabled,
     ]);
 
