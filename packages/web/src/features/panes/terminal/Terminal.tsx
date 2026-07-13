@@ -69,6 +69,7 @@ import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
+import { useTerminalKeyboardControls } from "./use-terminal-keyboard-controls.js";
 import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
@@ -396,12 +397,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       [sessionId],
     );
 
-    // One-shot Ctrl modifier owned here so it can gate BOTH the key bar
-    // path and the soft-keyboard path (xterm.onData). Ref mirrors state so
-    // the capture inside term.onData (registered once on mount) always sees
-    // the latest flag without re-binding.
-    const [ctrlActive, setCtrlActive] = useState(false);
-    const ctrlStickyRef = useRef(false);
     const imeDuplicateGateRef = useRef({
       composing: false,
       serial: 0,
@@ -411,41 +406,14 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       lastSentAt: 0,
       lastSentSerial: -1,
     });
-    const setCtrl = useCallback((v: boolean) => {
-      ctrlStickyRef.current = v;
-      setCtrlActive(v);
-    }, []);
-    const toggleCtrl = useCallback(
-      () => setCtrl(!ctrlStickyRef.current),
-      [setCtrl],
-    );
-
-    // Auto-clear a dangling Ctrl sticky on the open->close transition of the
-    // on-screen keyboard. Without this, a user who pre-armed Ctrl and then
-    // dismissed the keyboard would hit the next typing session already in
-    // Ctrl mode and silently send a control code on their first keystroke.
-    const keyboardOpen = kbHeight > 0;
-    useEffect(() => {
-      if (!keyboardOpen && ctrlStickyRef.current) setCtrl(false);
-    }, [keyboardOpen, setCtrl]);
-
-    const handleKeyboardToggle = useCallback(() => {
-      const term = xtermRef.current;
-      if (!term) return;
-      // Prefer the textarea's own focus state over visualViewport: iOS
-      // Safari inside PWAs / iframes sometimes skips the resize event, which
-      // leaves `keyboardOpen` falsely at `false` and sends the toggle down
-      // the focus branch (so tapping ⌨ while the keyboard is up does
-      // nothing). `document.activeElement` is synchronously correct and
-      // survives those viewport quirks.
-      const textarea = term.textarea;
-      const isFocused = !!textarea && document.activeElement === textarea;
-      if (isFocused || keyboardOpen) {
-        textarea?.blur();
-      } else {
-        term.focus();
-      }
-    }, [keyboardOpen]);
+    const {
+      ctrlActive,
+      ctrlStickyRef,
+      keyboardOpen,
+      setCtrl,
+      toggleCtrl,
+      handleKeyboardToggle,
+    } = useTerminalKeyboardControls({ kbHeight, xtermRef });
 
     const terminalConfigRef = useRef({
       fontFamily: resolvedFontStack,
@@ -661,6 +629,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       attachViewportLifecycle,
       cachedReplayRef,
       claimViewport,
+      ctrlStickyRef,
       dropEnabledRef,
       historyTopLoadArmedRef,
       keyboardHistoryLoadSuppressUntilRef,
