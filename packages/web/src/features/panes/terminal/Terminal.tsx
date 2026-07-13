@@ -28,7 +28,6 @@ import { SessionErrorState } from "../../../components/overlays/SessionErrorStat
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
-import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
 import {
   startTerminalMainThreadTrace,
@@ -62,6 +61,10 @@ import {
   resolveSelectionOverlayLayout,
   toolbarPositionFromAnchor,
 } from "./terminal-selection-layout.js";
+import {
+  resolveTerminalSessionStatus,
+  shouldShowTerminalSessionError,
+} from "./terminal-session-status.js";
 import { attachTerminalTextareaAdjunctLifecycle } from "./terminal-textarea-adjunct-lifecycle.js";
 import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
@@ -172,13 +175,11 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       });
     const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
 
-    // An ended session that is safe to resume stays wired to the WS -- the
-    // server will silently re-spawn on init and the pane keeps rendering
-    // as a live terminal. An ended session that is NOT safe to resume
-    // drops out to the error pane and never opens a WS.
-    const showError =
-      sessionState === "ended" &&
-      !isAutoResumable(sessionCommand, sessionEndReason);
+    const showError = shouldShowTerminalSessionError({
+      sessionState,
+      sessionCommand,
+      sessionEndReason,
+    });
 
     const { height: kbHeight, settling: keyboardSettling } =
       useVirtualKeyboard();
@@ -241,15 +242,10 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     });
     sendRef.current = send;
 
-    // A WS that the server closed with 1008 (Session not found /
-    // unavailable / init expected) parks as `socketStatus === "ended"`.
-    // Treating that as a terminal state here -- alongside the AppStore
-    // sessionState path -- disables xterm input and flips the pane to
-    // SessionErrorState immediately, without waiting for the session
-    // event stream to also arrive. Without this, silent keystroke loss
-    // happens whenever the event-store update is delayed or missing.
-    const socketEnded = socketStatus === "ended";
-    const isEnded = showError || socketEnded;
+    const { socketEnded, isEnded } = resolveTerminalSessionStatus({
+      showError,
+      socketStatus,
+    });
 
     useImperativeHandle(
       ref,
