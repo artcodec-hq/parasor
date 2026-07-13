@@ -67,6 +67,7 @@ import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
 import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
+import { useTerminalConfigRef } from "./use-terminal-config-ref.js";
 import { useTerminalKeyboardControls } from "./use-terminal-keyboard-controls.js";
 import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
 import { useTerminalToolbarInteractions } from "./use-terminal-toolbar-interactions.js";
@@ -391,20 +392,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       handleKeyboardToggle,
     } = useTerminalKeyboardControls({ kbHeight, xtermRef });
 
-    const terminalConfigRef = useRef({
-      fontFamily: resolvedFontStack,
-      fontSize: contentFontSize,
-      theme: activeTheme.terminal,
-    });
-    terminalConfigRef.current = {
-      fontFamily: resolvedFontStack,
-      fontSize: contentFontSize,
-      theme: activeTheme.terminal,
-    };
-    if (rendererTraceRef.current) {
-      rendererTraceRef.current.fontFamily = resolvedFontStack;
-      rendererTraceRef.current.fontSize = contentFontSize;
-    }
+    const { terminalConfigRef, getTerminalConfig, getFallbackFontFamily } =
+      useTerminalConfigRef({
+        fontFamily: resolvedFontStack,
+        fontSize: contentFontSize,
+        theme: activeTheme.terminal,
+        rendererTraceRef,
+      });
     const { attachViewportLifecycle, applyTerminalConfig, claimViewport } =
       useTerminalViewportLifecycle({
         sessionId,
@@ -428,7 +422,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       void sessionId;
       const container = containerRef.current;
       if (!container) return;
-      const initialConfig = terminalConfigRef.current;
+      const initialConfig = getTerminalConfig();
       rendererTraceRef.current = createInitialRendererTrace({
         requestedWebgl: webglEnabled,
         isTouch,
@@ -514,7 +508,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         sessionId,
         term,
         rendererTraceRef,
-        getFallbackFontFamily: () => terminalConfigRef.current.fontFamily,
+        getFallbackFontFamily,
         isIos,
         enableWebgl: webglEnabled,
       });
@@ -614,6 +608,8 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       isIos,
       isTouch,
       isEnded,
+      getFallbackFontFamily,
+      getTerminalConfig,
       loadOlderHistory,
       resetOutputPipeline,
       replayRestoringRef,
