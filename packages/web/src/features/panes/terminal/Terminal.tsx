@@ -69,6 +69,7 @@ import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
 import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
 import { useTerminalConfigRef } from "./use-terminal-config-ref.js";
 import { useTerminalKeyboardControls } from "./use-terminal-keyboard-controls.js";
+import { useTerminalOpenHandlerRefs } from "./use-terminal-open-handler-refs.js";
 import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
 import { useTerminalToolbarInteractions } from "./use-terminal-toolbar-interactions.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
@@ -162,10 +163,13 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const { contentFontSize, activeTheme, resolvedFontStack } = useSettings();
     const rendererTraceRef = useRef<TerminalRendererTrace | null>(null);
-    const openUrlRef = useRef(onOpenUrl);
-    const openFilePathRef = useRef(onOpenFilePath);
-    const projectIdRef = useRef(projectId);
-    const worktreePathRef = useRef(worktreePath);
+    const { openUrlRef, openFilePathRef, projectIdRef, worktreePathRef } =
+      useTerminalOpenHandlerRefs({
+        onOpenUrl,
+        onOpenFilePath,
+        projectId,
+        worktreePath,
+      });
     const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
 
     // An ended session that is safe to resume stays wired to the WS -- the
@@ -175,22 +179,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     const showError =
       sessionState === "ended" &&
       !isAutoResumable(sessionCommand, sessionEndReason);
-
-    useEffect(() => {
-      openUrlRef.current = onOpenUrl;
-    }, [onOpenUrl]);
-
-    useEffect(() => {
-      openFilePathRef.current = onOpenFilePath;
-    }, [onOpenFilePath]);
-
-    useEffect(() => {
-      projectIdRef.current = projectId;
-    }, [projectId]);
-
-    useEffect(() => {
-      worktreePathRef.current = worktreePath;
-    }, [worktreePath]);
 
     const { height: kbHeight, settling: keyboardSettling } =
       useVirtualKeyboard();
@@ -611,6 +599,9 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       getFallbackFontFamily,
       getTerminalConfig,
       loadOlderHistory,
+      openFilePathRef,
+      openUrlRef,
+      projectIdRef,
       resetOutputPipeline,
       replayRestoringRef,
       restoreCachedReplay,
@@ -625,6 +616,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       runUploadRef,
       toolbarSyntheticMouseSuppressUntilRef,
       webglEnabled,
+      worktreePathRef,
     ]);
 
     useEffect(() => {
