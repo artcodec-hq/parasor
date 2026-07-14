@@ -13,9 +13,7 @@ import { useTerminalHistoryLoadLifecycle } from "./terminal-history-load-lifecyc
 function makeLastSeen(generation = 1): TerminalLastSeen {
   return {
     generation,
-    seq: 10,
-    cols: 80,
-    rows: 24,
+    seq: "10",
   };
 }
 
