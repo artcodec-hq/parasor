@@ -1,5 +1,6 @@
 import type {
   AgentStatusContext,
+  PaneKind,
   WorktreeLineageMetadata,
 } from "@parasor/shared";
 import type { AgentDotState } from "../../primitives/index.js";
@@ -10,7 +11,7 @@ import type { AgentDotState } from "../../primitives/index.js";
  * no knowledge of wire formats.
  */
 
-export type SidebarChildKind = "terminal" | "browser";
+export type SidebarChildKind = Exclude<PaneKind, "files" | "git">;
 
 export interface SidebarChild {
   id: string;

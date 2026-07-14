@@ -1,5 +1,6 @@
-import type { GitState, PaneEntry } from "@parasor/shared";
+import type { GitState } from "@parasor/shared";
 import type { GitGraphSelection } from "../panes/git-graph/GitGraphPane.js";
+import type { WorkspaceBodyPane } from "../panes/pane-module-registry.js";
 import { BrowserPaneView } from "./views/BrowserPaneView.js";
 import { FilesPaneView } from "./views/FilesPaneView.js";
 import { GitPaneView } from "./views/GitPaneView.js";
@@ -10,14 +11,10 @@ import {
   WorktreeView,
 } from "./views/WorktreeView.js";
 
-export type WorkspacePaneBodyPane = PaneEntry & {
-  state: Exclude<PaneEntry["state"], { kind: "terminal" }>;
-};
-
 interface WorkspacePaneBodyProps {
   activeProjectId: string;
   activeProjectPath: string | null;
-  focusedPane: WorkspacePaneBodyPane;
+  focusedPane: WorkspaceBodyPane;
   focusedWorktreeDirName: string | null;
   fileChangeSeq: number;
   gitState: GitState | null;
@@ -134,5 +131,11 @@ export function WorkspacePaneBody({
           />
         </WorktreeView>
       );
+    default:
+      return assertNeverPaneState(state);
   }
+}
+
+function assertNeverPaneState(state: never): never {
+  throw new Error(`Unsupported workspace pane state: ${JSON.stringify(state)}`);
 }
