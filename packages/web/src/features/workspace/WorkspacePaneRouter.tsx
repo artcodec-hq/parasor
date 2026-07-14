@@ -11,6 +11,10 @@ import type { IdeEditor } from "../../lib/git-api.js";
 import type { OpenUrlOptions } from "../../lib/open-url-options.js";
 import { displayTitleForTerminal } from "../../lib/session-title.js";
 import type { GitGraphSelection } from "../panes/git-graph/GitGraphPane.js";
+import {
+  getPaneModule,
+  isWorkspaceBodyPane,
+} from "../panes/pane-module-registry.js";
 import { TerminalPaneLayer } from "./TerminalPaneLayer.js";
 import { useWorktreeMoreMenuItems } from "./useWorktreeMoreMenuItems.js";
 import {
@@ -34,10 +38,7 @@ import {
   WorkspaceFileDisplay,
   type WorkspaceFileDisplayTarget,
 } from "./WorkspaceFileDisplay.js";
-import {
-  WorkspacePaneBody,
-  type WorkspacePaneBodyPane,
-} from "./WorkspacePaneBody.js";
+import { WorkspacePaneBody } from "./WorkspacePaneBody.js";
 
 function worktreeFilesPaneId(worktreePath: string): string {
   return `files:${worktreePath}`;
@@ -203,11 +204,8 @@ export function WorkspacePaneRouter({
           onSelectWorktreeTab(worktreePane.worktreePath, next)
       : undefined;
   const onBack = isGitChild ? () => onGitGraphSelectionChange(null) : null;
-  const closableKind =
-    focusedPane?.state.kind === "terminal" ||
-    focusedPane?.state.kind === "browser"
-      ? focusedPane.state.kind
-      : null;
+  const paneModule = focusedPane ? getPaneModule(focusedPane.state.kind) : null;
+  const closableKind = paneModule?.closableKind ?? null;
   const onClose =
     focusedPane && closableKind
       ? () =>
@@ -226,17 +224,13 @@ export function WorkspacePaneRouter({
     : null;
   // Terminal and browser pane-specific actions belong to their inner pane
   // chrome; the outer SessionPaneHeader owns workspace crumbs/navigation.
-  const hasInnerPaneChrome =
-    focusedPane?.state.kind === "terminal" ||
-    focusedPane?.state.kind === "browser";
+  const hasInnerPaneChrome = paneModule?.ownsInnerChrome ?? false;
   const outerPin = hasInnerPaneChrome ? null : pin;
   const outerOnClose = hasInnerPaneChrome ? undefined : onClose;
   const terminalLayerPanes =
     allPanes.length > 0 ? allPanes : focusedPane ? [focusedPane] : [];
-  const bodyPane: WorkspacePaneBodyPane | null =
-    focusedPane && focusedPane.state.kind !== "terminal"
-      ? (focusedPane as WorkspacePaneBodyPane)
-      : null;
+  const bodyPane =
+    focusedPane && isWorkspaceBodyPane(focusedPane) ? focusedPane : null;
   const handleOpenFilePath = useCallback(
     (worktreePath: string, filePath: string) => {
       const openerPaneId = focusedPane?.id ?? worktreeFilesPaneId(worktreePath);
