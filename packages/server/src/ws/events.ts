@@ -102,6 +102,7 @@ export class EventBus {
             version: 1,
             projects: [],
             projectStates: {},
+            workItems: {},
             sessions: [],
             sessionRecords: [],
             ideCommands: [],

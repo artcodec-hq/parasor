@@ -734,7 +734,7 @@ export class RemotePtyHost implements PtyHost {
    * rejects on NACK / connection drop / IPC timeout. AppStateStore routes
    * those rejections through `onPersistError` so a transient IPC fault
    * does not silently lose project / projectStates / serviceConfig /
-   * paneCommands / ideCommands
+   * paneCommands / ideCommands / workItems
    * mutations.
    *
    * `sessions` and `sessionRecords` are deliberately not forwarded -- the
@@ -745,6 +745,7 @@ export class RemotePtyHost implements PtyHost {
     const payload: PersistProjectDomainsReqPayload = {
       projects: state.projects,
       projectStates: state.projectStates,
+      workItems: state.workItems,
       serviceConfig: state.serviceConfig,
       paneCommands: state.paneCommands,
       ideCommands: state.ideCommands,

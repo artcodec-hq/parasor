@@ -19,9 +19,15 @@ import type {
   SessionCommand,
   SessionEndReason,
   SessionLaunchPreset,
+  WorkItem,
 } from "@parasor/shared";
 
 /*
+ * 2.6.0 -- adds `workItems` to PERSIST_PROJECT_DOMAINS_REQ so project-scoped
+ * work items persist through the daemon single-writer path. A 2.5.x daemon
+ * would ACK but silently ignore that field, so the minor bump forces a daemon
+ * restart before the server relies on work item persistence.
+ *
  * 2.5.0 -- adds optional `launchPreset` to CREATE_REQ so shell-preset
  * sessions keep their launch/runtime metadata across the daemon boundary.
  * A 2.4.x daemon would ACK but silently ignore that field, so the minor bump
@@ -87,7 +93,7 @@ import type {
  *
  * 1.0.0 -- initial release.
  */
-export const PROTOCOL_VERSION = "2.5.0";
+export const PROTOCOL_VERSION = "2.6.0";
 
 export interface HelloPayload {
   protocolVersion: string;
@@ -182,6 +188,7 @@ export interface InitClientAckPayload {
 export interface PersistProjectDomainsReqPayload {
   projects: Project[];
   projectStates: Record<string, ProjectState>;
+  workItems: Record<string, WorkItem[]>;
   serviceConfig: ServiceConfig;
   paneCommands?: PaneCommandConfig[];
   ideCommands?: IdeCommandConfig[];

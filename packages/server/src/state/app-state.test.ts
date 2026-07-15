@@ -14,6 +14,7 @@ const EMPTY_STATE: AppState = {
   version: 1,
   projects: [],
   projectStates: {},
+  workItems: {},
   sessions: [],
   sessionRecords: [],
   paneCommands: [],
@@ -52,6 +53,39 @@ describe("AppStateStore", () => {
     expect(store.get()).toEqual(EMPTY_STATE);
   });
 
+  it("backfills work items and persists normalized records", async () => {
+    writeFileSync(
+      join(dir, "state.json"),
+      JSON.stringify({ ...EMPTY_STATE, workItems: undefined }),
+      "utf-8",
+    );
+    const store = new AppStateStore({ dir, debounceMs: 99_999 });
+    expect(store.get().workItems).toEqual({});
+
+    store.mutateWorkItems((state) => {
+      state.workItems.p1 = [
+        {
+          id: "work-1",
+          projectId: "p1",
+          title: "Persist me",
+          status: "todo",
+          acceptanceCriteria: [],
+          attachments: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ];
+    });
+    await store.flush();
+    store.destroy();
+
+    const reloaded = new AppStateStore({ dir });
+    expect(reloaded.get().workItems.p1).toEqual([
+      expect.objectContaining({ id: "work-1", title: "Persist me" }),
+    ]);
+    reloaded.destroy();
+  });
+
   it("loads existing state from disk", () => {
     const existing: AppState = {
       version: 1,
@@ -65,6 +99,7 @@ describe("AppStateStore", () => {
         },
       ],
       projectStates: {},
+      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
@@ -102,6 +137,7 @@ describe("AppStateStore", () => {
         },
       ],
       projectStates: {},
+      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
@@ -150,6 +186,7 @@ describe("AppStateStore", () => {
           lastAccessedAt: 2,
         },
       },
+      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],

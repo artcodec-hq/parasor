@@ -677,6 +677,7 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
       version: 1,
       projects: [],
       projectStates: {},
+      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],

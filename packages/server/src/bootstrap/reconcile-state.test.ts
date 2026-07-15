@@ -62,6 +62,7 @@ describe("reconcileStartupState", () => {
           lastAccessedAt: 2,
         },
       },
+      workItems: {},
       sessions: [
         {
           id: "session-1",

@@ -9,6 +9,7 @@ import {
   normalizePaneCommands,
   normalizeProjectSidebarState,
   normalizeSessionLaunchPreset,
+  normalizeWorkItemsByProject,
   normalizeWorktreeLocalFileAllowlist,
   normalizeWorktreeMetadataMap,
   type PortDetectionMode,
@@ -22,6 +23,7 @@ const EMPTY_STATE: AppState = {
   version: 1,
   projects: [],
   projectStates: {},
+  workItems: {},
   sessions: [],
   sessionRecords: [],
   ideCommands: [],
@@ -93,6 +95,7 @@ function migrate(raw: Partial<AppState>): AppState {
         })
       : [],
     projectStates: normalizeProjectStates(raw.projectStates),
+    workItems: normalizeWorkItemsByProject(raw.workItems),
     sessions: normalizeSessions(raw.sessions),
     sessionRecords: Array.isArray(raw.sessionRecords) ? raw.sessionRecords : [],
     ideCommands: normalizeIdeCommands(raw.ideCommands),
@@ -198,7 +201,10 @@ export interface AppStatePersistenceDelegate {
  * desync the mirror in remote mode. The view types make those misuses
  * compile errors.
  */
-export type ProjectsMutateView = Pick<AppState, "projects" | "projectStates">;
+export type ProjectsMutateView = Pick<
+  AppState,
+  "projects" | "projectStates" | "workItems"
+>;
 
 export type ProjectStatesMutateView = Pick<AppState, "projectStates"> &
   Readonly<{
@@ -210,6 +216,9 @@ export type ServiceConfigMutateView = Pick<AppState, "serviceConfig">;
 
 export type PaneCommandsMutateView = Pick<AppState, "paneCommands">;
 export type IdeCommandsMutateView = Pick<AppState, "ideCommands">;
+
+export type WorkItemsMutateView = Pick<AppState, "workItems"> &
+  Readonly<{ projects: ReadonlyArray<Readonly<Project>> }>;
 
 export type SessionsMutateView = Pick<AppState, "sessions" | "sessionRecords"> &
   Readonly<{ projects: ReadonlyArray<Readonly<Project>> }>;
@@ -336,6 +345,13 @@ export class AppStateStore {
    * being able to write into either domain.
    */
   mutateProjectStates(fn: (state: ProjectStatesMutateView) => void): void {
+    if (this.destroyed) return;
+    fn(this.state);
+    this.scheduleFlush();
+  }
+
+  /** Server-owned, project-scoped work item records. */
+  mutateWorkItems(fn: (state: WorkItemsMutateView) => void): void {
     if (this.destroyed) return;
     fn(this.state);
     this.scheduleFlush();

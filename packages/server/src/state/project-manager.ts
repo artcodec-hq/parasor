@@ -94,6 +94,7 @@ export class ProjectManager {
     this.store.mutateProjects((s) => {
       s.projects = s.projects.filter((p) => p.id !== id);
       delete s.projectStates[id];
+      delete s.workItems[id];
     });
     /*
      * daemon state ownership -- orphan-session cleanup is cross-domain (sessions are

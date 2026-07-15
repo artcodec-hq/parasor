@@ -125,6 +125,7 @@ function makeSnapshot(
       version: 1,
       projects: [],
       projectStates: {},
+      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
