@@ -24,6 +24,7 @@ function emptyState(): AppState {
     version: 1,
     projects: [],
     projectStates: {},
+    workItems: {},
     sessions: [],
     sessionRecords: [],
     paneCommands: [],
@@ -37,13 +38,30 @@ function emptyState(): AppState {
   };
 }
 
+function hydratedState(): AppState {
+  const state = emptyState();
+  state.workItems.p1 = [
+    {
+      id: "work-1",
+      projectId: "p1",
+      title: "Hydrate me",
+      status: "todo",
+      acceptanceCriteria: [],
+      attachments: [],
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ];
+  return state;
+}
+
 describe("EventBus", () => {
   let bus: EventBus;
 
   beforeEach(() => {
     bus = new EventBus();
     bus.setHydrationSources({
-      getState: () => emptyState(),
+      getState: () => hydratedState(),
       getAgentStates: () => ({}),
       getNotifications: () => [],
       getPorts: () => ({}),
@@ -67,6 +85,9 @@ describe("EventBus", () => {
     expect(msg.type).toBe("app-state-snapshot");
     expect(msg.payload.seq).toBe(0);
     expect(msg.payload.services).toEqual({});
+    expect(msg.payload.state.workItems.p1).toEqual([
+      expect.objectContaining({ id: "work-1", title: "Hydrate me" }),
+    ]);
   });
 
   it("broadcasts with incrementing seq", async () => {

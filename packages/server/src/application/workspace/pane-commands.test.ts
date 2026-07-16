@@ -28,6 +28,7 @@ function makeAppState(projectId: string): AppState {
     version: 1,
     projects: [],
     projectStates: { [projectId]: ps },
+    workItems: {},
     sessions: [],
     sessionRecords: [],
     paneCommands: [],

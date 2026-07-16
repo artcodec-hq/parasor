@@ -646,7 +646,7 @@ export class PtyHostDaemon {
    * daemon state ownership -- adopt the server's project-domain snapshot and persist it.
    * The daemon is the sole writer of state.json; the server forwards
    * its in-memory `projects` / `projectStates` / `serviceConfig` /
-   * `paneCommands` / `ideCommands` here
+   * `paneCommands` / `ideCommands` / `workItems` here
    * whenever the in-store debounce timer fires. We use `internalMutate`
    * because (a) in remote-mode the daemon's session-domain guard is
    * never actually flipped on (only server-side copies set it) but the
@@ -704,6 +704,7 @@ export class PtyHostDaemon {
       store.internalMutate((state) => {
         state.projects = req.projects;
         state.projectStates = req.projectStates;
+        state.workItems = req.workItems;
         state.serviceConfig = req.serviceConfig;
         if (Array.isArray(req.paneCommands)) {
           state.paneCommands = req.paneCommands;

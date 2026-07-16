@@ -52,8 +52,8 @@ describe("isCompatibleVersion (by design)", () => {
 });
 
 describe("PROTOCOL_VERSION", () => {
-  it("is 2.5.0 (carries launchPreset through daemon CREATE_REQ)", () => {
-    expect(PROTOCOL_VERSION).toBe("2.5.0");
+  it("is 2.6.0 (persists work items through the daemon)", () => {
+    expect(PROTOCOL_VERSION).toBe("2.6.0");
   });
 
   // The before the generation gate  rule allowed `daemon.minor ≥ client.minor` so a new

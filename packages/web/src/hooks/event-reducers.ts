@@ -14,6 +14,7 @@ import type {
   Session,
   SessionActivityRecord,
   TerminalPresenceSnapshot,
+  WorkItem,
   Worktree,
   WsEventMessage,
 } from "@parasor/shared";
@@ -62,6 +63,7 @@ interface CachedStorePayload {
 export interface AppStore {
   projects: Project[];
   projectStates: Record<string, ProjectState>;
+  workItems: Record<string, WorkItem[]>;
   sessions: Session[];
   agentStates: Record<string, AgentState>;
   notifications: Notification[];
@@ -97,6 +99,7 @@ export interface AppStore {
 export const EMPTY_STORE: AppStore = {
   projects: [],
   projectStates: {},
+  workItems: {},
   sessions: [],
   agentStates: {},
   notifications: [],
@@ -235,7 +238,11 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
                 lastAccessedAt: msg.project.createdAt,
               },
             };
-      return { ...store, projects, projectStates };
+      const workItems =
+        msg.project.id in store.workItems
+          ? store.workItems
+          : { ...store.workItems, [msg.project.id]: [] };
+      return { ...store, projects, projectStates, workItems };
     }
 
     case "project-updated":
@@ -255,6 +262,7 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
       const agentStates = { ...store.agentStates };
       for (const sid of deletedSessions) delete agentStates[sid];
       const { [msg.projectId]: _, ...projectStates } = store.projectStates;
+      const { [msg.projectId]: _items, ...workItems } = store.workItems;
       const { [msg.projectId]: _wt, ...worktrees } = store.worktrees;
       const { [msg.projectId]: _gs, ...gitStates } = store.gitStates;
       const { [msg.projectId]: _ports, ...ports } = store.ports;
@@ -266,6 +274,7 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
         projects: store.projects.filter((p) => p.id !== msg.projectId),
         sessions: store.sessions.filter((s) => s.projectId !== msg.projectId),
         projectStates,
+        workItems,
         agentStates,
         ports,
         services,
@@ -379,6 +388,31 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
     case "ide-commands-changed":
       return { ...store, ideCommands: msg.commands };
 
+    case "work-item-created":
+    case "work-item-updated": {
+      const current = store.workItems[msg.item.projectId] ?? [];
+      const exists = current.some((item) => item.id === msg.item.id);
+      const next = exists
+        ? current.map((item) => (item.id === msg.item.id ? msg.item : item))
+        : [...current, msg.item];
+      return {
+        ...store,
+        workItems: { ...store.workItems, [msg.item.projectId]: next },
+      };
+    }
+
+    case "work-item-deleted": {
+      const current = store.workItems[msg.projectId];
+      if (!current) return store;
+      return {
+        ...store,
+        workItems: {
+          ...store.workItems,
+          [msg.projectId]: current.filter((item) => item.id !== msg.workItemId),
+        },
+      };
+    }
+
     case "worktree-created": {
       // Drop events for projects no longer in the store. The server
       // re-broadcasts worktrees on project-created via an async git
@@ -448,6 +482,7 @@ export function applySnapshot(payload: HydrationPayload): AppStore {
   return {
     projects: payload.state.projects,
     projectStates: payload.state.projectStates,
+    workItems: payload.state.workItems,
     sessions: payload.state.sessions,
     agentStates: payload.agentStates,
     // Server keeps insertion order (oldest->newest) but the incremental

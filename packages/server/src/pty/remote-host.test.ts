@@ -1453,6 +1453,20 @@ describe("RemotePtyHost -- failure modes", () => {
     const snapshot: AppState = {
       ...daemonStore.get(),
       projects: [project],
+      workItems: {
+        [project.id]: [
+          {
+            id: "work-1",
+            projectId: project.id,
+            title: "Persist through daemon",
+            status: "todo",
+            acceptanceCriteria: [],
+            attachments: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      },
       paneCommands: [{ id: "cmd:dev", label: "Dev", initialInput: "pnpm dev" }],
       ideCommands: [
         { id: "zed", label: "Zed", command: "zed", args: ["{path}"] },
@@ -1462,6 +1476,12 @@ describe("RemotePtyHost -- failure modes", () => {
 
     const after = daemonStore.get();
     expect(after.projects).toEqual([project]);
+    expect(after.workItems[project.id]).toEqual([
+      expect.objectContaining({
+        id: "work-1",
+        title: "Persist through daemon",
+      }),
+    ]);
     expect(after.paneCommands).toEqual([
       { id: "cmd:dev", label: "Dev", initialInput: "pnpm dev" },
     ]);
@@ -1495,6 +1515,7 @@ describe("RemotePtyHost -- failure modes", () => {
       version: 1,
       projects: [],
       projectStates: {},
+      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
