@@ -3,13 +3,14 @@ import {
   ensureSingletons,
   makeBrowserPane,
   makeTerminalPane,
+  makeWorkItemPane,
   type PaneEntry,
   type WorktreePanes,
 } from "@parasor/shared";
 import type { AppStateStore } from "../../state/app-state.js";
 import type { ProjectManager } from "../../state/project-manager.js";
 import type { EventPublisher } from "../ports.js";
-import { WorkspaceNotFoundError } from "./errors.js";
+import { WorkItemNotFoundError, WorkspaceNotFoundError } from "./errors.js";
 
 /**
  * Worktree-scoped pane ops. Thin wrappers over
@@ -111,6 +112,63 @@ export function createPaneCommands({
       return pane;
     },
 
+    addWorkItemPane(
+      projectId: string,
+      worktreePath: string,
+      workItemId: string,
+    ): PaneEntry {
+      requireProject(projectId);
+      const itemExists = (appStateStore.get().workItems[projectId] ?? []).some(
+        (item) => item.id === workItemId,
+      );
+      if (!itemExists) throw new WorkItemNotFoundError();
+
+      let result: PaneEntry | undefined;
+      appStateStore.mutateProjectStates((state) => {
+        const ps = state.projectStates[projectId];
+        if (!ps) return;
+        let wt = ps.worktrees.find((entry) => entry.path === worktreePath);
+        if (!wt) {
+          wt = {
+            path: worktreePath,
+            panes: ensureSingletons(worktreePath, []),
+          };
+          ps.worktrees.push(wt);
+        }
+        const existing = wt.panes.find(
+          (pane) =>
+            pane.state.kind === "work-item" &&
+            pane.state.workItemId === workItemId,
+        );
+        if (existing) {
+          result = existing;
+          ps.focusedPaneId = existing.id;
+          return;
+        }
+        const pane = makeWorkItemPane(
+          `work-item:${randomUUID()}`,
+          worktreePath,
+          workItemId,
+        );
+        const firstNonWorkItem = wt.panes.findIndex(
+          (candidate) =>
+            candidate.kind === "terminal" ||
+            candidate.kind === "browser" ||
+            candidate.kind === "git",
+        );
+        wt.panes.splice(
+          firstNonWorkItem >= 0 ? firstNonWorkItem : wt.panes.length,
+          0,
+          pane,
+        );
+        ps.focusedPaneId = pane.id;
+        result = pane;
+      });
+      if (!result) throw new WorkspaceNotFoundError();
+      broadcastPanes(projectId);
+      return result;
+    },
+
     addBrowserPane(
       projectId: string,
       worktreePath: string,
@@ -134,7 +192,7 @@ export function createPaneCommands({
     },
 
     /**
-     * Close a terminal or browser pane. Singletons (`files`/`git`) cannot
+     * Close a work-item, terminal, or browser pane. Singletons (`files`/`git`) cannot
      * be closed; the call is a no-op for those ids to keep callers simple.
      */
     closePane(projectId: string, paneId: string) {
@@ -155,6 +213,28 @@ export function createPaneCommands({
         }
       });
       broadcastPanes(projectId);
+    },
+
+    closeWorkItemPane(projectId: string, paneId: string): boolean {
+      requireProject(projectId);
+      let closed = false;
+      appStateStore.mutateProjectStates((state) => {
+        const ps = state.projectStates[projectId];
+        if (!ps) return;
+        for (const wt of ps.worktrees) {
+          const idx = wt.panes.findIndex((pane) => pane.id === paneId);
+          if (idx === -1) continue;
+          if (wt.panes[idx].state.kind !== "work-item") return;
+          wt.panes.splice(idx, 1);
+          closed = true;
+          if (ps.focusedPaneId === paneId) {
+            ps.focusedPaneId = wt.panes[0]?.id ?? null;
+          }
+          return;
+        }
+      });
+      if (closed) broadcastPanes(projectId);
+      return closed;
     },
 
     focusPane(projectId: string, paneId: string | null) {

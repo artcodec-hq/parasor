@@ -2,7 +2,7 @@ import { ConfirmDialog } from "../../components/primitives/index.js";
 
 interface ClosePaneDialogProps {
   paneTitle: string;
-  paneKind: "terminal" | "browser";
+  paneKind: "work-item" | "terminal" | "browser";
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -16,7 +16,9 @@ export function ClosePaneDialog({
   const detail =
     paneKind === "terminal"
       ? "The shell session will terminate."
-      : "The browser tab state will be lost.";
+      : paneKind === "browser"
+        ? "The browser tab state will be lost."
+        : "The work item will remain available.";
 
   return (
     <ConfirmDialog

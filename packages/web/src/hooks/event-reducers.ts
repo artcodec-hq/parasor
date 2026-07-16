@@ -382,6 +382,22 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
       };
     }
 
+    case "panes-updated": {
+      const existing = store.projectStates[msg.projectId];
+      if (!existing) return store;
+      return {
+        ...store,
+        projectStates: {
+          ...store.projectStates,
+          [msg.projectId]: {
+            ...existing,
+            worktrees: msg.worktrees,
+            focusedPaneId: msg.focusedPaneId,
+          },
+        },
+      };
+    }
+
     case "pane-commands-changed":
       return { ...store, paneCommands: msg.commands };
 

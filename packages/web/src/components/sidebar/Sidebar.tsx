@@ -33,6 +33,7 @@ export interface SidebarProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onNewWorkItem?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -99,6 +100,7 @@ export function Sidebar({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onNewWorkItem,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -169,6 +171,7 @@ export function Sidebar({
                   onSelectWorktree={onSelectWorktree}
                   onSelectChild={onSelectChild}
                   onNewSession={onNewSession}
+                  onNewWorkItem={onNewWorkItem}
                   onToggleChildPin={onToggleChildPin}
                   worktreeOpen={worktreeOpenByProject?.[project.id]}
                   onWorktreeOpenChange={onWorktreeOpenChange}
@@ -186,6 +189,7 @@ export function Sidebar({
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
             onNewSession={onNewSession}
+            onNewWorkItem={onNewWorkItem}
             onToggleChildPin={onToggleChildPin}
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}

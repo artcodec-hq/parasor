@@ -36,6 +36,7 @@ interface CreateWorktreeSessionInput {
 interface UseWorkspaceSessionActionsOptions {
   activeProjectId: string | null;
   closeBrowserPane: (paneId: string) => void;
+  closeWorkItemPane: (projectId: string, paneId: string) => Promise<void>;
   navigate: (route: WorkspaceRoute, opts?: { replace?: boolean }) => void;
   paneById: Map<string, PaneEntry>;
   projects: Project[];
@@ -49,6 +50,7 @@ interface UseWorkspaceSessionActionsOptions {
 export function useWorkspaceSessionActions({
   activeProjectId,
   closeBrowserPane,
+  closeWorkItemPane,
   navigate,
   paneById,
   projects,
@@ -178,9 +180,13 @@ export function useWorkspaceSessionActions({
       }
       if (pane.state.kind === "browser") {
         closeBrowserPane(paneId);
+        return;
+      }
+      if (pane.state.kind === "work-item" && activeProjectId) {
+        await closeWorkItemPane(activeProjectId, paneId);
       }
     },
-    [closeBrowserPane, paneById],
+    [activeProjectId, closeBrowserPane, closeWorkItemPane, paneById],
   );
 
   const closeRouteSession = useCallback(

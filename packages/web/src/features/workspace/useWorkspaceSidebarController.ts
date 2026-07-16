@@ -7,6 +7,7 @@ import type {
   ProjectState,
   RuntimeServiceInfo,
   Session,
+  WorkItem,
   Worktree,
 } from "@parasor/shared";
 import { filesPaneId } from "@parasor/shared";
@@ -33,6 +34,7 @@ interface UseWorkspaceSidebarControllerOptions {
   monitorActive: boolean;
   navigate: (route: WorkspaceRoute, opts?: { replace?: boolean }) => void;
   onNewProject: () => void;
+  onNewWorkItem: (projectId: string, worktreeId: string) => void;
   onOpenSettings: () => void;
   onOpenUrl: (url: string, options?: OpenUrlOptions) => void;
   onToggleSessionPin: (sessionId: string) => void;
@@ -49,6 +51,7 @@ interface UseWorkspaceSidebarControllerOptions {
   setFocusedPaneId: (paneId: string) => void;
   setMonitorActive: (active: boolean) => void;
   worktreesWithCounters: Record<string, Worktree[]>;
+  workItems: Record<string, WorkItem[]>;
 }
 
 export function useWorkspaceSidebarController({
@@ -63,6 +66,7 @@ export function useWorkspaceSidebarController({
   monitorActive,
   navigate,
   onNewProject,
+  onNewWorkItem,
   onOpenSettings,
   onOpenUrl,
   onToggleSessionPin,
@@ -79,6 +83,7 @@ export function useWorkspaceSidebarController({
   setFocusedPaneId,
   setMonitorActive,
   worktreesWithCounters,
+  workItems,
 }: UseWorkspaceSidebarControllerOptions) {
   const sidebarModel = useWorkspaceSidebarModel({
     activeProjectId,
@@ -95,6 +100,7 @@ export function useWorkspaceSidebarController({
     sessions,
     setErrorToast,
     worktreesWithCounters,
+    workItems,
   });
 
   const handleMobileSidebarSearchShortcut = useCallback(
@@ -207,6 +213,7 @@ export function useWorkspaceSidebarController({
       fill: true,
       onCloseSearch: handleCloseSearch,
       onNewProject,
+      onNewWorkItem,
       onNewSession: handleNewSession,
       onOpenSettings,
       onOpenUrl,
@@ -232,7 +239,8 @@ export function useWorkspaceSidebarController({
         selectedChildId:
           !monitorActive &&
           (focusedPane?.state.kind === "terminal" ||
-            focusedPane?.state.kind === "browser")
+            focusedPane?.state.kind === "browser" ||
+            focusedPane?.state.kind === "work-item")
             ? focusedPane.id
             : null,
         selectedWorktreeId:
@@ -256,6 +264,7 @@ export function useWorkspaceSidebarController({
       handleToggleSearch,
       monitorActive,
       onNewProject,
+      onNewWorkItem,
       onOpenSettings,
       onOpenUrl,
       pinnedMonitorCount,

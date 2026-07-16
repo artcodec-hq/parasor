@@ -1,6 +1,12 @@
-import type { GitState } from "@parasor/shared";
+import type {
+  GitState,
+  UpdateWorkItemInput,
+  WorkItem,
+  Worktree,
+} from "@parasor/shared";
 import type { GitGraphSelection } from "../panes/git-graph/GitGraphPane.js";
 import type { WorkspaceBodyPane } from "../panes/pane-module-registry.js";
+import { WorkItemPaneView } from "../panes/work-item/WorkItemPaneView.js";
 import { BrowserPaneView } from "./views/BrowserPaneView.js";
 import { FilesPaneView } from "./views/FilesPaneView.js";
 import { GitPaneView } from "./views/GitPaneView.js";
@@ -36,6 +42,14 @@ interface WorkspacePaneBodyProps {
   onBrowserUrlChange?: (paneId: string, url: string) => void;
   onSelectWorktreeTab: (worktreePath: string, tab: WorktreeTab) => void;
   onOpenFilePath: (worktreePath: string, filePath: string) => void;
+  workItems: WorkItem[];
+  worktrees: Worktree[];
+  workItemOnClose?: () => void;
+  onUpdateWorkItem: (
+    workItemId: string,
+    input: UpdateWorkItemInput,
+  ) => Promise<void> | void;
+  onDeleteWorkItem: (workItemId: string) => Promise<void> | void;
 }
 
 export function WorkspacePaneBody({
@@ -60,9 +74,29 @@ export function WorkspacePaneBody({
   onBrowserUrlChange,
   onSelectWorktreeTab,
   onOpenFilePath,
+  workItems,
+  worktrees,
+  workItemOnClose,
+  onUpdateWorkItem,
+  onDeleteWorkItem,
 }: WorkspacePaneBodyProps) {
   const { state } = focusedPane;
   switch (state.kind) {
+    case "work-item": {
+      const item = workItems.find(
+        (candidate) => candidate.id === state.workItemId,
+      );
+      if (!item) return null;
+      return (
+        <WorkItemPaneView
+          item={item}
+          worktrees={worktrees}
+          onClose={workItemOnClose}
+          onSave={(input) => onUpdateWorkItem(item.id, input)}
+          onDelete={() => onDeleteWorkItem(item.id)}
+        />
+      );
+    }
     case "files":
       return (
         <WorktreeView
