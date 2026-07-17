@@ -9,6 +9,7 @@ interface UseWorkspaceRouteSyncOptions {
   focusedPaneId: string | null;
   hydrated: boolean;
   monitorActive: boolean;
+  paneIds: Pick<ReadonlySet<string>, "has">;
   navigate: (route: WorkspaceRoute, opts?: { replace?: boolean }) => void;
   projects: Project[];
   route: WorkspaceRoute;
@@ -23,6 +24,7 @@ export function useWorkspaceRouteSync({
   focusedPaneId,
   hydrated,
   monitorActive,
+  paneIds,
   navigate,
   projects,
   route,
@@ -67,6 +69,14 @@ export function useWorkspaceRouteSync({
         navigate({ kind: "root" }, { replace: true });
         return;
       }
+      if (
+        hydrated &&
+        route.projectId === activeProjectId &&
+        !paneIds.has(route.paneId)
+      ) {
+        navigate({ kind: "root" }, { replace: true });
+        return;
+      }
       if (route.projectId && activeProjectId !== route.projectId) {
         setActiveProjectId(route.projectId);
       }
@@ -105,6 +115,7 @@ export function useWorkspaceRouteSync({
     hydrated,
     monitorActive,
     navigate,
+    paneIds,
     projects,
     route,
     sessions,

@@ -2,6 +2,8 @@ import type {
   HydrationPayload,
   Project,
   ProjectSidebarState,
+  WorkItem,
+  WorktreePanes,
   WsEventEnvelope,
   WsEventMessage,
 } from "@parasor/shared";
@@ -440,6 +442,7 @@ export function useEventSocket() {
       gitStates: store.gitStates,
       paneCommands: store.paneCommands,
       ideCommands: store.ideCommands,
+      workItems: store.workItems,
       hydrated: store.hydrated,
     }),
     [
@@ -450,6 +453,7 @@ export function useEventSocket() {
       store.gitStates,
       store.paneCommands,
       store.ideCommands,
+      store.workItems,
       store.hydrated,
     ],
   );
@@ -509,6 +513,37 @@ export function useEventSocket() {
     [],
   );
 
+  const seedWorkItem = useCallback((item: WorkItem) => {
+    setStore((prev) => applyEvent(prev, { type: "work-item-updated", item }));
+  }, []);
+
+  const removeWorkItem = useCallback(
+    (projectId: string, workItemId: string) => {
+      setStore((prev) =>
+        applyEvent(prev, { type: "work-item-deleted", projectId, workItemId }),
+      );
+    },
+    [],
+  );
+
+  const seedProjectPanes = useCallback(
+    (
+      projectId: string,
+      worktrees: WorktreePanes[],
+      focusedPaneId: string | null,
+    ) => {
+      setStore((prev) =>
+        applyEvent(prev, {
+          type: "panes-updated",
+          projectId,
+          worktrees,
+          focusedPaneId,
+        }),
+      );
+    },
+    [],
+  );
+
   const unreadCount = useMemo(
     () => store.notifications.filter((n) => !n.read).length,
     [store.notifications],
@@ -525,5 +560,8 @@ export function useEventSocket() {
     seedPaneCommands,
     seedIdeCommands,
     seedSidebarState,
+    seedWorkItem,
+    removeWorkItem,
+    seedProjectPanes,
   };
 }

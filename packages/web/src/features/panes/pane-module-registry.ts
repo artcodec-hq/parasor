@@ -3,7 +3,7 @@ import { PaGlyph } from "../../components/primitives/index.js";
 import type { SidebarChild } from "../../components/sidebar/model/types.js";
 import type { PaneDescriptor } from "../../components/sidebar/panes/types.js";
 
-type ClosablePaneKind = "terminal" | "browser";
+type ClosablePaneKind = "work-item" | "terminal" | "browser";
 
 interface PaneModule {
   presentation: "body" | "layer";
@@ -23,6 +23,12 @@ const PANE_MODULES = {
     presentation: "body",
     closableKind: null,
     ownsInnerChrome: false,
+  },
+  "work-item": {
+    presentation: "body",
+    closableKind: "work-item",
+    ownsInnerChrome: true,
+    describeSidebar: () => ({ defaultIcon: PaGlyph.doc }),
   },
   terminal: {
     presentation: "layer",

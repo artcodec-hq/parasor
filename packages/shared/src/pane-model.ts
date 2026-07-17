@@ -6,7 +6,7 @@
  * still read `ProjectState.layout`.
  */
 
-export type PaneKind = "files" | "terminal" | "browser" | "git";
+export type PaneKind = "files" | "work-item" | "terminal" | "browser" | "git";
 
 export interface FilesPaneState {
   kind: "files";
@@ -25,6 +25,11 @@ export interface BrowserPaneState {
   auto?: boolean;
 }
 
+export interface WorkItemPaneState {
+  kind: "work-item";
+  workItemId: string;
+}
+
 export interface GitPaneState {
   kind: "git";
   selectedCommitSha: string | null;
@@ -32,6 +37,7 @@ export interface GitPaneState {
 
 export type PaneState =
   | FilesPaneState
+  | WorkItemPaneState
   | TerminalPaneState
   | BrowserPaneState
   | GitPaneState;
@@ -107,6 +113,19 @@ export function makeTerminalPane(
   };
 }
 
+export function makeWorkItemPane(
+  id: string,
+  worktreePath: string,
+  workItemId: string,
+): PaneEntry {
+  return {
+    id,
+    kind: "work-item",
+    worktreePath,
+    state: { kind: "work-item", workItemId },
+  };
+}
+
 export function makeBrowserPane(
   id: string,
   worktreePath: string,
@@ -121,20 +140,21 @@ export function makeBrowserPane(
 }
 
 /**
- * Canonical pane order: files -> terminals -> browsers -> git.
- * Terminals and browsers preserve insertion order.
+ * Canonical pane order: files -> work items -> terminals -> browsers -> git.
+ * Work items, terminals, and browsers preserve insertion order.
  */
 export function sortPanesForList(panes: PaneEntry[]): PaneEntry[] {
   const files = panes.filter((p) => p.kind === "files");
+  const workItems = panes.filter((p) => p.kind === "work-item");
   const terminals = panes.filter((p) => p.kind === "terminal");
   const browsers = panes.filter((p) => p.kind === "browser");
   const git = panes.filter((p) => p.kind === "git");
-  return [...files, ...terminals, ...browsers, ...git];
+  return [...files, ...workItems, ...terminals, ...browsers, ...git];
 }
 
 /**
  * Ensure a worktree has the two singletons (`files`, `git`). Leaves existing
- * terminals/browsers untouched. Returns a new array if a singleton was
+ * work items/terminals/browsers untouched. Returns a new array if a singleton was
  * inserted; otherwise returns the original reference.
  */
 export function ensureSingletons(

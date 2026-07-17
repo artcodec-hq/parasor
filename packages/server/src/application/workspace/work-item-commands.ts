@@ -104,7 +104,43 @@ export function createWorkItemCommands({
         if (deleted) state.workItems[projectId] = next;
       });
       if (!deleted) throw new WorkItemNotFoundError();
+      let panesChanged = false;
+      appStateStore.mutateProjectStates((state) => {
+        const projectState = state.projectStates[projectId];
+        if (!projectState) return;
+        for (const worktree of projectState.worktrees) {
+          const next = worktree.panes.filter(
+            (pane) =>
+              pane.state.kind !== "work-item" ||
+              pane.state.workItemId !== workItemId,
+          );
+          if (next.length === worktree.panes.length) continue;
+          panesChanged = true;
+          worktree.panes = next;
+        }
+        if (
+          projectState.focusedPaneId &&
+          !projectState.worktrees.some((worktree) =>
+            worktree.panes.some(
+              (pane) => pane.id === projectState.focusedPaneId,
+            ),
+          )
+        ) {
+          projectState.focusedPaneId = null;
+        }
+      });
       eventBus.broadcast({ type: "work-item-deleted", projectId, workItemId });
+      if (panesChanged) {
+        const projectState = appStateStore.get().projectStates[projectId];
+        if (projectState) {
+          eventBus.broadcast({
+            type: "panes-updated",
+            projectId,
+            worktrees: projectState.worktrees,
+            focusedPaneId: projectState.focusedPaneId,
+          });
+        }
+      }
     },
   };
 }

@@ -182,7 +182,12 @@ export function createAppServer({
   );
   app.route(
     "/api/projects",
-    createWorkItemRoutes({ projectManager, appStateStore, eventBus }),
+    createWorkItemRoutes({
+      projectManager,
+      appStateStore,
+      eventBus,
+      worktreeCache,
+    }),
   );
   app.route(
     "/api/projects",

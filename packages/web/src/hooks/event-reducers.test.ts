@@ -309,6 +309,34 @@ describe("applyEvent: pane-commands-changed", () => {
   });
 });
 
+describe("applyEvent: panes-updated", () => {
+  it("replaces worktree panes and focus for the matching project", () => {
+    const store = storeWith({
+      projectStates: {
+        p1: {
+          projectId: "p1",
+          layout: null,
+          worktrees: [],
+          openFiles: [],
+          lastFocusedPaneId: null,
+          focusedPaneId: null,
+          lastAccessedAt: 1,
+        },
+      },
+    });
+    const next = applyEvent(store, {
+      type: "panes-updated",
+      projectId: "p1",
+      worktrees: [{ path: "/repo", panes: [] }],
+      focusedPaneId: "work-item:1",
+    });
+    expect(next.projectStates.p1.worktrees).toEqual([
+      { path: "/repo", panes: [] },
+    ]);
+    expect(next.projectStates.p1.focusedPaneId).toBe("work-item:1");
+  });
+});
+
 describe("applyEvent: work items", () => {
   it("upserts created and updated work items", () => {
     const created = applyEvent(EMPTY_STORE, {

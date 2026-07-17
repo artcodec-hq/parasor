@@ -140,4 +140,79 @@ describe("createWorkItemRoutes", () => {
     });
     expect(missingItem.status).toBe(404);
   });
+
+  it("opens, reuses, and closes a work item pane on a registered worktree", async () => {
+    const app = createWorkItemRoutes({
+      appStateStore,
+      eventBus,
+      projectManager,
+    });
+    const created = await (
+      await app.request(`/${projectId}/work-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Editable pane" }),
+      })
+    ).json();
+
+    const open = () =>
+      app.request(`/${projectId}/work-items/${created.workItem.id}/panes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worktreePath: "/tmp/work-items" }),
+      });
+    const first = await (await open()).json();
+    const second = await (await open()).json();
+    expect(second.pane.id).toBe(first.pane.id);
+    expect(
+      first.worktrees[0].panes.map((pane: { kind: string }) => pane.kind),
+    ).toEqual(["files", "work-item", "git"]);
+
+    const closed = await app.request(
+      `/${projectId}/work-item-panes/${encodeURIComponent(first.pane.id)}`,
+      { method: "DELETE" },
+    );
+    expect(closed.status).toBe(200);
+    expect(
+      (await closed.json()).worktrees[0].panes.map(
+        (pane: { kind: string }) => pane.kind,
+      ),
+    ).toEqual(["files", "git"]);
+    const closedAgain = await app.request(
+      `/${projectId}/work-item-panes/${encodeURIComponent(first.pane.id)}`,
+      { method: "DELETE" },
+    );
+    expect(closedAgain.status).toBe(404);
+  });
+
+  it("removes every pane for a deleted work item", async () => {
+    const app = createWorkItemRoutes({
+      appStateStore,
+      eventBus,
+      projectManager,
+    });
+    const created = await (
+      await app.request(`/${projectId}/work-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Delete me" }),
+      })
+    ).json();
+    await app.request(`/${projectId}/work-items/${created.workItem.id}/panes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worktreePath: "/tmp/work-items" }),
+    });
+
+    await app.request(`/${projectId}/work-items/${created.workItem.id}`, {
+      method: "DELETE",
+    });
+    expect(
+      appStateStore
+        .get()
+        .projectStates[projectId].worktrees[0].panes.some(
+          (pane) => pane.state.kind === "work-item",
+        ),
+    ).toBe(false);
+  });
 });

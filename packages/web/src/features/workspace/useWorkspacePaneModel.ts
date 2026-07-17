@@ -7,6 +7,7 @@ import {
   type Session,
   sortPanesForList,
   terminalPaneId,
+  type WorkItem,
   type Worktree,
   type WorktreePanes,
 } from "@parasor/shared";
@@ -61,6 +62,8 @@ interface UseWorkspacePaneModelOptions {
    * payload from a removed worktree can't strand panes outside the model.
    */
   clientBrowserPanes?: Record<string, ClientBrowserPaneInput[]>;
+  serverWorktreePanes?: WorktreePanes[];
+  workItems?: WorkItem[];
 }
 
 export function useWorkspacePaneModel({
@@ -70,6 +73,8 @@ export function useWorkspacePaneModel({
   sessions,
   focusedPaneId,
   clientBrowserPanes,
+  serverWorktreePanes,
+  workItems = [],
 }: UseWorkspacePaneModelOptions): WorkspacePaneModel {
   return useMemo<WorkspacePaneModel>(() => {
     if (!projectId || !projectPath) {
@@ -95,6 +100,21 @@ export function useWorkspacePaneModel({
       ...(wt.orphan ? { orphan: true } : {}),
       panes: [],
     }));
+
+    const validWorkItemIds = new Set(workItems.map((item) => item.id));
+    for (const group of groups) {
+      const persisted = serverWorktreePanes?.find(
+        (entry) => entry.path === group.path,
+      );
+      if (!persisted) continue;
+      group.panes.push(
+        ...persisted.panes.filter(
+          (pane) =>
+            pane.state.kind === "work-item" &&
+            validWorkItemIds.has(pane.state.workItemId),
+        ),
+      );
+    }
 
     for (const session of projectSessions) {
       const wtPath = findMatchingWorktreePath(session.cwd, paths, projectPath);
@@ -146,6 +166,8 @@ export function useWorkspacePaneModel({
     sessions,
     focusedPaneId,
     clientBrowserPanes,
+    serverWorktreePanes,
+    workItems,
   ]);
 }
 

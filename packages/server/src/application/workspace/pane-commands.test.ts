@@ -28,7 +28,20 @@ function makeAppState(projectId: string): AppState {
     version: 1,
     projects: [],
     projectStates: { [projectId]: ps },
-    workItems: {},
+    workItems: {
+      [projectId]: [
+        {
+          id: "item-1",
+          projectId,
+          title: "Ship pane",
+          status: "todo",
+          acceptanceCriteria: [],
+          attachments: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    },
     sessions: [],
     sessionRecords: [],
     paneCommands: [],
@@ -143,6 +156,20 @@ describe("createPaneCommands", () => {
       "browser",
       "git",
     ]);
+  });
+
+  it("adds one work item pane per item and worktree before sessions", () => {
+    const cmds = createPaneCommands(deps());
+    cmds.setWorktrees("proj-1", ["/tmp/proj"]);
+    cmds.addTerminalPane("proj-1", "/tmp/proj", "s1");
+    const first = cmds.addWorkItemPane("proj-1", "/tmp/proj", "item-1");
+    const reopened = cmds.addWorkItemPane("proj-1", "/tmp/proj", "item-1");
+
+    expect(reopened.id).toBe(first.id);
+    expect(
+      state.projectStates["proj-1"].worktrees[0].panes.map((p) => p.kind),
+    ).toEqual(["files", "work-item", "terminal", "git"]);
+    expect(state.projectStates["proj-1"].focusedPaneId).toBe(first.id);
   });
 
   it("closePane removes terminal and refocuses; singletons are protected", () => {
