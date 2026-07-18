@@ -18,14 +18,12 @@ import {
 } from "./SidebarMetrics.js";
 import { WorktreeChildren } from "./WorktreeChildren.js";
 import { WorktreeRowActions } from "./WorktreeRowActions.js";
-import { useWorktreeDisclosure } from "./worktree-disclosure.js";
 
 interface WorktreeRowProps {
   project: SidebarProject;
   worktree: SidebarWorktree;
   selection: SidebarSelection;
   displayName?: string;
-  forceOpen?: boolean;
   isProjectRoot?: boolean;
   showTopBorder?: boolean;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
@@ -38,12 +36,8 @@ interface WorktreeRowProps {
   onNewSession?: (projectId: string, worktreeId: string) => void;
   onNewWorkItem?: (projectId: string, worktreeId: string) => void;
   onToggleChildPin?: (childId: string) => void;
-  worktreeOpen?: Record<string, boolean>;
-  onWorktreeOpenChange?: (
-    projectId: string,
-    worktreePath: string,
-    open: boolean,
-  ) => void;
+  disclosure?: { open: boolean; onToggle: () => void };
+  showChildren?: boolean;
   onReorderPanes?: (
     projectId: string,
     worktreePath: string,
@@ -56,7 +50,6 @@ export function WorktreeRow({
   worktree,
   selection,
   displayName,
-  forceOpen = false,
   isProjectRoot = false,
   showTopBorder = false,
   dragHandleProps,
@@ -65,16 +58,10 @@ export function WorktreeRow({
   onNewSession,
   onNewWorkItem,
   onToggleChildPin,
-  worktreeOpen,
-  onWorktreeOpenChange,
+  disclosure,
+  showChildren = true,
   onReorderPanes,
 }: WorktreeRowProps) {
-  const { open: isOpen, toggle: toggleOpen } = useWorktreeDisclosure(
-    worktree.path,
-    forceOpen,
-    worktreeOpen,
-    (path, open) => onWorktreeOpenChange?.(project.id, path, open),
-  );
   const worktreeFocused =
     selection.selectedWorktreeId === worktree.id &&
     selection.selectedChildId === null;
@@ -101,25 +88,27 @@ export function WorktreeRow({
         rootProps={dragHandleProps}
         className="group select-none"
       >
-        <SidebarRowActionButton
-          onClick={toggleOpen}
-          onKeyDown={(event) => {
-            if (event.key === " " || event.key === "Enter") {
-              event.stopPropagation();
-            }
-          }}
-          aria-expanded={isOpen}
-          aria-label={`${isOpen ? "Collapse" : "Expand"} ${label}`}
-        >
-          <span
-            aria-hidden
-            className={`transition-transform duration-[120ms] ${
-              isOpen ? "rotate-90" : "rotate-0"
-            }`}
+        {disclosure && (
+          <SidebarRowActionButton
+            onClick={disclosure.onToggle}
+            onKeyDown={(event) => {
+              if (event.key === " " || event.key === "Enter") {
+                event.stopPropagation();
+              }
+            }}
+            aria-expanded={disclosure.open}
+            aria-label={`${disclosure.open ? "Collapse" : "Expand"} ${label}`}
           >
-            <PaGlyph.disclosure />
-          </span>
-        </SidebarRowActionButton>
+            <span
+              aria-hidden
+              className={`transition-transform duration-[120ms] ${
+                disclosure.open ? "rotate-90" : "rotate-0"
+              }`}
+            >
+              <PaGlyph.disclosure />
+            </span>
+          </SidebarRowActionButton>
+        )}
         {!isProjectRoot && (
           <SidebarRowIcon
             tone={worktreeFocused ? "accent" : "secondary"}
@@ -169,7 +158,7 @@ export function WorktreeRow({
         />
       </SidebarRow>
 
-      {isOpen && (
+      {showChildren && (
         <WorktreeChildren
           project={project}
           worktree={worktree}

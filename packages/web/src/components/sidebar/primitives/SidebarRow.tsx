@@ -19,7 +19,7 @@ interface SidebarRowProps {
 
 export const SIDEBAR_ROW_INSET_CLASS: Record<SidebarRowDepth, string> = {
   0: "px-3",
-  1: "pr-3 pl-6",
+  1: "pr-3 pl-9",
 };
 
 const SELECTED_CLASS =
