@@ -141,6 +141,10 @@ interface HeadlessMouseStateService {
   activeEncoding?: unknown;
 }
 
+interface HeadlessCoreService {
+  isCursorHidden?: boolean;
+}
+
 function mouseProtocolSequence(mode: HeadlessTerminalModes): string {
   switch (mode.mouseTrackingMode) {
     case "x10":
@@ -174,10 +178,21 @@ function mouseEncodingSequence(
   }
 }
 
+function cursorVisibilitySequence(
+  term: import("@xterm/headless").Terminal,
+): string {
+  const coreService = (
+    term as unknown as {
+      _core?: { coreService?: HeadlessCoreService };
+    }
+  )._core?.coreService;
+  return coreService?.isCursorHidden ? "\x1b[?25l" : "";
+}
+
 function terminalModePrologue(
   term: import("@xterm/headless").Terminal,
 ): string {
-  return `${mouseProtocolSequence(term.modes)}${mouseEncodingSequence(term)}`;
+  return `${mouseProtocolSequence(term.modes)}${mouseEncodingSequence(term)}${cursorVisibilitySequence(term)}`;
 }
 
 function lineCursorEndColumn(line: HeadlessBufferLine | undefined): number {
