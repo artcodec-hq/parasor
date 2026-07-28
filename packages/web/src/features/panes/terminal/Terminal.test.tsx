@@ -1684,22 +1684,13 @@ describe("Terminal", () => {
     expect(mockTermResize).toHaveBeenCalledWith(90, 30);
   });
 
-  it("re-claims the desktop width on focus when the cursor is already over the terminal", () => {
+  it("does not re-claim the desktop width on tab focus when the cursor is already over the terminal", () => {
     render(<Terminal sessionId="s1" />, { wrapper });
     const termContainer = must(document.querySelector(".xterm")?.parentElement);
-    const term = must(
-      MockXTerm.mock.results[0]?.value as
-        | { cols: number; rows: number }
-        | undefined,
-    );
     vi.spyOn(termContainer, "matches").mockImplementation(
       (selector) => selector === ":hover",
     );
     mockTermResize.mockClear();
-    mockTermResize.mockImplementationOnce((cols: number, rows: number) => {
-      term.cols = cols;
-      term.rows = rows;
-    });
     mockSend.mockClear();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
 
@@ -1707,9 +1698,36 @@ describe("Terminal", () => {
       window.dispatchEvent(new Event("focus"));
     });
 
-    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
-    expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
+    expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize" }),
+    );
+  });
+
+  it("does not pin a short terminal screen on tab foreground", () => {
+    render(<Terminal sessionId="s1" />, { wrapper });
+    const termContainer = must(document.querySelector(".xterm")?.parentElement);
+    const term = must(
+      MockXTerm.mock.results[0]?.value as
+        | { buffer: { active: { viewportY: number; baseY: number } } }
+        | undefined,
+    );
+    vi.spyOn(termContainer, "matches").mockImplementation(
+      (selector) => selector === ":hover",
+    );
+    term.buffer.active.baseY = 0;
+    term.buffer.active.viewportY = 0;
+    mockTermScrollToBottom.mockClear();
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(mockTermScrollToBottom).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize" }),
     );
   });
 
