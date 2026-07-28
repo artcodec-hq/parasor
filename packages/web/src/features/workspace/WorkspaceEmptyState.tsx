@@ -38,9 +38,21 @@ export function WorkspaceEmptyState({
         }}
       />
       <div className="relative max-w-surface-md text-center">
-        <p className="mb-3.5 text-[32px] font-normal leading-none tracking-normal text-text-primary">
-          parasor
-        </p>
+        <span
+          role="img"
+          aria-label="parasor"
+          className="mx-auto mb-3.5 block h-[34px] w-[178px] bg-current text-text-primary"
+          style={{
+            maskImage: 'url("/parasor-logo.svg")',
+            maskPosition: "center",
+            maskRepeat: "no-repeat",
+            maskSize: "contain",
+            WebkitMaskImage: 'url("/parasor-logo.svg")',
+            WebkitMaskPosition: "center",
+            WebkitMaskRepeat: "no-repeat",
+            WebkitMaskSize: "contain",
+          }}
+        />
         {activeProjectId ? (
           <p className="mx-auto max-w-[440px] text-base leading-[1.6] text-text-secondary">
             Pick a worktree from the sidebar, or filter it with{" "}
