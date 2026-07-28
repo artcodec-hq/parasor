@@ -117,6 +117,7 @@ export function WorkspacePaneSurface({
       gitMenuActions={
         focusedWorkspace.isGitTab
           ? {
+              onFetch: () => gitWorkflow.fetch(),
               onPull: () => gitWorkflow.pull(),
               onPush: () => gitWorkflow.push(),
             }

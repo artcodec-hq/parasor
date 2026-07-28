@@ -145,6 +145,34 @@ describe("GitGraphPane refresh trigger", () => {
       expect(global.fetch).toHaveBeenCalledTimes(2);
     });
   });
+
+  it("fetches origin before reloading the graph from the refresh button", async () => {
+    const onFetch = vi.fn(async () => {});
+    const { findByLabelText } = render(
+      <GitGraphPane
+        projectId="p"
+        worktreePath="/repo"
+        selection={null}
+        onSelect={() => {}}
+        actions={{ onFetch }}
+      />,
+    );
+
+    const refresh = await findByLabelText("Refresh");
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(refresh);
+
+    await waitFor(() => {
+      expect(onFetch).toHaveBeenCalledOnce();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+    expect(onFetch.mock.invocationCallOrder[0]).toBeLessThan(
+      (global.fetch as ReturnType<typeof vi.fn>).mock.invocationCallOrder[1],
+    );
+  });
 });
 
 function makeSwimlane(
