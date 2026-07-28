@@ -134,4 +134,72 @@ describe("SettingsOverlay", () => {
     const issues = getByText("Issues").closest("a");
     expect(issues?.getAttribute("href")).toBe(APP_METADATA.issuesUrl);
   });
+
+  it("gives every settings form field a stable id, name, and accessible label", () => {
+    const server: ServerSettingsBinding = {
+      hostPlatform: "darwin",
+      serviceConfig: {
+        preventIdleSleep: false,
+        portDetection: "all-interfaces",
+        dropSizeMaxBytes: 10,
+        dropSizeHardMaxBytes: 20,
+      },
+      onPreventIdleSleepChange: vi.fn(),
+      onPortDetectionChange: vi.fn(),
+      onDropSizeMaxBytesChange: vi.fn(),
+      ideCommands: [
+        { id: "zed", label: "Zed", command: "zed", args: ["{path}"] },
+      ],
+      onIdeCommandsChange: vi.fn(),
+    };
+    const { getByText } = renderOverlay({ desktop: true, server });
+
+    const dialogFields = () => [
+      ...document.body.querySelectorAll(
+        '[role="dialog"][aria-label="Settings"] input, [role="dialog"][aria-label="Settings"] textarea, [role="dialog"][aria-label="Settings"] select',
+      ),
+    ];
+
+    const fields = new Set<Element>();
+    const collect = () => {
+      for (const field of dialogFields()) fields.add(field);
+    };
+
+    // Desktop starts on the first section (Appearance); also open the
+    // custom-theme sub-form so its fields are covered too.
+    collect();
+    fireEvent.click(getByText("Add theme"));
+    collect();
+
+    const sectionNames = [...document.body.querySelectorAll("nav button")].map(
+      (button) => button.textContent?.trim() ?? "",
+    );
+    for (const name of sectionNames) {
+      const navButton = [...document.body.querySelectorAll("nav button")].find(
+        (button) => button.textContent?.trim() === name,
+      );
+      if (navButton) fireEvent.click(navButton);
+      collect();
+    }
+
+    expect(fields.size).toBeGreaterThan(0);
+    for (const field of fields) {
+      const id = field.getAttribute("id");
+      const description = `${field.tagName.toLowerCase()}#${id ?? "?"} (${field.getAttribute("placeholder") ?? field.getAttribute("type") ?? "field"})`;
+      expect(id, `${description} is missing an id`).toBeTruthy();
+      expect(
+        field.getAttribute("name"),
+        `${description} is missing a name`,
+      ).toBe(id);
+      const wrappingLabel = field.closest("label");
+      const hasAccessibleLabel =
+        field.getAttribute("aria-label") ??
+        (id && document.body.querySelector(`label[for="${id}"]`)) ??
+        (wrappingLabel?.textContent?.trim() || null);
+      expect(
+        hasAccessibleLabel,
+        `${description} has no accessible label`,
+      ).toBeTruthy();
+    }
+  });
 });

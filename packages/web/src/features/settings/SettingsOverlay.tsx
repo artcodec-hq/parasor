@@ -203,6 +203,9 @@ function ListPane({
           </span>
           <input
             type="text"
+            id="settings-search"
+            name="settings-search"
+            aria-label="Search settings"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search…"

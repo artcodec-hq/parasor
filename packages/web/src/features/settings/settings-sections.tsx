@@ -125,6 +125,8 @@ export function useSettingsSections(
                 defaultStack={DEFAULT_UI_FONT_STACK}
                 placeholder="System default"
                 previewLines={PREVIEW_LINES_UI}
+                id="settings-ui-font-family"
+                ariaLabel="UI font"
               />
             ),
           },
@@ -203,6 +205,8 @@ export function useSettingsSections(
                 onChange={setCustomFontFamily}
                 previewFontSize={contentFontSize}
                 presetId={fontPresetId}
+                id="settings-custom-font"
+                ariaLabel="Content font override"
               />
             ),
           },
@@ -248,6 +252,7 @@ export function useSettingsSections(
                 checked={playAttentionSound}
                 onChange={setPlayAttentionSound}
                 label="Enabled"
+                name="settings-attention-sound"
               />
             ),
           },
@@ -263,6 +268,7 @@ export function useSettingsSections(
                 checked={playCompletionSound}
                 onChange={setPlayCompletionSound}
                 label="Enabled"
+                name="settings-completion-sound"
               />
             ),
           },
@@ -297,6 +303,7 @@ export function useSettingsSections(
             checked={serviceConfig.preventIdleSleep}
             onChange={onPreventIdleSleepChange}
             label="Enabled"
+            name="settings-prevent-idle-sleep"
           />
         ),
       });
@@ -324,6 +331,7 @@ export function useSettingsSections(
               onPortDetectionChange(enabled ? "all-interfaces" : "off")
             }
             label="Enabled"
+            name="settings-port-detection"
           />
         ),
       });
@@ -528,6 +536,8 @@ function IdeCommandsEditor({
                 ID
                 <input
                   type="text"
+                  id={`settings-ide-command-${index}-id`}
+                  name={`settings-ide-command-${index}-id`}
                   value={command.id}
                   onChange={(event) =>
                     update(index, { id: event.target.value })
@@ -540,6 +550,8 @@ function IdeCommandsEditor({
                 Label
                 <input
                   type="text"
+                  id={`settings-ide-command-${index}-label`}
+                  name={`settings-ide-command-${index}-label`}
                   value={command.label}
                   onChange={(event) =>
                     update(index, { label: event.target.value })
@@ -552,6 +564,8 @@ function IdeCommandsEditor({
                 Command
                 <input
                   type="text"
+                  id={`settings-ide-command-${index}-command`}
+                  name={`settings-ide-command-${index}-command`}
                   value={command.command}
                   onChange={(event) =>
                     update(index, { command: event.target.value })
@@ -564,6 +578,8 @@ function IdeCommandsEditor({
             <label className="block text-xs text-text-secondary">
               Arguments
               <textarea
+                id={`settings-ide-command-${index}-args`}
+                name={`settings-ide-command-${index}-args`}
                 value={command.args.join("\n")}
                 onChange={(event) =>
                   update(index, {
@@ -646,15 +662,19 @@ function SettingToggle({
   checked,
   onChange,
   label,
+  name,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  name: string;
 }) {
   return (
     <label className="flex items-center gap-3 rounded-control border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary">
       <input
         type="checkbox"
+        id={name}
+        name={name}
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         className="h-4 w-4 accent-accent"
@@ -690,6 +710,8 @@ function DropSizePicker({
   const shown = options.filter((o) => o.value <= hardMaxBytes);
   return (
     <select
+      id="settings-drop-size-max"
+      name="settings-drop-size-max"
       aria-label="File drop size limit"
       className="rounded-control border border-border bg-bg-secondary px-3 py-1.5 text-sm text-text-primary"
       value={valueBytes}
@@ -775,6 +797,8 @@ function ThemePicker({
             Name
             <input
               type="text"
+              id="settings-custom-theme-name"
+              name="settings-custom-theme-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="My Theme"
@@ -784,6 +808,8 @@ function ThemePicker({
           <label className="block text-xs text-text-secondary">
             Theme JSON
             <textarea
+              id="settings-custom-theme-json"
+              name="settings-custom-theme-json"
               value={json}
               onChange={(event) => setJson(event.target.value)}
               rows={8}
@@ -926,6 +952,8 @@ function FontFamilyInput({
   placeholder = "Default",
   presetId = "",
   previewLines,
+  id,
+  ariaLabel,
 }: {
   value: string;
   onChange: (family: string) => void;
@@ -934,6 +962,8 @@ function FontFamilyInput({
   placeholder?: string;
   presetId?: string;
   previewLines?: string[];
+  id: string;
+  ariaLabel: string;
 }) {
   // Match the apply-side stack exactly: `resolveFontStack` quotes
   // multi-word families and falls back to the requested default when empty,
@@ -946,6 +976,9 @@ function FontFamilyInput({
     <div className="flex flex-col gap-2">
       <input
         type="text"
+        id={id}
+        name={id}
+        aria-label={ariaLabel}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
