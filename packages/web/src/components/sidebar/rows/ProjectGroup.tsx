@@ -4,6 +4,7 @@ import type {
   SidebarSelection,
   SidebarWorktree,
 } from "../model/types.js";
+import { useProjectDisclosure } from "./project-disclosure.js";
 import { WorktreeRow } from "./WorktreeRow.js";
 
 interface ProjectGroupProps {
@@ -79,11 +80,21 @@ export function ProjectGroup({
             hasAlertChild: false,
           },
         ];
+  const projectWorktree =
+    worktrees.find((worktree) => worktree.path === project.path) ??
+    worktrees[0];
+  const { open: projectOpen, toggle: toggleProjectOpen } = useProjectDisclosure(
+    project.path,
+    forceOpen,
+    worktreeOpen,
+    (path, open) => onWorktreeOpenChange?.(project.id, path, open),
+  );
+  const visibleWorktrees = projectOpen ? worktrees : [projectWorktree];
 
   return (
     <>
-      {worktrees.map((wt, index) => {
-        const root = wt.path === project.path;
+      {visibleWorktrees.map((wt, index) => {
+        const root = wt.id === projectWorktree.id;
         return (
           <WorktreeRow
             key={wt.id}
@@ -91,7 +102,6 @@ export function ProjectGroup({
             worktree={wt}
             selection={selection}
             displayName={root ? project.name : wt.name}
-            forceOpen={forceOpen}
             isProjectRoot={root}
             showTopBorder={index === 0}
             dragHandleProps={root && index === 0 ? dragHandleProps : undefined}
@@ -100,8 +110,12 @@ export function ProjectGroup({
             onNewSession={onNewSession}
             onNewWorkItem={onNewWorkItem}
             onToggleChildPin={onToggleChildPin}
-            worktreeOpen={worktreeOpen}
-            onWorktreeOpenChange={onWorktreeOpenChange}
+            disclosure={
+              root
+                ? { open: projectOpen, onToggle: toggleProjectOpen }
+                : undefined
+            }
+            showChildren={projectOpen}
             onReorderPanes={onReorderPanes}
           />
         );

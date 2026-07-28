@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   SidebarProject,
@@ -351,7 +351,7 @@ describe("WorktreeRow external / missing-path icons", () => {
 });
 
 describe("WorktreeRow disclosure state", () => {
-  it("renders a collapsed worktree row from controlled state", () => {
+  it("renders worktree children without a disclosure control", () => {
     const worktree = makeWorktreeWithChild();
 
     render(
@@ -359,77 +359,11 @@ describe("WorktreeRow disclosure state", () => {
         project={project}
         worktree={worktree}
         selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Expand main" })).toBeTruthy();
-    expect(screen.queryByText("codex")).toBeNull();
-  });
-
-  it("reports user disclosure toggles per project and worktree path", () => {
-    const worktree = makeWorktreeWithChild();
-    const onWorktreeOpenChange = vi.fn();
-    const { rerender } = render(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Collapse main" }));
-    expect(onWorktreeOpenChange).toHaveBeenCalledWith(
-      project.id,
-      worktree.path,
-      false,
-    );
-
-    rerender(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Expand main" })).toBeTruthy();
-    expect(screen.queryByText("codex")).toBeNull();
-  });
-
-  it("forceOpen shows filtered results without overwriting stored disclosure state", () => {
-    const worktree = makeWorktreeWithChild();
-    const onWorktreeOpenChange = vi.fn();
-
-    const { rerender } = render(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-        forceOpen
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Collapse main" })).toBeTruthy();
     expect(screen.getByText("codex")).toBeTruthy();
-    expect(onWorktreeOpenChange).not.toHaveBeenCalled();
-
-    rerender(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Expand main" })).toBeTruthy();
-    expect(screen.queryByText("codex")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse main" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand main" })).toBeNull();
   });
 });

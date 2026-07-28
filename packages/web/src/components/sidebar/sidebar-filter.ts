@@ -31,6 +31,16 @@ export function filterSidebarProjects(
       }
     }
     if (projectMatches || worktrees.length > 0) {
+      const projectWorktree = project.worktrees.find(
+        (worktree) => worktree.path === project.path,
+      );
+      if (
+        !projectMatches &&
+        projectWorktree &&
+        !worktrees.some((worktree) => worktree.id === projectWorktree.id)
+      ) {
+        worktrees.unshift({ ...projectWorktree, children: [] });
+      }
       result.push({ ...project, worktrees });
     }
   }
