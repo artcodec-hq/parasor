@@ -210,10 +210,15 @@ export function CommitBody({
       <div
         className={`flex flex-col gap-2 p-3 ${layout === "inline" ? "flex-none" : "min-h-0 flex-1"}`}
       >
-        <span className="cm-mono text-xs tracking-[0.04em] text-text-secondary uppercase">
+        <label
+          htmlFor="git-commit-message"
+          className="cm-mono text-xs tracking-[0.04em] text-text-secondary uppercase"
+        >
           Message
-        </span>
+        </label>
         <textarea
+          id="git-commit-message"
+          name="git-commit-message"
           ref={messageRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
