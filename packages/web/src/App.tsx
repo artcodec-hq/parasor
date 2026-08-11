@@ -143,6 +143,12 @@ export function App() {
   const activeProjectName = activeProject?.name ?? null;
   const activeProjectPath = activeProject?.path ?? null;
 
+  useEffect(() => {
+    document.title = activeProjectName
+      ? `${activeProjectName} | Parasor`
+      : "Parasor";
+  }, [activeProjectName]);
+
   useWorkspaceSelectionSync({
     activeProjectId,
     connected: store.connected,

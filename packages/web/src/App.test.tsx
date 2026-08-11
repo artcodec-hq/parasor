@@ -60,12 +60,22 @@ vi.mock("./components/sidebar/index.js", () => ({
   readClientBrowserChildPanes: () => ({}),
   Sidebar: ({
     onNewSession,
+    onSelectWorktree,
   }: {
     onNewSession?: (projectId: string, worktreeId: string) => void;
+    onSelectWorktree?: (projectId: string, worktreeId: string) => void;
   }) => (
-    <button type="button" onClick={() => onNewSession?.("p1", "wt:/repo")}>
-      open terminal launcher
-    </button>
+    <>
+      <button type="button" onClick={() => onNewSession?.("p1", "wt:/repo")}>
+        open terminal launcher
+      </button>
+      <button
+        type="button"
+        onClick={() => onSelectWorktree?.("p2", "wt:/repo2")}
+      >
+        select project 2
+      </button>
+    </>
   ),
 }));
 
@@ -332,6 +342,58 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   delete (window as { matchMedia?: unknown }).matchMedia;
+});
+
+describe("App browser title", () => {
+  it("uses the Parasor fallback when no project is active", () => {
+    document.title = "stale title";
+    useEventSocketMock.mockReturnValue(
+      eventStore({ projects: [], worktrees: {} }),
+    );
+
+    render(<App />);
+
+    expect(document.title).toBe("Parasor");
+  });
+
+  it("tracks active project switches, renames, and removal", async () => {
+    let store = eventStore({
+      projects: [
+        project(),
+        project({ id: "p2", name: "Project 2", path: "/repo2" }),
+      ],
+      worktrees: {
+        p1: [worktree()],
+        p2: [worktree({ path: "/repo2" })],
+      },
+    });
+    useEventSocketMock.mockImplementation(() => store);
+
+    const { rerender } = render(<App />);
+    expect(document.title).toBe("Project | Parasor");
+
+    fireEvent.click(screen.getByRole("button", { name: "select project 2" }));
+    await waitFor(() => {
+      expect(document.title).toBe("Project 2 | Parasor");
+    });
+
+    store = eventStore({
+      projects: [
+        project(),
+        project({ id: "p2", name: "R&D・開発", path: "/repo2" }),
+      ],
+      worktrees: {
+        p1: [worktree()],
+        p2: [worktree({ path: "/repo2" })],
+      },
+    });
+    rerender(<App />);
+    expect(document.title).toBe("R&D・開発 | Parasor");
+
+    store = eventStore({ projects: [], worktrees: {} });
+    rerender(<App />);
+    expect(document.title).toBe("Parasor");
+  });
 });
 
 describe("App session creation routes", () => {
