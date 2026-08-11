@@ -44,7 +44,9 @@ describe("CommitDialog", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Commit · main" });
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    expect(screen.getByRole("textbox")).toBeTruthy();
+    const message = screen.getByRole("textbox", { name: "Message" });
+    expect(message.getAttribute("id")).toBe("git-commit-message");
+    expect(message.getAttribute("name")).toBe("git-commit-message");
   });
 
   it("closes the desktop dialog from Escape, backdrop, and Cancel", () => {
