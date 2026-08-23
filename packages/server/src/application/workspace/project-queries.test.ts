@@ -28,11 +28,14 @@ function makeProject(
   };
 }
 
-
 describe("isMissingPathError", () => {
   it("is true only for ENOENT codes", () => {
-    expect(isMissingPathError(Object.assign(new Error("x"), { code: "ENOENT" }))).toBe(true);
-    expect(isMissingPathError(new Error("fatal: not a git repository"))).toBe(false);
+    expect(
+      isMissingPathError(Object.assign(new Error("x"), { code: "ENOENT" })),
+    ).toBe(true);
+    expect(isMissingPathError(new Error("fatal: not a git repository"))).toBe(
+      false,
+    );
   });
 });
 
@@ -194,15 +197,15 @@ describe("createProjectQueries", () => {
     await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
       status: "ok",
       worktrees: [
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 2,
-        behind: 1,
-        dirtyCount: 1,
-      },
-    ],
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 2,
+          behind: 1,
+          dirtyCount: 1,
+        },
+      ],
     });
   });
 
@@ -245,24 +248,24 @@ describe("createProjectQueries", () => {
     await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
       status: "ok",
       worktrees: [
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-      },
-      {
-        path: "/tmp/proj.worktrees/feat",
-        head: "def",
-        branch: "feat",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-        lineage,
-      },
-    ],
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/tmp/proj.worktrees/feat",
+          head: "def",
+          branch: "feat",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+          lineage,
+        },
+      ],
     });
   });
 
@@ -363,21 +366,21 @@ describe("createProjectQueries", () => {
     expect(out).toEqual({
       status: "ok",
       worktrees: [
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-      },
-      {
-        path: "/tmp/proj/gone",
-        head: "def",
-        branch: "stale",
-        orphan: true,
-      },
-    ],
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/tmp/proj/gone",
+          head: "def",
+          branch: "stale",
+          orphan: true,
+        },
+      ],
     });
   });
 
@@ -417,21 +420,21 @@ describe("createProjectQueries", () => {
     expect(out).toEqual({
       status: "ok",
       worktrees: [
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-      },
-      {
-        path: "/tmp/proj/gone",
-        head: "def",
-        branch: "stale",
-        orphan: true,
-      },
-    ],
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/tmp/proj/gone",
+          head: "def",
+          branch: "stale",
+          orphan: true,
+        },
+      ],
     });
   });
 
@@ -455,9 +458,7 @@ describe("createProjectQueries", () => {
 
     await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
       status: "ok",
-      worktrees: [
-      { path: "/tmp/proj", head: "abc", branch: "main" },
-    ],
+      worktrees: [{ path: "/tmp/proj", head: "abc", branch: "main" }],
     });
   });
 
@@ -556,7 +557,6 @@ describe("createProjectQueries", () => {
     expect(peakInFlight).toBeLessThanOrEqual(8);
   });
 
-
   it("returns missing-path when cwd spawn is ENOENT", async () => {
     projects.set("proj-1", makeProject({ id: "proj-1" }));
     const runGit = vi.fn(async () => {
@@ -590,7 +590,12 @@ describe("createProjectQueries", () => {
         throw new Error("fatal: not a git repository");
       }
       if (args[0] === "worktree") {
-        return ["worktree /tmp/ok", "HEAD abc", "branch refs/heads/main", ""].join("\n");
+        return [
+          "worktree /tmp/ok",
+          "HEAD abc",
+          "branch refs/heads/main",
+          "",
+        ].join("\n");
       }
       return ["# branch.ab +0 -0", ""].join("\n");
     });
