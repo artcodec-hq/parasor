@@ -68,6 +68,7 @@ class FakeHost implements PtyHost {
     session: makeSession("default-session"),
   };
   initClientResult: boolean | Error = true;
+  initClientGeometry?: { cols: number; rows: number; epoch: number };
   onInitClient?: (id: string, clientId: string) => void;
 
   private dataListeners: ((
@@ -160,12 +161,23 @@ class FakeHost implements PtyHost {
     rows: number,
     _listener: (data: string) => void,
     attachToken?: number,
-  ): Promise<{ ok: true; attachToken: number } | { ok: false }> {
+  ): Promise<
+    | {
+        ok: true;
+        attachToken: number;
+        geometry?: { cols: number; rows: number; epoch: number };
+      }
+    | { ok: false }
+  > {
     this.initClients.push({ id, clientId, cols, rows });
     if (this.initClientResult instanceof Error) throw this.initClientResult;
     if (!this.initClientResult) return { ok: false };
     this.onInitClient?.(id, clientId);
-    return { ok: true, attachToken: attachToken ?? 1 };
+    return {
+      ok: true,
+      attachToken: attachToken ?? 1,
+      geometry: this.initClientGeometry,
+    };
   }
   async attachClient(): Promise<{ ok: false }> {
     return { ok: false };
@@ -545,6 +557,35 @@ describe("PtyHostDaemon CREATE/SET_TITLE/WRITE", () => {
     expect(
       decodeJsonPayload<SessionUpdatePayload>(must(update).payload).session,
     ).toMatchObject({ id: "s1", pid: 4321, state: "running" });
+  });
+
+  it("INIT_CLIENT_ACK includes the daemon PTY geometry when available", async () => {
+    host.sessions.set("s1", makeSession("s1"));
+    host.initClientGeometry = { cols: 43, rows: 20, epoch: 7 };
+
+    send(
+      pair.clientSide,
+      FrameType.INIT_CLIENT_REQ,
+      conn.id,
+      conn.gen,
+      44,
+      encodeJsonPayload({
+        sessionId: "s1",
+        clientId: "client-1",
+        cols: 105,
+        rows: 51,
+      }),
+    );
+
+    const frames = await pair.awaitFrames(4);
+    const ack = frames.find(
+      (frame) =>
+        frame.type === FrameType.INIT_CLIENT_ACK && frame.requestId === 44,
+    );
+    expect(decodeJsonPayload<InitClientAckPayload>(must(ack).payload)).toEqual({
+      accepted: true,
+      geometry: { cols: 43, rows: 20, epoch: 7 },
+    });
   });
 
   it("WRITE forwards binary stream payload to host.write", async () => {

@@ -5,6 +5,7 @@ import type {
   SessionEndReason,
   SessionLaunchPreset,
   TerminalCapabilities,
+  TerminalGeometry,
   TerminalLastSeen,
   TerminalReplayKind,
   TerminalServerState,
@@ -73,6 +74,14 @@ export interface AttachClientResponse {
   attachToken: number;
 }
 
+export type InitClientResult =
+  | {
+      ok: true;
+      attachToken: number;
+      geometry?: TerminalGeometry;
+    }
+  | { ok: false };
+
 export type AttachClientResult = AttachClientResponse | { ok: false };
 
 /**
@@ -83,6 +92,7 @@ export type AttachClientResult = AttachClientResponse | { ok: false };
  */
 export interface AttachClientSink {
   onChunk: (generation: number, seq: bigint, data: Buffer) => void;
+  onGeometry?: (geometry: TerminalGeometry) => void;
   onExit?: (exitCode: number) => void;
 }
 
@@ -196,7 +206,7 @@ export interface PtyHost {
     rows: number,
     listener: (data: string) => void,
     attachToken?: number,
-  ): Promise<{ ok: true; attachToken: number } | { ok: false }>;
+  ): Promise<InitClientResult>;
 
   /**
    * Binary-capable attach. The WS handler routes to this method when the
@@ -250,6 +260,9 @@ export interface PtyHost {
    */
   onSessionData(
     listener: (sessionId: string, data: string, generation: number) => void,
+  ): void;
+  onSessionGeometry?(
+    listener: (sessionId: string, geometry: TerminalGeometry) => void,
   ): void;
 
   onSessionExit:

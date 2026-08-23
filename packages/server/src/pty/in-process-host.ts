@@ -7,6 +7,7 @@ import type {
   SessionEndReason,
   SessionRecord,
   TerminalCapabilities,
+  TerminalGeometry,
 } from "@parasor/shared";
 import * as pty from "node-pty";
 import { PromiseMutex } from "../lib/promise-mutex.js";
@@ -120,6 +121,11 @@ type AttachedClient = { attachToken: number; flowPaused: boolean } & (
   | {
       kind: "chunk";
       listener: (generation: number, seq: bigint, data: Buffer) => void;
+      onGeometry?: (geometry: {
+        cols: number;
+        rows: number;
+        epoch: number;
+      }) => void;
       onExit?: (exitCode: number) => void;
     }
 );
@@ -128,6 +134,7 @@ interface ManagedSession {
   info: Session;
   process: pty.IPty | null;
   ptySize: { cols: number; rows: number } | null;
+  geometryEpoch: number;
   currentGeneration: number;
   attachedClients: Map<string, AttachedClient>;
   outputPaused: boolean;
@@ -152,6 +159,12 @@ export class InProcessPtyHost implements PtyHost {
     generation: number,
   ) => void)[] = [];
   private inputListeners: ((sessionId: string, data: string) => void)[] = [];
+  private geometryListeners: Array<
+    (
+      sessionId: string,
+      geometry: { cols: number; rows: number; epoch: number },
+    ) => void
+  > = [];
   private ptyEnv: Record<string, string> = {};
   private readonly inProcessLegacyReplayMaxBytes =
     readPositiveIntegerEnv("PARASOR_IN_PROCESS_LEGACY_REPLAY_MAX_BYTES") ??
@@ -324,6 +337,7 @@ export class InProcessPtyHost implements PtyHost {
         info,
         process: null,
         ptySize: null,
+        geometryEpoch: 0,
         currentGeneration: 1,
         attachedClients: new Map(),
         outputPaused: false,
@@ -519,6 +533,20 @@ export class InProcessPtyHost implements PtyHost {
     try {
       managed.process.resize(cols, rows);
       managed.ptySize = { cols, rows };
+      managed.geometryEpoch += 1;
+      void this.headlessStateCache
+        ?.resizeExisting(id, { cols, rows })
+        .catch((err) => {
+          console.warn(
+            `[terminal] headless state resize failed for session=${id.slice(0, 8)}: ${(err as Error).message}`,
+          );
+          this.headlessStateCache?.delete(id);
+        });
+      const geometry = { cols, rows, epoch: managed.geometryEpoch };
+      for (const client of managed.attachedClients.values()) {
+        if (client.kind === "chunk") client.onGeometry?.(geometry);
+      }
+      for (const listener of this.geometryListeners) listener(id, geometry);
     } catch {
       // node-pty rejects invalid dims -- ignore
     }
@@ -603,7 +631,14 @@ export class InProcessPtyHost implements PtyHost {
     rows: number,
     listener: (data: string) => void,
     callerToken?: number,
-  ): Promise<{ ok: true; attachToken: number } | { ok: false }> {
+  ): Promise<
+    | {
+        ok: true;
+        attachToken: number;
+        geometry?: { cols: number; rows: number; epoch: number };
+      }
+    | { ok: false }
+  > {
     const managed = this.sessions.get(id);
     if (!managed) return { ok: false };
 
@@ -656,7 +691,13 @@ export class InProcessPtyHost implements PtyHost {
         }
       }
 
-      return { ok: true, attachToken };
+      return {
+        ok: true,
+        attachToken,
+        geometry: managed.ptySize
+          ? { ...managed.ptySize, epoch: managed.geometryEpoch }
+          : undefined,
+      };
     } finally {
       release();
     }
@@ -704,6 +745,9 @@ export class InProcessPtyHost implements PtyHost {
       };
 
       const generation = managed.currentGeneration;
+      let geometry: TerminalGeometry | undefined = managed.ptySize
+        ? { ...managed.ptySize, epoch: managed.geometryEpoch }
+        : undefined;
       const ringSnapshot = this.scrollbackLog?.ringState(id, generation) ?? {
         generation,
         lastDeliveredSeq: null,
@@ -748,9 +792,15 @@ export class InProcessPtyHost implements PtyHost {
         } else if (decision.kind === "full") {
           const tail = getDiskTail();
           replay = "full";
-          const resolved = await this.buildFullReplay(id, tail, cols, rows);
+          const resolved = await this.buildFullReplay(
+            id,
+            tail,
+            geometry?.cols ?? cols,
+            geometry?.rows ?? rows,
+          );
           fullReplay = resolved.fullReplay;
           replayDiagnostics = resolved.replayDiagnostics;
+          geometry = { ...resolved.geometry, epoch: managed.geometryEpoch };
         } else {
           if (lastSeenForRing) {
             replay = "none";
@@ -758,9 +808,15 @@ export class InProcessPtyHost implements PtyHost {
             const tail = getDiskTail();
             replay = tail ? "full" : "none";
             if (replay === "full") {
-              const resolved = await this.buildFullReplay(id, tail, cols, rows);
+              const resolved = await this.buildFullReplay(
+                id,
+                tail,
+                geometry?.cols ?? cols,
+                geometry?.rows ?? rows,
+              );
               fullReplay = resolved.fullReplay;
               replayDiagnostics = resolved.replayDiagnostics;
+              geometry = { ...resolved.geometry, epoch: managed.geometryEpoch };
             }
           }
         }
@@ -771,9 +827,15 @@ export class InProcessPtyHost implements PtyHost {
         const tail = getDiskTail();
         if (tail) {
           replay = "full";
-          const resolved = await this.buildFullReplay(id, tail, cols, rows);
+          const resolved = await this.buildFullReplay(
+            id,
+            tail,
+            geometry?.cols ?? cols,
+            geometry?.rows ?? rows,
+          );
           fullReplay = resolved.fullReplay;
           replayDiagnostics = resolved.replayDiagnostics;
+          geometry = { ...resolved.geometry, epoch: managed.geometryEpoch };
         }
       }
 
@@ -781,6 +843,7 @@ export class InProcessPtyHost implements PtyHost {
       managed.attachedClients.set(clientId, {
         kind: "chunk",
         listener: sink.onChunk,
+        onGeometry: sink.onGeometry,
         onExit: sink.onExit,
         attachToken,
         flowPaused: false,
@@ -800,6 +863,7 @@ export class InProcessPtyHost implements PtyHost {
             ringSnapshot.oldestSeq === null
               ? null
               : ringSnapshot.oldestSeq.toString(),
+          geometry,
         },
         replay,
         chunks,
@@ -820,12 +884,13 @@ export class InProcessPtyHost implements PtyHost {
   ): Promise<{
     fullReplay: string;
     replayDiagnostics: AttachClientResponse["replayDiagnostics"];
+    geometry: { cols: number; rows: number };
   }> {
     const rawBytes = Buffer.byteLength(tail, "utf8");
     if (this.headlessReplayEnabled && this.headlessStateCache) {
       try {
         const headlessSnapshot =
-          (await this.headlessStateCache.snapshot(id, { cols, rows })) ??
+          (await this.headlessStateCache.snapshot(id)) ??
           (await this.headlessStateCache.rebuild(id, tail, { cols, rows }));
         if (!headlessSnapshot) {
           throw new Error("empty headless replay snapshot");
@@ -833,6 +898,10 @@ export class InProcessPtyHost implements PtyHost {
         const snapshot = headlessSnapshot.snapshot;
         return {
           fullReplay: snapshot.text,
+          geometry: {
+            cols: headlessSnapshot.cols,
+            rows: headlessSnapshot.rows,
+          },
           replayDiagnostics: {
             source: headlessSnapshot.source,
             rawBytes: snapshot.rawBytes,
@@ -853,6 +922,7 @@ export class InProcessPtyHost implements PtyHost {
         );
         return {
           fullReplay,
+          geometry: { cols, rows },
           replayDiagnostics: {
             source: "headless-fallback",
             rawBytes,
@@ -869,6 +939,7 @@ export class InProcessPtyHost implements PtyHost {
     );
     return {
       fullReplay,
+      geometry: { cols, rows },
       replayDiagnostics: {
         source: "raw-tail",
         rawBytes,
@@ -1023,6 +1094,7 @@ export class InProcessPtyHost implements PtyHost {
       info: { ...session, state: "ended", pid: null, endReason },
       process: null,
       ptySize: null,
+      geometryEpoch: 0,
       currentGeneration: session.generation,
       attachedClients: new Map(),
       outputPaused: false,
@@ -1041,6 +1113,15 @@ export class InProcessPtyHost implements PtyHost {
     callback: (sessionId: string, data: string, generation: number) => void,
   ): void {
     this.globalDataListeners.push(callback);
+  }
+
+  onSessionGeometry(
+    callback: (
+      sessionId: string,
+      geometry: { cols: number; rows: number; epoch: number },
+    ) => void,
+  ): void {
+    this.geometryListeners.push(callback);
   }
 
   /**
@@ -1122,6 +1203,7 @@ export class InProcessPtyHost implements PtyHost {
 
     managed.process = proc;
     managed.ptySize = { cols, rows };
+    managed.geometryEpoch += 1;
     managed.outputPaused = false;
     managed.info = {
       ...managed.info,

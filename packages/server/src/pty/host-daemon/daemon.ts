@@ -132,6 +132,12 @@ export class PtyHostDaemon {
     this.host.onSessionInput((sessionId, data) => {
       this.broadcastStream(FrameType.SESSION_INPUT, sessionId, data);
     });
+    this.host.onSessionGeometry?.((sessionId, geometry) => {
+      this.broadcastJson(FrameType.GEOMETRY, 0, {
+        sessionId,
+        ...geometry,
+      });
+    });
     this.host.onSessionExit = (sessionId, sessionGeneration, endReason) => {
       this.broadcastJson(FrameType.SESSION_EXIT, 0, {
         sessionId,
@@ -550,7 +556,10 @@ export class PtyHostDaemon {
       )
       .then((result) => {
         if (!this.fenceCommit(conn)) return;
-        const ack: InitClientAckPayload = { accepted: result.ok };
+        const ack: InitClientAckPayload = {
+          accepted: result.ok,
+          geometry: result.ok ? result.geometry : undefined,
+        };
         conn.send({
           type: FrameType.INIT_CLIENT_ACK,
           requestId: frame.requestId,
