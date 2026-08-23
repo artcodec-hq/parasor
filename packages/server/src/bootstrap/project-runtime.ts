@@ -209,6 +209,13 @@ export function createProjectRuntime({
         );
 
         await watcher.start();
+        // start() is a no-op on a missing root. If presence flipped while
+        // subscribe was in flight, do not insert — restore would then
+        // hit `fileWatchers.has(key)` and skip a real subscription.
+        if (presence?.isMissing(projectId)) {
+          await watcher.stop();
+          return;
+        }
         fileWatchers.set(key, watcher);
         try {
           await broadcastGitState(projectId, worktreePath);
@@ -260,16 +267,18 @@ export function createProjectRuntime({
       clearTimeout(timer);
       pendingGitDiff.delete(key);
     }
-    const tasks: Promise<void>[] = [];
-    for (const [key, watcher] of fileWatchers) {
-      if (!key.startsWith(prefix)) continue;
-      tasks.push(
-        watcher.stop().finally(() => {
-          fileWatchers.delete(key);
-        }),
-      );
+    const paths = new Set<string>(projectWorktreePaths(projectId));
+    for (const key of fileWatchers.keys()) {
+      if (key.startsWith(prefix)) paths.add(key.slice(prefix.length));
     }
-    await Promise.all(tasks);
+    for (const key of watcherOps.keys()) {
+      if (key.startsWith(prefix)) paths.add(key.slice(prefix.length));
+    }
+    await Promise.all(
+      [...paths].map((worktreePath) =>
+        teardownWatcher(projectId, worktreePath),
+      ),
+    );
     gitWatcher.clearProject(projectId);
   }
 

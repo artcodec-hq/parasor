@@ -240,6 +240,21 @@ describe("createSessionCommands", () => {
     );
   });
 
+  it("refuses to restart a session when the project directory is missing", async () => {
+    sessions.set("sess-1", makeSession({ id: "sess-1", state: "ended" }));
+    const commands = createSessionCommands({
+      appStateStore,
+      eventBus,
+      ptyManager,
+      isProjectMissing: () => true,
+    });
+    await expect(commands.restartSession("sess-1")).rejects.toMatchObject({
+      name: "WorkspaceConflictError",
+      message: "Project directory is missing",
+    });
+    expect(ptyManager.restart).not.toHaveBeenCalled();
+  });
+
   it("throws conflict when restarting a running session", async () => {
     sessions.set("sess-1", makeSession({ id: "sess-1", state: "running" }));
     const commands = createSessionCommands({

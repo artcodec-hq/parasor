@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +62,46 @@ describe("createProjectRuntime missing paths", () => {
     await new Promise((r) => setTimeout(r, 50));
     await runtime.dispose();
     expect(unhandled).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("starts watching after a missing project path is restored while focused", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const present = mkdtempSync(join(tmpdir(), "parasor-rt-ok-"));
+    dirs.push(present);
+    const missing = join(tmpdir(), `parasor-rt-restore-${Date.now()}`);
+    const projects = {
+      gone: {
+        id: "gone",
+        path: missing,
+        name: "gone",
+        createdAt: 1,
+        lastAccessedAt: 1,
+      },
+    };
+    const projectManager = {
+      get: (id: string) => projects[id as keyof typeof projects],
+      list: () => Object.values(projects),
+    } as unknown as ProjectManager;
+    const presence = createProjectPresence();
+    presence.probeSync(projects.gone);
+    const runtime = createProjectRuntime({
+      projectManager,
+      eventBus: { broadcast: vi.fn() } as unknown as EventBus,
+      worktreeCache: new WorktreeCache(),
+      presence,
+    });
+    runtime.onClientActiveProject(null, "gone");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runtime.isLiveWatched("gone")).toBe(false);
+
+    mkdirSync(missing);
+    dirs.push(missing);
+    presence.markPresent("gone", missing);
+    runtime.onPathRestored("gone");
+    await new Promise((r) => setTimeout(r, 80));
+    expect(runtime.isLiveWatched("gone")).toBe(true);
+    await runtime.dispose();
     warn.mockRestore();
   });
 });

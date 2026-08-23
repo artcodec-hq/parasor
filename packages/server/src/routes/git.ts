@@ -59,7 +59,9 @@ function mapGitError(err: unknown): {
 export function createGitRoutes(deps: GitRoutesDeps): Hono {
   const { projectManager, worktreeCache, projectRuntime } = deps;
   const routes = new Hono();
-  routes.use(async (c, next) => {
+  // Bind `/:id` on the middleware path. A pathless `use()` runs before the
+  // route match, so `c.req.param("id")` is empty and the 409 never fires.
+  routes.use("/:id/*", async (c, next) => {
     const id = c.req.param("id");
     if (id && projectRuntime.isMissing(id)) {
       return c.json({ error: "Project directory is missing" }, 409);

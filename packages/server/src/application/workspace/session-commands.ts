@@ -129,6 +129,9 @@ export function createSessionCommands({
       if (session.state !== "ended") {
         throw new WorkspaceConflictError("Session is not ended");
       }
+      if (isProjectMissing?.(session.projectId)) {
+        throw new WorkspaceConflictError("Project directory is missing");
+      }
 
       const restarted = await ptyManager.restart(id);
       eventBus.broadcast({

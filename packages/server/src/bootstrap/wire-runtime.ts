@@ -270,7 +270,7 @@ export function wireRuntime({
           }
         })
         .catch(() => {
-          /* git-error / missing-path: leave cache unchanged */
+          /* unexpected rejection: leave cache unchanged */
         });
     }
     originalBroadcast(message);
