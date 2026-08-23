@@ -17,6 +17,8 @@ interface UseWorkspaceRouteSyncOptions {
   setActiveProjectId: (projectId: string) => void;
   setFocusedPaneId: (paneId: string) => void;
   setMonitorActive: (active: boolean) => void;
+  snapshotApplied?: boolean;
+  missingProjectIds?: Iterable<string>;
 }
 
 export function useWorkspaceRouteSync({
@@ -32,8 +34,11 @@ export function useWorkspaceRouteSync({
   setActiveProjectId,
   setFocusedPaneId,
   setMonitorActive,
+  snapshotApplied = false,
+  missingProjectIds,
 }: UseWorkspaceRouteSyncOptions) {
   useEffect(() => {
+    const missing = new Set(missingProjectIds ?? []);
     if (route.kind === "root") {
       if (monitorActive) setMonitorActive(false);
       return;
@@ -61,6 +66,10 @@ export function useWorkspaceRouteSync({
 
     if (route.kind === "pane") {
       if (monitorActive) setMonitorActive(false);
+      if (snapshotApplied && route.projectId && missing.has(route.projectId)) {
+        navigate({ kind: "root" }, { replace: true });
+        return;
+      }
       if (
         hydrated &&
         route.projectId &&
@@ -88,6 +97,11 @@ export function useWorkspaceRouteSync({
     }
 
     if (route.kind === "worktree") {
+      if (snapshotApplied && missing.has(route.projectId)) {
+        if (monitorActive) setMonitorActive(false);
+        navigate({ kind: "root" }, { replace: true });
+        return;
+      }
       if (
         hydrated &&
         !projects.some((project) => project.id === route.projectId)
@@ -122,5 +136,7 @@ export function useWorkspaceRouteSync({
     setActiveProjectId,
     setFocusedPaneId,
     setMonitorActive,
+    snapshotApplied,
+    missingProjectIds,
   ]);
 }

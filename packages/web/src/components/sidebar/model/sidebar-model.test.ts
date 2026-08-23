@@ -72,6 +72,27 @@ describe("sortProjects", () => {
   });
 });
 
+describe("buildSidebarProjects -- missing project tombstone", () => {
+  it("renders one Close-only root with leftover terminals and no orphan flag", () => {
+    const result = buildSidebarProjects({
+      projects: [project({ id: "p1", name: "kimi", path: "/repos/kimi" })],
+      activeProjectId: "p1",
+      activeWorktrees: [],
+      sessions: [session({ id: "s1", cwd: "/repos/kimi/nested" })],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      missingProjectIds: ["p1"],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.missing).toBe(true);
+    expect(result[0]?.worktrees).toHaveLength(1);
+    expect(result[0]?.worktrees[0]?.orphan).toBeUndefined();
+    expect(result[0]?.worktrees[0]?.children.map((c) => c.id)).toEqual([
+      terminalPaneId("s1"),
+    ]);
+  });
+});
+
 describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
   it("returns a placeholder main with no children when project has no sessions", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];

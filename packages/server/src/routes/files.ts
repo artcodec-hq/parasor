@@ -309,6 +309,7 @@ async function serveInlineMedia(
 
 interface FileRoutesOptions {
   isWritable?: (projectId: string) => boolean;
+  isProjectMissing?: (projectId: string) => boolean;
 }
 
 export function createFileRoutes(
@@ -325,6 +326,10 @@ export function createFileRoutes(
     projectManager,
     ...(options.isWritable ? { isWritable: options.isWritable } : {}),
   });
+  const missingConflict = (projectId: string) =>
+    options.isProjectMissing?.(projectId)
+      ? ({ error: "Project directory is missing" } as const)
+      : null;
 
   routes.get("/list", async (c) => {
     const projectId = c.req.query("projectId");
@@ -332,6 +337,8 @@ export function createFileRoutes(
     const worktreePath = c.req.query("worktreePath");
 
     if (!projectId) return c.json({ error: "projectId required" }, 400);
+    const missingList = missingConflict(projectId);
+    if (missingList) return c.json(missingList, 409);
 
     try {
       const entries = await projectFileQueries.listProjectDirectory(
@@ -364,6 +371,8 @@ export function createFileRoutes(
 
     if (!projectId || !path)
       return c.json({ error: "projectId and path required" }, 400);
+    const missingRead = missingConflict(projectId);
+    if (missingRead) return c.json(missingRead, 409);
 
     try {
       const content = await projectFileQueries.readProjectFile(
@@ -422,6 +431,8 @@ export function createFileRoutes(
       path: string;
       content: string;
     };
+    const missingWrite = missingConflict(projectId);
+    if (missingWrite) return c.json(missingWrite, 409);
 
     try {
       await projectFileQueries.writeProjectFile(
@@ -473,6 +484,8 @@ export function createFileRoutes(
     const worktreePath =
       typeof rawWorktreePath === "string" ? rawWorktreePath : undefined;
     const { projectId, path } = body as { projectId: string; path: string };
+    const missingMkdir = missingConflict(projectId);
+    if (missingMkdir) return c.json(missingMkdir, 409);
 
     try {
       await projectFileQueries.createProjectDirectory(
@@ -528,6 +541,8 @@ export function createFileRoutes(
       srcPath: string;
       destPath: string;
     };
+    const missingCopy = missingConflict(projectId);
+    if (missingCopy) return c.json(missingCopy, 409);
 
     try {
       await projectFileQueries.copyProjectEntry(
@@ -564,11 +579,35 @@ export function createFileRoutes(
   });
 
   function getServiceOrError(projectId: string, worktreePath?: string) {
+    if (options.isProjectMissing?.(projectId)) {
+      return { ok: false as const, error: "project-missing" as const };
+    }
     const project = projectManager.get(projectId);
-    if (!project) return { error: "project-not-found" as const };
+    if (!project)
+      return { ok: false as const, error: "project-not-found" as const };
     const service = getService(projectId, worktreePath);
-    if (!service) return { error: "service-unavailable" as const };
-    return { service };
+    if (!service) {
+      return { ok: false as const, error: "service-unavailable" as const };
+    }
+    return { ok: true as const, service };
+  }
+
+  function serviceErrorResponse(
+    error: "project-missing" | "project-not-found" | "service-unavailable",
+  ) {
+    if (error === "project-missing") {
+      return {
+        body: { error: "Project directory is missing" },
+        status: 409 as const,
+      };
+    }
+    if (error === "project-not-found") {
+      return { body: { error: "Project not found" }, status: 404 as const };
+    }
+    return {
+      body: { error: "Filesystem not available" },
+      status: 500 as const,
+    };
   }
 
   routes.get("/stat", async (c) => {
@@ -579,16 +618,9 @@ export function createFileRoutes(
       return c.json({ error: "projectId and path required" }, 400);
 
     const got = getServiceOrError(projectId, worktreePath);
-    if ("error" in got) {
-      return c.json(
-        {
-          error:
-            got.error === "project-not-found"
-              ? "Project not found"
-              : "Filesystem not available",
-        },
-        got.error === "project-not-found" ? 404 : 500,
-      );
+    if (!got.ok) {
+      const mapped = serviceErrorResponse(got.error);
+      return c.json(mapped.body, mapped.status);
     }
     try {
       const stats = await got.service.statFile(path);
@@ -670,16 +702,9 @@ export function createFileRoutes(
       return c.json({ error: "projectId and path required" }, 400);
 
     const got = getServiceOrError(projectId, worktreePath);
-    if ("error" in got) {
-      return c.json(
-        {
-          error:
-            got.error === "project-not-found"
-              ? "Project not found"
-              : "Filesystem not available",
-        },
-        got.error === "project-not-found" ? 404 : 500,
-      );
+    if (!got.ok) {
+      const mapped = serviceErrorResponse(got.error);
+      return c.json(mapped.body, mapped.status);
     }
     const service = got.service;
 

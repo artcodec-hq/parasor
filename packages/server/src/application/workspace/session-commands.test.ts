@@ -146,6 +146,22 @@ describe("createSessionCommands", () => {
     } as unknown as AppStateStore;
   });
 
+  it("refuses to create a session when the project directory is missing", async () => {
+    const commands = createSessionCommands({
+      appStateStore,
+      eventBus,
+      ptyManager,
+      isProjectMissing: () => true,
+    });
+    await expect(
+      commands.createSession({ projectId: "proj-1" }),
+    ).rejects.toMatchObject({
+      name: "WorkspaceConflictError",
+      message: "Project directory is missing",
+    });
+    expect(ptyManager.create).not.toHaveBeenCalled();
+  });
+
   it("creates a session and broadcasts it", async () => {
     const commands = createSessionCommands({
       appStateStore,
@@ -222,6 +238,21 @@ describe("createSessionCommands", () => {
     expect(eventBus.broadcast).toHaveBeenCalledWith(
       expect.objectContaining({ type: "session-restarted", session }),
     );
+  });
+
+  it("refuses to restart a session when the project directory is missing", async () => {
+    sessions.set("sess-1", makeSession({ id: "sess-1", state: "ended" }));
+    const commands = createSessionCommands({
+      appStateStore,
+      eventBus,
+      ptyManager,
+      isProjectMissing: () => true,
+    });
+    await expect(commands.restartSession("sess-1")).rejects.toMatchObject({
+      name: "WorkspaceConflictError",
+      message: "Project directory is missing",
+    });
+    expect(ptyManager.restart).not.toHaveBeenCalled();
   });
 
   it("throws conflict when restarting a running session", async () => {

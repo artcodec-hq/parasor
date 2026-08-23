@@ -74,6 +74,7 @@ interface BuildSidebarProjectsOptions {
     Record<string, InactiveChildPane[]>
   >;
   workItemsByProject?: Record<string, WorkItem[]>;
+  missingProjectIds?: Iterable<string>;
 }
 
 type InactiveChildPane =
@@ -239,9 +240,20 @@ export function buildSidebarProjects({
   inactiveChildPanesByProject,
   servicesByProject,
   workItemsByProject,
+  missingProjectIds,
 }: BuildSidebarProjectsOptions): SidebarProject[] {
   const dismissed = attentionDismissed ?? {};
+  const missing = new Set(missingProjectIds ?? []);
   return sortProjects(projects).map((project) => {
+    if (missing.has(project.id)) {
+      return buildTombstoneProject({
+        project,
+        sessions,
+        agentStates,
+        reviewPendingSessions,
+        attentionDismissed: dismissed,
+      });
+    }
     const isActive = project.id === activeProjectId;
     const counters = counterLookup(worktreesByProject, gitStates, project.id);
     const gitStateIndex = gitStateLookup(gitStates, project.id);
@@ -384,6 +396,69 @@ function buildPlaceholderWorktrees(
       hasAlertChild: false,
     },
   ];
+}
+
+function buildTombstoneProject({
+  project,
+  sessions,
+  agentStates,
+  reviewPendingSessions,
+  attentionDismissed,
+}: {
+  project: Project;
+  sessions: Session[];
+  agentStates: Record<string, AgentState>;
+  reviewPendingSessions: Set<string>;
+  attentionDismissed: AttentionDismissals;
+}): SidebarProject {
+  const labelCounts = new Map<string, number>();
+  const children: SidebarChild[] = [];
+  for (const session of sessions.filter((s) => s.projectId === project.id)) {
+    const state = agentStates[session.id];
+    const statusContext = statusContextForSession(
+      session,
+      state,
+      attentionDismissed,
+    );
+    const inReview = reviewPendingSessions.has(session.id);
+    const baseLabel = labelForTerminal(session);
+    const seen = labelCounts.get(baseLabel) ?? 0;
+    labelCounts.set(baseLabel, seen + 1);
+    children.push({
+      id: terminalPaneId(session.id),
+      kind: "terminal",
+      label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
+      hint:
+        statusContext?.reason ??
+        (session.state === "ended" ? "ended" : undefined),
+      status: lifecycleToStatus(statusContext?.state, inReview),
+      ...(statusContext ? { statusContext } : {}),
+      pinned: session.pinned === true,
+      agentType: agentTypeForSession(session),
+    });
+  }
+  return {
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    pinned: Boolean(project.pinned),
+    readOnly: Boolean(project.readOnly),
+    missing: true,
+    worktrees: [
+      {
+        id: `wt:${project.path}`,
+        name: project.name,
+        path: project.path,
+        active: true,
+        dirty: 0,
+        ahead: 0,
+        behind: 0,
+        children,
+        hasWorkingChild: children.some((c) => c.status === "working"),
+        hasAlertChild: children.some((c) => c.status === "attention"),
+      },
+    ],
+  };
 }
 
 interface BuildInactiveWorktreesOptions {

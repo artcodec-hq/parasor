@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { access } from "node:fs/promises";
 import type {
   Notification,
   PortInfo,
@@ -34,6 +35,18 @@ const DEFAULT_GIT_POLL_INTERVAL_MS = 10_000;
  * worst-case dir age to ttl + 1h on a long-running server.
  */
 const DEFAULT_UPLOAD_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/** Existence + cheap git snapshot for projects that are not live-watched. */
+const DEFAULT_PROJECT_PROBE_INTERVAL_MS = 300_000;
+const PROJECT_PROBE_CONCURRENCY = 8;
+
+function resolveProjectProbeIntervalMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_PROJECT_PROBE_INTERVAL_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_PROJECT_PROBE_INTERVAL_MS;
+  }
+  return Math.floor(parsed);
+}
 
 export interface StartRuntimeLoopsDeps {
   appStateStore: AppStateStore;
@@ -63,6 +76,7 @@ export interface StartRuntimeLoopsDeps {
   titlePollIntervalMs?: number;
   gitPollIntervalMs?: number;
   uploadSweepIntervalMs?: number;
+  projectProbeIntervalMs?: number;
 }
 
 export function createPortDetectedNotification(
@@ -148,6 +162,9 @@ export function startRuntimeLoops({
   titlePollIntervalMs = DEFAULT_TITLE_POLL_INTERVAL_MS,
   gitPollIntervalMs = DEFAULT_GIT_POLL_INTERVAL_MS,
   uploadSweepIntervalMs = DEFAULT_UPLOAD_SWEEP_INTERVAL_MS,
+  projectProbeIntervalMs = resolveProjectProbeIntervalMs(
+    process.env.PARASOR_PROJECT_PROBE_INTERVAL_MS,
+  ),
 }: StartRuntimeLoopsDeps) {
   // Tracks the last-seen `reachable` value for each port per project so we can
   // re-notify when a port becomes reachable from the viewer device -- either it
@@ -241,10 +258,53 @@ export function startRuntimeLoops({
     void projectRuntime.pollGitChanges();
     if (reconcileWorktrees) {
       for (const project of appStateStore.get().projects) {
+        if (!projectRuntime.isLiveWatched(project.id)) continue;
         void reconcileWorktrees(project.id);
       }
     }
   }, gitPollIntervalMs);
+
+  let probing = false;
+  async function probeProjects(): Promise<void> {
+    if (probing) return;
+    probing = true;
+    try {
+      const projects = appStateStore.get().projects;
+      let cursor = 0;
+      const workerCount = Math.min(PROJECT_PROBE_CONCURRENCY, projects.length);
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const i = cursor++;
+          if (i >= projects.length) return;
+          const project = projects[i];
+          if (!project) return;
+          let present = false;
+          try {
+            await access(project.path);
+            present = true;
+          } catch {
+            present = false;
+          }
+          if (!present) {
+            projectRuntime.noteMissingPath(project.id, "probe");
+            continue;
+          }
+          projectRuntime.notePresentPath(project.id);
+          if (!projectRuntime.isLiveWatched(project.id)) {
+            await projectRuntime.snapshotInactiveGit(project.id);
+          }
+        }
+      });
+      await Promise.all(workers);
+    } finally {
+      probing = false;
+    }
+  }
+
+  const projectProbeTimer = setInterval(() => {
+    void probeProjects();
+  }, projectProbeIntervalMs);
+  projectProbeTimer.unref();
 
   const uploadSweepTimer = setInterval(() => {
     uploadStaging.sweepStale().then(
@@ -272,6 +332,7 @@ export function startRuntimeLoops({
       clearInterval(titlePollTimer);
       clearInterval(gitPollTimer);
       clearInterval(uploadSweepTimer);
+      clearInterval(projectProbeTimer);
       portScanner.stop();
       forwarder.stop();
     },

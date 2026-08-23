@@ -52,7 +52,8 @@ export function WorktreeChildren({
 }: WorktreeChildrenProps) {
   if (worktree.children.length === 0) return null;
 
-  const childrenUnavailable = worktree.orphan === true;
+  const childrenUnavailable =
+    worktree.orphan === true || project.missing === true;
 
   if (onReorderPanes && !childrenUnavailable) {
     return (

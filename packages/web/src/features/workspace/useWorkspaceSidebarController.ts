@@ -52,6 +52,8 @@ interface UseWorkspaceSidebarControllerOptions {
   setMonitorActive: (active: boolean) => void;
   worktreesWithCounters: Record<string, Worktree[]>;
   workItems: Record<string, WorkItem[]>;
+  missingProjectIds?: Iterable<string>;
+  onCloseProject?: (projectId: string) => void;
 }
 
 export function useWorkspaceSidebarController({
@@ -84,6 +86,8 @@ export function useWorkspaceSidebarController({
   setMonitorActive,
   worktreesWithCounters,
   workItems,
+  missingProjectIds,
+  onCloseProject,
 }: UseWorkspaceSidebarControllerOptions) {
   const sidebarModel = useWorkspaceSidebarModel({
     activeProjectId,
@@ -101,6 +105,7 @@ export function useWorkspaceSidebarController({
     setErrorToast,
     worktreesWithCounters,
     workItems,
+    missingProjectIds,
   });
 
   const handleMobileSidebarSearchShortcut = useCallback(
@@ -222,6 +227,7 @@ export function useWorkspaceSidebarController({
       onSearchQueryChange: setSearchQuery,
       onSelectChild: handleSelectChild,
       onSelectMonitor: handleSelectMonitor,
+      onCloseProject,
       onSelectWorktree: handleSelectWorktree,
       onToggleChildPin: handleToggleChildPin,
       onToggleSearch: handleToggleSearch,
@@ -263,6 +269,7 @@ export function useWorkspaceSidebarController({
       handleToggleChildPin,
       handleToggleSearch,
       monitorActive,
+      onCloseProject,
       onNewProject,
       onNewWorkItem,
       onOpenSettings,

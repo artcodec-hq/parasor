@@ -76,6 +76,7 @@ export interface SidebarProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 /**
@@ -116,6 +117,7 @@ export function Sidebar({
   onReorderPanes,
   reorderResetSignal,
   pendingProjectReorderCount,
+  onCloseProject,
 }: SidebarProps) {
   // Defer the filter computation so fast typing (and IME composition
   // bursts) don't block input echo on large project trees. The visible
@@ -175,6 +177,7 @@ export function Sidebar({
                   onToggleChildPin={onToggleChildPin}
                   worktreeOpen={worktreeOpenByProject?.[project.id]}
                   onWorktreeOpenChange={onWorktreeOpenChange}
+                  onCloseProject={onCloseProject}
                 />
               ))}
             </div>
@@ -194,6 +197,7 @@ export function Sidebar({
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
+            onCloseProject={onCloseProject}
           />
         )}
         {onNewProject && (
