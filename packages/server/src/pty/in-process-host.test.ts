@@ -571,6 +571,27 @@ describe("InProcessPtyHost", () => {
     expect(internal.ptySize).toEqual({ cols: 120, rows: 40 });
   });
 
+  it("notifies attached clients of geometry before resize output", async () => {
+    const session = await createAndSpawn(manager);
+    const events: string[] = [];
+    await manager.attachClient(
+      session.id,
+      "client-1",
+      80,
+      24,
+      { binary: true, chunkedReplay: true },
+      {
+        onChunk: () => events.push("output"),
+        onGeometry: (geometry) =>
+          events.push(`geometry:${geometry.cols}x${geometry.rows}`),
+      },
+    );
+
+    manager.resize(session.id, 120, 40);
+
+    expect(events).toEqual(["geometry:120x40"]);
+  });
+
   it("initClient spawns the pty on first attach and replays scrollback", async () => {
     const session = await manager.create({
       projectId: "proj-1",
@@ -639,6 +660,12 @@ describe("InProcessPtyHost", () => {
     );
 
     expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.serverState.geometry).toEqual({
+      cols: 102,
+      rows: 32,
+      epoch: 1,
+    });
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     expect(spawnSpy.mock.calls[0]?.[1]).toBe(102);
     expect(spawnSpy.mock.calls[0]?.[2]).toBe(32);
@@ -705,6 +732,28 @@ describe("InProcessPtyHost", () => {
 
     expect(result.ok).toBe(true);
     expect(fakeProcess.resize).not.toHaveBeenCalled();
+  });
+
+  it("attachClient reports the current PTY geometry instead of passive attach dimensions", async () => {
+    const session = await createAndSpawn(manager);
+    manager.resize(session.id, 120, 40);
+
+    const result = await manager.attachClient(
+      session.id,
+      "client-1",
+      90,
+      30,
+      { binary: true, chunkedReplay: true },
+      { onChunk: () => {} },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.serverState.geometry).toEqual({
+      cols: 120,
+      rows: 40,
+      epoch: 2,
+    });
   });
 
   it("initClient replays accumulated scrollback to a new client", async () => {

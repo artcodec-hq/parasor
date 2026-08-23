@@ -174,6 +174,8 @@ export interface InitClientReqPayload {
 export interface InitClientAckPayload {
   /** false when sessionId is unknown or daemon refuses (e.g. evicted). */
   accepted: boolean;
+  /** Optional for compatibility with daemon peers predating geometry sync. */
+  geometry?: { cols: number; rows: number; epoch: number };
 }
 
 /*
@@ -202,6 +204,13 @@ export interface ResizePayload {
   sessionId: string;
   cols: number;
   rows: number;
+}
+
+export interface GeometryPayload {
+  sessionId: string;
+  cols: number;
+  rows: number;
+  epoch: number;
 }
 
 export interface RefreshPayload {
