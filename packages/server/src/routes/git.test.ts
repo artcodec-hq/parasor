@@ -62,6 +62,7 @@ function makeHarness(): Harness {
   const projectRuntime = {
     refreshGitState,
     getGitStates: () => gitStates,
+    isMissing: () => false,
   } as unknown as ProjectRuntime;
 
   const app = new Hono();
@@ -548,6 +549,7 @@ describe("git routes", () => {
       const projectRuntime = {
         refreshGitState: vi.fn(async () => {}),
         getGitStates: () => ({}),
+        isMissing: () => false,
       } as unknown as ProjectRuntime;
       const app = new Hono();
       app.route(
@@ -611,6 +613,7 @@ describe("git routes", () => {
       const projectRuntime = {
         refreshGitState: vi.fn(async () => {}),
         getGitStates: () => ({}),
+        isMissing: () => false,
       } as unknown as ProjectRuntime;
       const app = new Hono();
       app.route(
@@ -712,6 +715,7 @@ describe("git routes", () => {
           projectRuntime: {
             refreshGitState: refreshGitState as never,
             getGitStates: () => ({}),
+            isMissing: () => false,
           } as unknown as ProjectRuntime,
         }),
       );

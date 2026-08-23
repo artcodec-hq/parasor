@@ -43,6 +43,7 @@ interface UseWorkspaceSidebarModelOptions {
   setErrorToast: (message: string) => void;
   worktreesWithCounters: Record<string, Worktree[]>;
   workItems: Record<string, WorkItem[]>;
+  missingProjectIds?: Iterable<string>;
 }
 
 export function useWorkspaceSidebarModel({
@@ -61,6 +62,7 @@ export function useWorkspaceSidebarModel({
   setErrorToast,
   worktreesWithCounters,
   workItems,
+  missingProjectIds,
 }: UseWorkspaceSidebarModelOptions) {
   const {
     reorderResetSignal,
@@ -107,6 +109,7 @@ export function useWorkspaceSidebarModel({
           projectStates,
         ),
         workItemsByProject: workItems,
+        missingProjectIds,
       }),
       projectStates,
     );
@@ -123,6 +126,7 @@ export function useWorkspaceSidebarModel({
     sessions,
     worktreesWithCounters,
     workItems,
+    missingProjectIds,
   ]);
 
   const sidebarProjectsRef = useRef<SidebarProject[]>(sidebarProjects);

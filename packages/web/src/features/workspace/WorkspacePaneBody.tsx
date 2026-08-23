@@ -50,6 +50,7 @@ interface WorkspacePaneBodyProps {
     input: UpdateWorkItemInput,
   ) => Promise<void> | void;
   onDeleteWorkItem: (workItemId: string) => Promise<void> | void;
+  allowFilesGit?: boolean;
 }
 
 export function WorkspacePaneBody({
@@ -79,6 +80,7 @@ export function WorkspacePaneBody({
   workItemOnClose,
   onUpdateWorkItem,
   onDeleteWorkItem,
+  allowFilesGit = true,
 }: WorkspacePaneBodyProps) {
   const { state } = focusedPane;
   switch (state.kind) {
@@ -98,6 +100,7 @@ export function WorkspacePaneBody({
       );
     }
     case "files":
+      if (!allowFilesGit) return null;
       return (
         <WorktreeView
           activeTab="files"
@@ -135,6 +138,7 @@ export function WorkspacePaneBody({
         />
       );
     case "git":
+      if (!allowFilesGit) return null;
       return (
         <WorktreeView
           activeTab="git"

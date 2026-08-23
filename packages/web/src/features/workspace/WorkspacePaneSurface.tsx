@@ -25,6 +25,7 @@ interface WorkspacePaneSurfaceProps {
   gitGraphSelection: GitGraphSelection | null;
   gitWorkflow: ReturnType<typeof useGitWorkflow>;
   hydrated: boolean;
+  allowFilesGit?: boolean;
   ideCommands: IdeCommandConfig[];
   isMobile: boolean;
   navigate: (route: WorkspaceRoute, opts?: { replace?: boolean }) => void;
@@ -76,6 +77,7 @@ export function WorkspacePaneSurface({
   gitGraphSelection,
   gitWorkflow,
   hydrated,
+  allowFilesGit,
   ideCommands,
   isMobile,
   navigate,
@@ -113,6 +115,7 @@ export function WorkspacePaneSurface({
       fileChangeSeq={fileChangeSeq}
       gitState={focusedWorkspace.gitState}
       hydrated={hydrated}
+      allowFilesGit={allowFilesGit}
       isMobile={isMobile}
       gitMenuActions={
         focusedWorkspace.isGitTab

@@ -39,12 +39,14 @@ interface CreateSessionCommandsDeps {
   appStateStore: AppStateStore;
   eventBus: EventPublisher;
   ptyManager: PtyHost;
+  isProjectMissing?: (projectId: string) => boolean;
 }
 
 export function createSessionCommands({
   appStateStore,
   eventBus,
   ptyManager,
+  isProjectMissing,
 }: CreateSessionCommandsDeps) {
   return {
     async createSession(input: {
@@ -60,6 +62,9 @@ export function createSessionCommands({
         .projects.find((entry) => entry.id === input.projectId);
       if (!project) {
         throw new WorkspaceNotFoundError("Project not found");
+      }
+      if (isProjectMissing?.(input.projectId)) {
+        throw new WorkspaceConflictError("Project directory is missing");
       }
 
       const session = await ptyManager.create({

@@ -141,6 +141,11 @@ export type WsEventMessage =
     }
   | { type: "pane-commands-changed"; commands: PaneCommandConfig[] }
   | { type: "ide-commands-changed"; commands: IdeCommandConfig[] }
+  | {
+      type: "project-path-status";
+      projectId: string;
+      missing: boolean;
+    }
   | { type: "pong"; ts: number };
 
 /**
@@ -149,7 +154,9 @@ export type WsEventMessage =
  * silent-dead TCP paths (NAT idle timeout, mobile background freeze)
  * where `ws.close` never fires.
  */
-export type WsEventClientMessage = { type: "ping"; ts: number };
+export type WsEventClientMessage =
+  | { type: "ping"; ts: number }
+  | { type: "active-project"; projectId: string | null };
 
 export interface HydrationPayload {
   seq: number;
@@ -178,6 +185,11 @@ export interface HydrationPayload {
    * toggles).
    */
   hostPlatform: NodeJS.Platform;
+  /**
+   * Project ids whose on-disk root is currently missing. Runtime-only;
+   * omitted or empty means none. Clients must treat `undefined` as `[]`.
+   */
+  missingProjectIds?: string[];
 }
 
 export interface WsEventEnvelope {

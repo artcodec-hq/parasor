@@ -43,6 +43,7 @@ interface WorktreeRowProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 export function WorktreeRow({
@@ -61,6 +62,7 @@ export function WorktreeRow({
   disclosure,
   showChildren = true,
   onReorderPanes,
+  onCloseProject,
 }: WorktreeRowProps) {
   const worktreeFocused =
     selection.selectedWorktreeId === worktree.id &&
@@ -69,16 +71,18 @@ export function WorktreeRow({
   // the row. Render a plain folder so the sidebar matches the `root` label.
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
+  const projectMissing = project.missing === true;
   const orphan = worktree.orphan === true;
   const rowMetrics = metricsForWorktree(worktree);
   const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
   const rowTitle = metricsTitle || undefined;
   const dirtyStatus = hasDirtyStatus(rowMetrics);
-  const labelClassName = orphan
-    ? "text-text-secondary line-through decoration-danger"
-    : dirtyStatus
-      ? "text-warning/80"
-      : "text-text-secondary";
+  const labelClassName =
+    projectMissing || orphan
+      ? "text-text-secondary line-through decoration-danger"
+      : dirtyStatus
+        ? "text-warning/80"
+        : "text-text-secondary";
   const externalWorktreeTitle = externalWorktreeStatusTitle(worktree);
 
   return (
@@ -121,7 +125,13 @@ export function WorktreeRow({
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           aria-label={rowTitle ? `${label}, ${rowTitle}` : undefined}
-          onClick={() => onSelectWorktree?.(project.id, worktree.id)}
+          onClick={() => {
+            if (projectMissing && onCloseProject) {
+              onCloseProject(project.id);
+              return;
+            }
+            onSelectWorktree?.(project.id, worktree.id);
+          }}
         >
           <SidebarRowLabel
             title={rowTitle}
@@ -139,23 +149,39 @@ export function WorktreeRow({
           )}
           <WorktreeStatusIcons
             externalTitle={externalWorktreeTitle}
-            missing={worktree.orphan === true}
+            missing={projectMissing || worktree.orphan === true}
+            projectMissing={projectMissing}
           />
         </button>
         <SidebarMetricsView metrics={rowMetrics} />
-        <WorktreeRowActions
-          label={label}
-          onNewSession={
-            onNewSession
-              ? () => onNewSession(project.id, worktree.id)
-              : undefined
-          }
-          onNewWorkItem={
-            onNewWorkItem
-              ? () => onNewWorkItem(project.id, worktree.id)
-              : undefined
-          }
-        />
+        {projectMissing && onCloseProject ? (
+          <span className="shrink-0">
+            <SidebarRowActionButton
+              aria-label={`Close project ${label}`}
+              tone="dangerPrimaryHover"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCloseProject(project.id);
+              }}
+            >
+              <PaGlyph.close />
+            </SidebarRowActionButton>
+          </span>
+        ) : (
+          <WorktreeRowActions
+            label={label}
+            onNewSession={
+              onNewSession
+                ? () => onNewSession(project.id, worktree.id)
+                : undefined
+            }
+            onNewWorkItem={
+              onNewWorkItem
+                ? () => onNewWorkItem(project.id, worktree.id)
+                : undefined
+            }
+          />
+        )}
       </SidebarRow>
 
       {showChildren && (
@@ -204,9 +230,11 @@ function externalWorktreeStatusTitle(worktree: SidebarWorktree): string | null {
 function WorktreeStatusIcons({
   externalTitle,
   missing,
+  projectMissing,
 }: {
   externalTitle: string | null;
   missing: boolean;
+  projectMissing: boolean;
 }) {
   if (!externalTitle && !missing) return null;
 
@@ -223,8 +251,12 @@ function WorktreeStatusIcons({
       {missing && (
         <WorktreeStatusIcon
           glyph={PaGlyph.circleOff}
-          label="Missing worktree"
-          title="Path is missing on disk - prune the stale worktree entry"
+          label={projectMissing ? "Missing project" : "Missing worktree"}
+          title={
+            projectMissing
+              ? "Project directory is missing on disk"
+              : "Path is missing on disk - prune the stale worktree entry"
+          }
           tone="danger"
         />
       )}

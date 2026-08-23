@@ -34,6 +34,7 @@ interface ProjectGroupProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
   /**
    * dnd-kit listeners (and optional aria-label) spread onto the project
    * header bar so the header doubles as the drag handle. Keeping the
@@ -60,6 +61,7 @@ export function ProjectGroup({
   worktreeOpen,
   onWorktreeOpenChange,
   onReorderPanes,
+  onCloseProject,
   dragHandleProps,
   forceOpen = false,
 }: ProjectGroupProps) {
@@ -117,6 +119,7 @@ export function ProjectGroup({
             }
             showChildren={projectOpen}
             onReorderPanes={onReorderPanes}
+            onCloseProject={onCloseProject}
           />
         );
       })}

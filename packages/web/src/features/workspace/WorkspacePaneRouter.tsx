@@ -71,6 +71,7 @@ interface WorkspacePaneRouterProps {
   fileChangeSeq: number;
   gitState: GitState | null;
   hydrated: boolean;
+  allowFilesGit?: boolean;
   isMobile: boolean;
   gitMenuActions?: WorktreeGitMenuActions;
   gitGraphSelection: GitGraphSelection | null;
@@ -141,6 +142,7 @@ export function WorkspacePaneRouter({
   fileChangeSeq,
   gitState,
   hydrated,
+  allowFilesGit = true,
   isMobile,
   gitMenuActions,
   gitGraphSelection,
@@ -355,6 +357,7 @@ export function WorkspacePaneRouter({
                       onBrowserUrlChange={onBrowserUrlChange}
                       onSelectWorktreeTab={onSelectWorktreeTab}
                       onOpenFilePath={handleOpenFilePath}
+                      allowFilesGit={allowFilesGit}
                     />
                   </div>
                 )}
@@ -371,7 +374,7 @@ export function WorkspacePaneRouter({
                   onRenameSession={onRenameSession}
                 />
               </div>
-              {fileDisplayTarget && !isMobile && (
+              {fileDisplayTarget && allowFilesGit && !isMobile && (
                 <div className="h-full w-[42vw] min-w-80 max-w-[720px] shrink-0 border-l border-border bg-bg-primary">
                   <WorkspaceFileDisplay
                     projectId={activeProjectId}
@@ -382,7 +385,7 @@ export function WorkspacePaneRouter({
                 </div>
               )}
             </div>
-            {fileDisplayTarget && isMobile && (
+            {fileDisplayTarget && allowFilesGit && isMobile && (
               <DialogRoot
                 open
                 presentation="fullscreen"

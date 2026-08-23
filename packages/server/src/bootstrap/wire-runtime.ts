@@ -33,6 +33,7 @@ import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
 import type { EventBus } from "../ws/events.js";
+import type { ProjectPresence } from "./project-presence.js";
 import type { ProjectRuntime } from "./project-runtime.js";
 
 export interface WireRuntimeDeps {
@@ -51,6 +52,7 @@ export interface WireRuntimeDeps {
   projectRuntime: ProjectRuntime;
   worktreeCache: WorktreeCache;
   uploadStaging: UploadStaging;
+  projectPresence?: ProjectPresence;
 }
 
 export function createWaitingNotification(
@@ -100,6 +102,7 @@ export function wireRuntime({
   projectRuntime,
   worktreeCache,
   uploadStaging,
+  projectPresence,
 }: WireRuntimeDeps): void {
   const projectQueries = createProjectQueries({
     projectManager,
@@ -137,6 +140,7 @@ export function wireRuntime({
     getServices: () => serviceRegistry.getAllServices(),
     getGitStates: () => projectRuntime.getGitStates(),
     getWorktrees: () => worktreeCache.get(),
+    getMissingProjectIds: () => projectRuntime.getMissingProjectIds(),
   });
 
   const osc7Lifecycle = new Osc7Lifecycle();
@@ -240,22 +244,33 @@ export function wireRuntime({
       const projectId = message.project.id;
       void projectQueries
         .getProjectWorktrees(projectId)
-        .then((worktrees) => {
+        .then((result) => {
           // Race guard: a project-deleted may have arrived during the
           // git enumeration. Skip the cache update + re-broadcast so
           // orphan worktrees do not resurface server- or client-side.
-          if (!projectManager.get(projectId)) return;
-          worktreeCache.setProject(projectId, worktrees);
-          for (const worktree of worktrees) {
-            eventBus.broadcast({
-              type: "worktree-created",
+          const project = projectManager.get(projectId);
+          if (!project) return;
+          if (result.status === "ok") {
+            worktreeCache.setProject(projectId, result.worktrees);
+            for (const worktree of result.worktrees) {
+              eventBus.broadcast({
+                type: "worktree-created",
+                projectId,
+                worktree,
+              });
+            }
+            return;
+          }
+          if (result.status === "missing-path") {
+            projectPresence?.markMissing(
               projectId,
-              worktree,
-            });
+              project.path,
+              "project-created",
+            );
           }
         })
         .catch(() => {
-          /* getProjectWorktrees swallows git errors -> empty list */
+          /* git-error / missing-path: leave cache unchanged */
         });
     }
     originalBroadcast(message);

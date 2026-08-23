@@ -238,6 +238,25 @@ describe("WorktreeRow external / missing-path icons", () => {
     expect(icon.className).not.toContain("bg-");
   });
 
+  it("strikes through the project label and shows Close for a missing project", () => {
+    const onCloseProject = vi.fn();
+    render(
+      <WorktreeRow
+        project={{ ...project, missing: true }}
+        worktree={makeWorktree(0)}
+        selection={selection}
+        displayName="kimi"
+        isProjectRoot
+        onCloseProject={onCloseProject}
+      />,
+    );
+
+    expect(screen.getByText("kimi").className).toContain("line-through");
+    expect(screen.getByLabelText("Missing project")).toBeTruthy();
+    screen.getByRole("button", { name: "Close project kimi" }).click();
+    expect(onCloseProject).toHaveBeenCalledWith("p1");
+  });
+
   it("strikes through the worktree label when orphan flag is set", () => {
     render(
       <WorktreeRow

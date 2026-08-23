@@ -165,7 +165,14 @@ describe("startRuntimeLoops port-detected notifications", () => {
       }),
     };
     const ptyManager = { list: () => [] };
-    const projectRuntime = { pollGitChanges: vi.fn() };
+    const projectRuntime = {
+      pollGitChanges: vi.fn(),
+      isLiveWatched: () => false,
+      isMissing: () => false,
+      snapshotInactiveGit: vi.fn(),
+      noteMissingPath: vi.fn(),
+      notePresentPath: vi.fn(),
+    };
     const worktreeCache = {
       get: () => ({ p1: opts?.worktrees ?? [] }),
     };

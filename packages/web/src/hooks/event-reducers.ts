@@ -90,6 +90,7 @@ export interface AppStore {
    * REST fetches.
    */
   worktrees: Record<string, Worktree[]>;
+  missingProjectIds: string[];
   pendingOpenUrl: string | null;
   connected: boolean;
   hydrated: boolean;
@@ -120,6 +121,7 @@ export const EMPTY_STORE: AppStore = {
   hostPlatform: null,
   fileChangeSeq: 0,
   worktrees: {},
+  missingProjectIds: [],
   pendingOpenUrl: null,
   connected: false,
   hydrated: false,
@@ -281,6 +283,9 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
         mobileSessionSnapshots,
         gitStates,
         worktrees,
+        missingProjectIds: store.missingProjectIds.filter(
+          (id) => id !== msg.projectId,
+        ),
       };
     }
 
@@ -350,6 +355,17 @@ export function applyEvent(store: AppStore, msg: WsEventMessage): AppStore {
           return rest;
         }),
       };
+
+    case "project-path-status": {
+      const has = store.missingProjectIds.includes(msg.projectId);
+      if (msg.missing === has) return store;
+      return {
+        ...store,
+        missingProjectIds: msg.missing
+          ? [...store.missingProjectIds, msg.projectId]
+          : store.missingProjectIds.filter((id) => id !== msg.projectId),
+      };
+    }
 
     case "file-change":
     case "file-changes":
@@ -522,6 +538,7 @@ export function applySnapshot(payload: HydrationPayload): AppStore {
     hostPlatform: payload.hostPlatform,
     fileChangeSeq: 0,
     worktrees: payload.worktrees ?? {},
+    missingProjectIds: payload.missingProjectIds ?? [],
     pendingOpenUrl: null,
     connected: true,
     hydrated: true,

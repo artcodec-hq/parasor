@@ -69,6 +69,10 @@ export function App() {
   const [optimisticSessions, setOptimisticSessions] = useState<Session[]>([]);
 
   const store = useEventSocket();
+  const reportedActiveProjectId = monitorActive ? null : activeProjectId;
+  useEffect(() => {
+    store.setActiveProject?.(reportedActiveProjectId);
+  }, [reportedActiveProjectId, store.setActiveProject]);
   // Older test/cache fixtures predate Work Items; keep hydration tolerant.
   const workItemsByProject = store.workItems ?? {};
   const sessions = useMemo(
@@ -148,6 +152,9 @@ export function App() {
     connected: store.connected,
     projects: store.projects,
     setActiveProjectId,
+    missingProjectIds: store.missingProjectIds ?? [],
+    route,
+    sessions,
   });
 
   const deleteTarget = useMemo(
@@ -235,6 +242,8 @@ export function App() {
     setFocusedPaneId,
     setMonitorActive,
     sessions,
+    snapshotApplied: store.snapshotApplied,
+    missingProjectIds: store.missingProjectIds ?? [],
   });
 
   const focusedWorkspace = useFocusedWorkspaceContext({
@@ -379,6 +388,7 @@ export function App() {
   useActiveWorktreeRefresh({
     activeProjectId,
     connected: store.connected,
+    missingProjectIds: store.missingProjectIds ?? [],
   });
 
   const sidebar = useWorkspaceSidebarController({
@@ -411,6 +421,8 @@ export function App() {
     setMonitorActive,
     worktreesWithCounters,
     workItems: workItemsByProject,
+    missingProjectIds: store.missingProjectIds ?? [],
+    onCloseProject: setDeleteConfirm,
   });
 
   const navigationSurface = <Sidebar {...sidebar.props} />;
@@ -440,6 +452,13 @@ export function App() {
       gitGraphSelection={gitGraphSelection}
       gitWorkflow={gitWorkflow}
       hydrated={store.hydrated}
+      allowFilesGit={
+        store.snapshotApplied &&
+        !(
+          activeProjectId != null &&
+          (store.missingProjectIds ?? []).includes(activeProjectId)
+        )
+      }
       ideCommands={store.ideCommands}
       isMobile={isMobile}
       navigate={navigate}

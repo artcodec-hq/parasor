@@ -677,6 +677,55 @@ describe("applyEvent: worktree-removed", () => {
   });
 });
 
+describe("applyEvent: project-path-status", () => {
+  it("adds and removes missing project ids", () => {
+    const added = applyEvent(EMPTY_STORE, {
+      type: "project-path-status",
+      projectId: "kimi",
+      missing: true,
+    });
+    expect(added.missingProjectIds).toEqual(["kimi"]);
+    const removed = applyEvent(added, {
+      type: "project-path-status",
+      projectId: "kimi",
+      missing: false,
+    });
+    expect(removed.missingProjectIds).toEqual([]);
+  });
+});
+
+describe("applySnapshot: missingProjectIds", () => {
+  it("defaults omitted ids to an empty list", () => {
+    const store = applySnapshot({
+      seq: 0,
+      state: {
+        version: 1,
+        projects: [],
+        projectStates: {},
+        workItems: {},
+        sessions: [],
+        sessionRecords: [],
+        ideCommands: [],
+        paneCommands: [],
+        serviceConfig: {
+          preventIdleSleep: false,
+          portDetection: "all-interfaces",
+          dropSizeMaxBytes: DEFAULT_DROP_SIZE_MAX_BYTES,
+          dropSizeHardMaxBytes: DEFAULT_DROP_SIZE_HARD_MAX_BYTES,
+        },
+      },
+      agentStates: {},
+      notifications: [],
+      ports: {},
+      services: {},
+      gitStates: {},
+      worktrees: {},
+      hostPlatform: "darwin",
+    });
+    expect(store.missingProjectIds).toEqual([]);
+  });
+});
+
 describe("applyEvent: project-deleted drops worktrees", () => {
   it("removes the worktrees entry for the deleted project", () => {
     const store = storeWith({

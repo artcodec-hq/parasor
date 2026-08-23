@@ -59,6 +59,13 @@ function mapGitError(err: unknown): {
 export function createGitRoutes(deps: GitRoutesDeps): Hono {
   const { projectManager, worktreeCache, projectRuntime } = deps;
   const routes = new Hono();
+  routes.use(async (c, next) => {
+    const id = c.req.param("id");
+    if (id && projectRuntime.isMissing(id)) {
+      return c.json({ error: "Project directory is missing" }, 409);
+    }
+    await next();
+  });
 
   const fenceWorktreePath = (projectId: string, worktreePath: string) =>
     fenceWorktreePathWith(
