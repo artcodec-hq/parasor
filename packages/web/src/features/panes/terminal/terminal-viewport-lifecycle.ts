@@ -383,8 +383,10 @@ export function useTerminalViewportLifecycle({
       });
       observer.observe(container);
 
-      // Mount, foreground, layout resize, and input are the complete set of
-      // viewport claims. The server deduplicates equal PTY geometry.
+      // Mount, layout resize, and explicit input are viewport claims. A
+      // desktop browser foreground event only resumes rendering; it is not an
+      // intent to change the shared PTY geometry. Sending SIGWINCH there makes
+      // full-screen TUIs such as Claude Code redraw and can move their composer.
       const onForeground = () => {
         const visible = document.visibilityState === "visible";
         traceTerminalEvent("terminal-engage", {
@@ -395,7 +397,7 @@ export function useTerminalViewportLifecycle({
         });
         if (!visible) return;
         setLastForegroundAtMs(Date.now());
-        applyResize(true);
+        if (isTouchRef.current) applyResize(true);
       };
       document.addEventListener("visibilitychange", onForeground);
       window.addEventListener("focus", onForeground);

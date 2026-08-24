@@ -1744,7 +1744,7 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
-  it("claims the desktop viewport when the browser returns to foreground", () => {
+  it("does not claim the desktop viewport when the browser returns to foreground", () => {
     render(<Terminal sessionId="s1" />, { wrapper });
     mockTermResize.mockClear();
     mockSend.mockClear();
@@ -1754,17 +1754,30 @@ describe("Terminal", () => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
+    );
+  });
+
+  it("claims the touch viewport when the browser returns to foreground", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({ matches: query === "(pointer: coarse)" }),
+    });
+    render(<Terminal sessionId="s1" />, { wrapper });
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
     );
-
-    act(() => {
-      socketOptionsRef.onGeometry?.({ cols: 90, rows: 30, epoch: 2 });
-    });
-    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
   });
 
-  it("does not mutate xterm for an unchanged foreground claim", () => {
+  it("does not send an unchanged desktop foreground claim", () => {
     render(<Terminal sessionId="s1" />, { wrapper });
     mockTermResize.mockClear();
     mockTermScrollToBottom.mockClear();
@@ -1779,7 +1792,7 @@ describe("Terminal", () => {
     expect(mockTermResize).not.toHaveBeenCalled();
     expect(mockTermScrollToBottom).not.toHaveBeenCalled();
     expect(mockTermRefresh).not.toHaveBeenCalled();
-    expect(mockSend).toHaveBeenCalledWith(
+    expect(mockSend).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
     );
   });
