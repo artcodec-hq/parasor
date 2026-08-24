@@ -387,7 +387,7 @@ describe("PtyHostDaemon handshake", () => {
   });
 
   it("rejects MAJOR-mismatch HELLO with version-mismatch NACK and ends the socket", async () => {
-    send(pair.clientSide, FrameType.HELLO, 0, 0n, 1, helloPayload("3.0.0"));
+    send(pair.clientSide, FrameType.HELLO, 0, 0n, 1, helloPayload("4.0.0"));
     const [nack] = await pair.awaitFrames(1);
     expect(nack.type).toBe(FrameType.NACK);
     const body = decodeJsonPayload<NackPayload>(nack.payload);

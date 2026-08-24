@@ -52,8 +52,8 @@ describe("isCompatibleVersion (by design)", () => {
 });
 
 describe("PROTOCOL_VERSION", () => {
-  it("is 2.6.0 (persists work items through the daemon)", () => {
-    expect(PROTOCOL_VERSION).toBe("2.6.0");
+  it("is 3.0.0 (drops experimental work-item / todo persistence payloads)", () => {
+    expect(PROTOCOL_VERSION).toBe("3.0.0");
   });
 
   // The before the generation gate  rule allowed `daemon.minor ≥ client.minor` so a new
@@ -62,6 +62,8 @@ describe("PROTOCOL_VERSION", () => {
   // daemon would still send 1.x WRITE frames, and the daemon would mis-parse
   // the leading 4 bytes of `data` as the generation field. Bumping MAJOR is
   // the only direction that rejects every 1.x ↔ 2.x combination at handshake.
+  // 3.0.0 repeats that pattern for the work-item / todo payload removal:
+  // a 2.x peer that kept talking would adopt `undefined` domain state.
   it("compat: rejects every 1.x daemon (any minor/patch) -- MAJOR mismatch", () => {
     expect(isCompatibleVersion(PROTOCOL_VERSION, "1.0.0")).toBe(false);
     expect(isCompatibleVersion(PROTOCOL_VERSION, "1.1.0")).toBe(false);
@@ -70,17 +72,26 @@ describe("PROTOCOL_VERSION", () => {
     expect(isCompatibleVersion(PROTOCOL_VERSION, "1.99.99")).toBe(false);
   });
 
-  it("compat: rejects every 1.x server pointing at a 2.0 daemon -- MAJOR mismatch (inverse direction the minor rule cannot cover)", () => {
+  it("compat: rejects every 2.x daemon (any minor/patch) -- MAJOR mismatch", () => {
+    expect(isCompatibleVersion(PROTOCOL_VERSION, "2.0.0")).toBe(false);
+    expect(isCompatibleVersion(PROTOCOL_VERSION, "2.4.0")).toBe(false);
+    expect(isCompatibleVersion(PROTOCOL_VERSION, "2.7.0")).toBe(false);
+    expect(isCompatibleVersion(PROTOCOL_VERSION, "2.99.99")).toBe(false);
+  });
+
+  it("compat: rejects every 1.x/2.x server pointing at a 3.0 daemon -- MAJOR mismatch (inverse direction the minor rule cannot cover)", () => {
     expect(isCompatibleVersion("1.0.0", PROTOCOL_VERSION)).toBe(false);
     expect(isCompatibleVersion("1.2.0", PROTOCOL_VERSION)).toBe(false);
     expect(isCompatibleVersion("1.3.0", PROTOCOL_VERSION)).toBe(false);
+    expect(isCompatibleVersion("2.0.0", PROTOCOL_VERSION)).toBe(false);
+    expect(isCompatibleVersion("2.7.0", PROTOCOL_VERSION)).toBe(false);
   });
 
-  it("compat: same major (2.x) still follows the minor rule", () => {
-    expect(isCompatibleVersion("2.1.0", PROTOCOL_VERSION)).toBe(true);
-    expect(isCompatibleVersion(PROTOCOL_VERSION, "2.1.0")).toBe(false);
-    expect(isCompatibleVersion("2.1.0", "2.2.0")).toBe(true);
-    expect(isCompatibleVersion("2.2.0", "2.1.0")).toBe(false);
+  it("compat: same major (3.x) still follows the minor rule", () => {
+    expect(isCompatibleVersion("3.0.0", PROTOCOL_VERSION)).toBe(true);
+    expect(isCompatibleVersion("3.0.0", "3.1.0")).toBe(true);
+    expect(isCompatibleVersion("3.1.0", "3.0.0")).toBe(false);
+    expect(isCompatibleVersion(PROTOCOL_VERSION, "2.7.0")).toBe(false);
   });
 });
 

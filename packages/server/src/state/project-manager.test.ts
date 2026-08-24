@@ -154,27 +154,12 @@ describe("ProjectManager", () => {
         lastAccessedAt: 1,
       };
     });
-    store.mutateWorkItems((s) => {
-      s.workItems[p.id] = [
-        {
-          id: "work-1",
-          projectId: p.id,
-          title: "Delete with project",
-          status: "todo",
-          acceptanceCriteria: [],
-          attachments: [],
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ];
-    });
 
     const result = pm.delete(p.id);
     expect(result).toBe(true);
     expect(pm.get(p.id)).toBeUndefined();
     expect(store.get().sessions).toHaveLength(0);
     expect(store.get().projectStates[p.id]).toBeUndefined();
-    expect(store.get().workItems[p.id]).toBeUndefined();
   });
 
   it("rejects delete on pinned project without force", () => {

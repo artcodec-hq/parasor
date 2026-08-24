@@ -7,7 +7,6 @@ import type {
   ProjectState,
   RuntimeServiceInfo,
   Session,
-  WorkItem,
   Worktree,
 } from "@parasor/shared";
 import {
@@ -42,7 +41,6 @@ interface UseWorkspaceSidebarModelOptions {
   sessions: Session[];
   setErrorToast: (message: string) => void;
   worktreesWithCounters: Record<string, Worktree[]>;
-  workItems: Record<string, WorkItem[]>;
   missingProjectIds?: Iterable<string>;
 }
 
@@ -61,7 +59,6 @@ export function useWorkspaceSidebarModel({
   sessions,
   setErrorToast,
   worktreesWithCounters,
-  workItems,
   missingProjectIds,
 }: UseWorkspaceSidebarModelOptions) {
   const {
@@ -104,11 +101,7 @@ export function useWorkspaceSidebarModel({
         gitStates,
         servicesByProject: services,
         attentionDismissed,
-        inactiveChildPanesByProject: mergeInactiveChildPanes(
-          readClientBrowserChildPanes(projects),
-          projectStates,
-        ),
-        workItemsByProject: workItems,
+        inactiveChildPanesByProject: readClientBrowserChildPanes(projects),
         missingProjectIds,
       }),
       projectStates,
@@ -125,7 +118,6 @@ export function useWorkspaceSidebarModel({
     services,
     sessions,
     worktreesWithCounters,
-    workItems,
     missingProjectIds,
   ]);
 
@@ -199,47 +191,4 @@ export function useWorkspaceSidebarModel({
     sidebarProjects,
     worktreeOpenByProject,
   };
-}
-
-function mergeInactiveChildPanes(
-  browsers: Record<
-    string,
-    Record<string, Array<{ id: string; kind: "browser"; url: string }>>
-  >,
-  projectStates: Record<string, ProjectState>,
-) {
-  const result: Record<
-    string,
-    Record<
-      string,
-      Array<
-        | { id: string; kind: "browser"; url: string }
-        | { id: string; kind: "work-item"; workItemId: string }
-      >
-    >
-  > = { ...browsers };
-  for (const [projectId, projectState] of Object.entries(projectStates)) {
-    const byPath = { ...(result[projectId] ?? {}) };
-    for (const worktree of projectState.worktrees) {
-      const workItemPanes = worktree.panes.flatMap((pane) =>
-        pane.state.kind === "work-item"
-          ? [
-              {
-                id: pane.id,
-                kind: "work-item" as const,
-                workItemId: pane.state.workItemId,
-              },
-            ]
-          : [],
-      );
-      if (workItemPanes.length > 0) {
-        byPath[worktree.path] = [
-          ...(byPath[worktree.path] ?? []),
-          ...workItemPanes,
-        ];
-      }
-    }
-    result[projectId] = byPath;
-  }
-  return result;
 }

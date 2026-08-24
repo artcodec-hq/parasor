@@ -61,7 +61,6 @@ const state: AppState = {
       lastAccessedAt: 1,
     },
   },
-  workItems: {},
   sessions: [session],
   sessionRecords: [],
   serviceConfig: {

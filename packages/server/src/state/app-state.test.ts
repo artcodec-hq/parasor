@@ -14,7 +14,6 @@ const EMPTY_STATE: AppState = {
   version: 1,
   projects: [],
   projectStates: {},
-  workItems: {},
   sessions: [],
   sessionRecords: [],
   paneCommands: [],
@@ -53,37 +52,98 @@ describe("AppStateStore", () => {
     expect(store.get()).toEqual(EMPTY_STATE);
   });
 
-  it("backfills work items and persists normalized records", async () => {
+  it("drops legacy work items, todos, and their panes on load", () => {
     writeFileSync(
       join(dir, "state.json"),
-      JSON.stringify({ ...EMPTY_STATE, workItems: undefined }),
+      JSON.stringify({
+        ...EMPTY_STATE,
+        workItems: {
+          p1: [
+            {
+              id: "item-1",
+              projectId: "p1",
+              title: "Legacy work item",
+              status: "todo",
+              acceptanceCriteria: [],
+              attachments: [],
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        },
+        todos: {
+          p1: [
+            {
+              id: "todo-1",
+              projectId: "p1",
+              title: "Legacy todo",
+              statusId: "todo",
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        },
+        todoWorkflows: { p1: { statuses: [], defaultStatusId: "todo" } },
+        projectStates: {
+          p1: {
+            projectId: "p1",
+            layout: null,
+            worktrees: [
+              {
+                path: "/repo",
+                panes: [
+                  {
+                    id: "files:/repo",
+                    kind: "files",
+                    worktreePath: "/repo",
+                    state: { kind: "files", selectedFilePath: null },
+                  },
+                  {
+                    id: "work-item:1",
+                    kind: "work-item",
+                    worktreePath: "/repo",
+                    state: { kind: "work-item", workItemId: "item-1" },
+                  },
+                  {
+                    id: "todo:todo-1",
+                    kind: "todo",
+                    worktreePath: "/repo",
+                    state: { kind: "todo", todoId: "todo-1" },
+                  },
+                  {
+                    id: "git:/repo",
+                    kind: "git",
+                    worktreePath: "/repo",
+                    state: { kind: "git", selectedCommitSha: null },
+                  },
+                ],
+              },
+            ],
+            openFiles: [],
+            lastFocusedPaneId: null,
+            focusedPaneId: "todo:todo-1",
+            lastAccessedAt: 1,
+          },
+        },
+      }),
       "utf-8",
     );
-    const store = new AppStateStore({ dir, debounceMs: 99_999 });
-    expect(store.get().workItems).toEqual({});
 
-    store.mutateWorkItems((state) => {
-      state.workItems.p1 = [
-        {
-          id: "work-1",
-          projectId: "p1",
-          title: "Persist me",
-          status: "todo",
-          acceptanceCriteria: [],
-          attachments: [],
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ];
-    });
-    await store.flush();
-    store.destroy();
-
-    const reloaded = new AppStateStore({ dir });
-    expect(reloaded.get().workItems.p1).toEqual([
-      expect.objectContaining({ id: "work-1", title: "Persist me" }),
-    ]);
-    reloaded.destroy();
+    const store = new AppStateStore({ dir });
+    const raw = store.get() as AppState & {
+      workItems?: unknown;
+      todos?: unknown;
+      todoWorkflows?: unknown;
+    };
+    expect(raw.workItems).toBeUndefined();
+    expect(raw.todos).toBeUndefined();
+    expect(raw.todoWorkflows).toBeUndefined();
+    expect(store.get().projectStates.p1?.focusedPaneId).toBeNull();
+    expect(
+      store
+        .get()
+        .projectStates.p1?.worktrees[0]?.panes.map((pane) => pane.kind),
+    ).toEqual(["files", "git"]);
   });
 
   it("loads existing state from disk", () => {
@@ -99,7 +159,6 @@ describe("AppStateStore", () => {
         },
       ],
       projectStates: {},
-      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
@@ -137,7 +196,6 @@ describe("AppStateStore", () => {
         },
       ],
       projectStates: {},
-      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
@@ -186,7 +244,6 @@ describe("AppStateStore", () => {
           lastAccessedAt: 2,
         },
       },
-      workItems: {},
       sessions: [],
       sessionRecords: [],
       paneCommands: [],

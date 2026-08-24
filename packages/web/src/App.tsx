@@ -23,7 +23,6 @@ import { useLocalIdeCapability } from "./features/workspace/useLocalIdeCapabilit
 import { useProjectDeleteAction } from "./features/workspace/useProjectDeleteAction.js";
 import { useReviewPendingSessions } from "./features/workspace/useReviewPendingSessions.js";
 import { useServiceConfigActions } from "./features/workspace/useServiceConfigActions.js";
-import { useWorkItemPaneActions } from "./features/workspace/useWorkItemPaneActions.js";
 import { useWorkspaceCommandConfig } from "./features/workspace/useWorkspaceCommandConfig.js";
 import { useWorkspaceOpenUrl } from "./features/workspace/useWorkspaceOpenUrl.js";
 import { useWorkspacePaneModel } from "./features/workspace/useWorkspacePaneModel.js";
@@ -73,8 +72,6 @@ export function App() {
   useEffect(() => {
     store.setActiveProject?.(reportedActiveProjectId);
   }, [reportedActiveProjectId, store.setActiveProject]);
-  // Older test/cache fixtures predate Work Items; keep hydration tolerant.
-  const workItemsByProject = store.workItems ?? {};
   const sessions = useMemo(
     () => mergeOptimisticSessions(store.sessions, optimisticSessions),
     [store.sessions, optimisticSessions],
@@ -179,12 +176,6 @@ export function App() {
     sessions,
     focusedPaneId,
     clientBrowserPanes: browserPanes.panesByWorktree,
-    serverWorktreePanes: activeProjectId
-      ? store.projectStates[activeProjectId]?.worktrees
-      : undefined,
-    workItems: activeProjectId
-      ? (workItemsByProject[activeProjectId] ?? [])
-      : [],
   });
 
   useEffect(() => {
@@ -279,16 +270,6 @@ export function App() {
       seedProject: store.seedProject,
     });
 
-  const workItemActions = useWorkItemPaneActions({
-    itemsByProject: workItemsByProject,
-    navigate,
-    removeItem: store.removeWorkItem,
-    seedItem: store.seedWorkItem,
-    seedPanes: store.seedProjectPanes,
-    setActiveProjectId,
-    setFocusedPaneId,
-  });
-
   const {
     closePane,
     closeRouteSession,
@@ -300,7 +281,6 @@ export function App() {
   } = useWorkspaceSessionActions({
     activeProjectId,
     closeBrowserPane: browserPanes.closeBrowser,
-    closeWorkItemPane: workItemActions.closePane,
     navigate,
     paneById: paneModel.paneById,
     projects: store.projects,
@@ -403,7 +383,6 @@ export function App() {
     monitorActive,
     navigate,
     onNewProject: handleNewProject,
-    onNewWorkItem: workItemActions.picker.open,
     onOpenSettings: handleOpenSettings,
     onOpenUrl: openUrl,
     onToggleSessionPin: (sessionId) => void toggleSessionPin(sessionId),
@@ -420,7 +399,6 @@ export function App() {
     setFocusedPaneId,
     setMonitorActive,
     worktreesWithCounters,
-    workItems: workItemsByProject,
     missingProjectIds: store.missingProjectIds ?? [],
     onCloseProject: setDeleteConfirm,
   });
@@ -479,20 +457,6 @@ export function App() {
       paneModel={paneModel}
       projectSessions={projectSessions}
       setFocusedPaneId={setFocusedPaneId}
-      workItems={
-        activeProjectId ? (workItemsByProject[activeProjectId] ?? []) : []
-      }
-      worktrees={activeWorktrees}
-      onUpdateWorkItem={(workItemId, input) =>
-        activeProjectId
-          ? workItemActions.update(activeProjectId, workItemId, input)
-          : undefined
-      }
-      onDeleteWorkItem={(workItemId) =>
-        activeProjectId
-          ? workItemActions.delete(activeProjectId, workItemId)
-          : undefined
-      }
     />
   );
   const workspaceSurface = (
@@ -553,7 +517,6 @@ export function App() {
           loadWorktreeLocalFiles={loadWorktreeLocalFiles}
           newProjectDialogOpen={newProjectDialogOpen}
           newSessionDialog={sidebar.newSessionDialog}
-          workItemPicker={workItemActions.picker}
           paneCommandConfigs={store.paneCommands}
           paneCommands={paneCommands}
           removeDeleteTarget={() => setDeleteConfirm(null)}

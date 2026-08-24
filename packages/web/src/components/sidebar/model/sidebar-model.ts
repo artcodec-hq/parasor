@@ -7,7 +7,6 @@ import {
   type RuntimeServiceInfo,
   type Session,
   terminalPaneId,
-  type WorkItem,
   type Worktree,
   type WorktreePanes,
 } from "@parasor/shared";
@@ -73,13 +72,10 @@ interface BuildSidebarProjectsOptions {
     string,
     Record<string, InactiveChildPane[]>
   >;
-  workItemsByProject?: Record<string, WorkItem[]>;
   missingProjectIds?: Iterable<string>;
 }
 
-type InactiveChildPane =
-  | { id: string; kind: "browser"; url: string }
-  | { id: string; kind: "work-item"; workItemId: string };
+type InactiveChildPane = { id: string; kind: "browser"; url: string };
 
 /**
  * Path-tolerant lookup index for per-worktree counters. Server-supplied
@@ -239,7 +235,6 @@ export function buildSidebarProjects({
   attentionDismissed,
   inactiveChildPanesByProject,
   servicesByProject,
-  workItemsByProject,
   missingProjectIds,
 }: BuildSidebarProjectsOptions): SidebarProject[] {
   const dismissed = attentionDismissed ?? {};
@@ -271,7 +266,6 @@ export function buildSidebarProjects({
           serviceCounts,
           isNotRepo,
           attentionDismissed: dismissed,
-          workItems: workItemsByProject?.[project.id] ?? [],
         })
       : buildInactiveWorktrees({
           project,
@@ -284,7 +278,6 @@ export function buildSidebarProjects({
           childPanes: inactiveChildPanesByProject?.[project.id] ?? {},
           isNotRepo,
           attentionDismissed: dismissed,
-          workItems: workItemsByProject?.[project.id] ?? [],
         });
     return {
       id: project.id,
@@ -307,7 +300,6 @@ interface BuildActiveWorktreesOptions {
   counters: CounterIndex;
   serviceCounts: ServiceCountIndex;
   attentionDismissed: AttentionDismissals;
-  workItems: WorkItem[];
   /**
    * `true` when project root is confirmed not a git repo. Drives the
    * label swap (`main` -> `root`) for the project-path worktree row.
@@ -325,7 +317,6 @@ function buildActiveWorktrees({
   serviceCounts,
   isNotRepo,
   attentionDismissed,
-  workItems,
 }: BuildActiveWorktreesOptions): SidebarWorktree[] {
   if (worktrees.length === 0) {
     return buildPlaceholderWorktrees(
@@ -342,7 +333,6 @@ function buildActiveWorktrees({
       agentStates,
       reviewPendingSessions,
       attentionDismissed,
-      workItems,
     });
     const meta = counters.lookup(wt.path);
     const isRoot = wt.path === project.path;
@@ -474,7 +464,6 @@ interface BuildInactiveWorktreesOptions {
   childPanes: Record<string, InactiveChildPane[]>;
   isNotRepo: boolean;
   attentionDismissed: AttentionDismissals;
-  workItems: WorkItem[];
 }
 
 // Union of project.path ("main"), server worktree snapshot, and distinct
@@ -494,7 +483,6 @@ function buildInactiveWorktrees({
   childPanes,
   isNotRepo,
   attentionDismissed,
-  workItems,
 }: BuildInactiveWorktreesOptions): SidebarWorktree[] {
   const projectSessions = sessions.filter((s) => s.projectId === project.id);
   const byCwd = new Map<string, Session[]>();
@@ -561,22 +549,14 @@ function buildInactiveWorktrees({
     const isSyntheticOrphan = syntheticOrphanPaths.has(cwd);
     if (!isSyntheticOrphan) {
       for (const pane of childPanes[cwd] ?? []) {
-        const item =
-          pane.kind === "work-item"
-            ? workItems.find((candidate) => candidate.id === pane.workItemId)
-            : undefined;
-        const baseLabel =
-          pane.kind === "browser"
-            ? browserLabel(pane.url)
-            : (item?.title ?? "Missing work item");
+        const baseLabel = browserLabel(pane.url);
         const seen = labelCounts.get(baseLabel) ?? 0;
         labelCounts.set(baseLabel, seen + 1);
         children.push({
           id: pane.id,
           kind: pane.kind,
           label: seen === 0 ? baseLabel : `${baseLabel} (${seen + 1})`,
-          hint:
-            pane.kind === "browser" ? pane.url : item?.status.replace("_", " "),
+          hint: pane.url,
           status: "idle",
           pinned: false,
         });
@@ -612,9 +592,8 @@ function buildInactiveWorktrees({
 }
 
 function inactiveChildOrder(kind: SidebarChild["kind"]): number {
-  if (kind === "work-item") return 0;
-  if (kind === "terminal") return 1;
-  return 2;
+  if (kind === "terminal") return 0;
+  return 1;
 }
 
 function worktreeProvenance({
@@ -656,7 +635,6 @@ interface BuildChildrenOptions {
   agentStates: Record<string, AgentState>;
   reviewPendingSessions: Set<string>;
   attentionDismissed: AttentionDismissals;
-  workItems: WorkItem[];
 }
 
 function buildChildren({
@@ -665,16 +643,11 @@ function buildChildren({
   agentStates,
   reviewPendingSessions,
   attentionDismissed,
-  workItems,
 }: BuildChildrenOptions): SidebarChild[] {
   const labelCounts = new Map<string, number>();
   const out: SidebarChild[] = [];
   for (const pane of panes) {
-    if (
-      pane.state.kind !== "terminal" &&
-      pane.state.kind !== "browser" &&
-      pane.state.kind !== "work-item"
-    ) {
+    if (pane.state.kind !== "terminal" && pane.state.kind !== "browser") {
       continue;
     }
     const base = paneToChild(
@@ -683,7 +656,6 @@ function buildChildren({
       agentStates,
       reviewPendingSessions,
       attentionDismissed,
-      workItems,
     );
     if (!base) continue;
     const seen = labelCounts.get(base.label) ?? 0;
@@ -701,7 +673,6 @@ function paneToChild(
   agentStates: Record<string, AgentState>,
   reviewPendingSessions: Set<string>,
   attentionDismissed: AttentionDismissals,
-  workItems: WorkItem[],
 ): SidebarChild | null {
   const { state } = pane;
   if (state.kind === "terminal") {
@@ -733,19 +704,6 @@ function paneToChild(
       status: "idle",
       pinned: false,
       auto: state.auto === true,
-    };
-  }
-  if (state.kind === "work-item") {
-    const item = workItems.find(
-      (candidate) => candidate.id === state.workItemId,
-    );
-    return {
-      id: pane.id,
-      kind: "work-item",
-      label: item?.title ?? "Missing work item",
-      hint: item?.status.replace("_", " "),
-      status: "idle",
-      pinned: false,
     };
   }
   return null;

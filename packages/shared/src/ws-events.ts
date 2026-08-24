@@ -23,8 +23,6 @@ import type {
   MobileSessionSnapshot,
   TerminalPresenceSnapshot,
 } from "./terminal-presence.js";
-import type { WorkItem } from "./work-items.js";
-
 export type FileChangeEvent = "create" | "update" | "delete";
 
 export interface FileChangeEntry {
@@ -40,9 +38,6 @@ export type WsEventMessage =
   | { type: "project-created"; project: Project }
   | { type: "project-updated"; project: Project }
   | { type: "project-deleted"; projectId: string }
-  | { type: "work-item-created"; item: WorkItem }
-  | { type: "work-item-updated"; item: WorkItem }
-  | { type: "work-item-deleted"; projectId: string; workItemId: string }
   | {
       type: "worktree-created";
       projectId: string;

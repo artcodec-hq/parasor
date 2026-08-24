@@ -19,14 +19,20 @@ import type {
   SessionCommand,
   SessionEndReason,
   SessionLaunchPreset,
-  WorkItem,
 } from "@parasor/shared";
 
 /*
- * 2.6.0 -- adds `workItems` to PERSIST_PROJECT_DOMAINS_REQ so project-scoped
- * work items persist through the daemon single-writer path. A 2.5.x daemon
- * would ACK but silently ignore that field, so the minor bump forces a daemon
- * restart before the server relies on work item persistence.
+ * 3.0.0 -- drops the experimental work-item / todo persistence payloads from
+ * PERSIST_PROJECT_DOMAINS_REQ. Removing required fields is wire-incompatible
+ * in both directions, so MAJOR is required: a 2.x server talking to a 3.x
+ * daemon (or the inverse) would otherwise adopt `undefined` domain state and
+ * persist it. Handshake rejection forces a cold restart instead.
+ *
+ * 2.7.0 -- replaced the experimental work-item payload with project-owned
+ * todos and editable todo workflows.
+ *
+ * 2.6.0 -- added `workItems` to PERSIST_PROJECT_DOMAINS_REQ so project-scoped
+ * work items persisted through the daemon single-writer path.
  *
  * 2.5.0 -- adds optional `launchPreset` to CREATE_REQ so shell-preset
  * sessions keep their launch/runtime metadata across the daemon boundary.
@@ -93,7 +99,7 @@ import type {
  *
  * 1.0.0 -- initial release.
  */
-export const PROTOCOL_VERSION = "2.6.0";
+export const PROTOCOL_VERSION = "3.0.0";
 
 export interface HelloPayload {
   protocolVersion: string;
@@ -190,7 +196,6 @@ export interface InitClientAckPayload {
 export interface PersistProjectDomainsReqPayload {
   projects: Project[];
   projectStates: Record<string, ProjectState>;
-  workItems: Record<string, WorkItem[]>;
   serviceConfig: ServiceConfig;
   paneCommands?: PaneCommandConfig[];
   ideCommands?: IdeCommandConfig[];

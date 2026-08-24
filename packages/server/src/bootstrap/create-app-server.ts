@@ -36,7 +36,6 @@ import { createRuntimeRoutes } from "../routes/runtime.js";
 import { createServerNoticesRoutes } from "../routes/server-notices.js";
 import { createServiceConfigRoutes } from "../routes/service-config.js";
 import { createSessionRoutes } from "../routes/sessions.js";
-import { createWorkItemRoutes } from "../routes/work-items.js";
 import {
   projectServicesToPorts,
   type RuntimeServiceRegistry,
@@ -200,15 +199,6 @@ export function createAppServer({
   app.route(
     "/api/projects",
     createFileUploadRoutes({ projectManager, appStateStore }),
-  );
-  app.route(
-    "/api/projects",
-    createWorkItemRoutes({
-      projectManager,
-      appStateStore,
-      eventBus,
-      worktreeCache,
-    }),
   );
   app.route(
     "/api/projects",

@@ -12,7 +12,6 @@ import {
 } from "../../components/overlays/NewSessionDialog.js";
 import { RemoveWorktreeDialog } from "../../components/overlays/RemoveWorktreeDialog.js";
 import { RenameWorktreeDialog } from "../../components/overlays/RenameWorktreeDialog.js";
-import { WorkItemPickerDialog } from "../../components/overlays/WorkItemPickerDialog.js";
 import { CopyToast } from "../../components/toasts/CopyToast.js";
 import { SyncToastSet } from "../../components/toasts/SyncToastSet.js";
 import { SettingsOverlay } from "../settings/index.js";
@@ -21,7 +20,6 @@ import { DeleteProjectDialog } from "./DeleteProjectDialog.js";
 import type { ClosePaneDialogControl } from "./useClosePaneDialog.js";
 import type { CommitDialogState } from "./useGitWorkflow.js";
 import type { NewSessionDialogControl } from "./useNewSessionDialog.js";
-import type { useWorkItemPaneActions } from "./useWorkItemPaneActions.js";
 import type {
   RemoveDialogState,
   RenameDialogState,
@@ -67,7 +65,6 @@ interface WorkspaceOverlaysProps {
   loadWorktreeLocalFiles: NonNullable<NewSessionDialogProps["loadLocalFiles"]>;
   newProjectDialogOpen: boolean;
   newSessionDialog: NewSessionDialogControl;
-  workItemPicker: ReturnType<typeof useWorkItemPaneActions>["picker"];
   paneCommandConfigs: PaneCommandConfig[];
   paneCommands: NewSessionDialogProps["commands"];
   removeDeleteTarget: () => void;
@@ -105,7 +102,6 @@ export function WorkspaceOverlays({
   loadWorktreeLocalFiles,
   newProjectDialogOpen,
   newSessionDialog,
-  workItemPicker,
   paneCommandConfigs,
   paneCommands,
   removeDeleteTarget,
@@ -197,17 +193,6 @@ export function WorkspaceOverlays({
               command,
             )
           }
-        />
-      )}
-
-      {workItemPicker.target && (
-        <WorkItemPickerDialog
-          items={workItemPicker.items}
-          busy={workItemPicker.busy}
-          error={workItemPicker.error}
-          onClose={workItemPicker.close}
-          onCreate={workItemPicker.create}
-          onOpen={workItemPicker.select}
         />
       )}
 

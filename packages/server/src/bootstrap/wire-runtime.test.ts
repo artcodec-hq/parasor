@@ -33,7 +33,6 @@ function baseState(storeSessions: Session[]): AppState {
     version: 1,
     projects: [],
     projectStates: {},
-    workItems: {},
     sessions: storeSessions,
     sessionRecords: [],
     paneCommands: [],
