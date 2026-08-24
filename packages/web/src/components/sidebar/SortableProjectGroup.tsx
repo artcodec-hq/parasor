@@ -66,6 +66,7 @@ interface SortableProjectsProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 export function SortableProjects({
@@ -82,6 +83,7 @@ export function SortableProjects({
   worktreeOpenByProject,
   onWorktreeOpenChange,
   onReorderPanes,
+  onCloseProject,
 }: SortableProjectsProps) {
   const incomingIds = useMemo(() => projects.map((p) => p.id), [projects]);
   const [orderedIds, setOrderedIds] = useState<string[]>(incomingIds);
@@ -161,6 +163,7 @@ export function SortableProjects({
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
+            onCloseProject={onCloseProject}
           />
         ))}
       </SortableContext>
@@ -191,6 +194,7 @@ interface SortableProjectItemProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 function SortableProjectItem({
@@ -204,6 +208,7 @@ function SortableProjectItem({
   worktreeOpenByProject,
   onWorktreeOpenChange,
   onReorderPanes,
+  onCloseProject,
 }: SortableProjectItemProps) {
   const {
     attributes,
@@ -234,6 +239,7 @@ function SortableProjectItem({
         worktreeOpen={worktreeOpenByProject?.[project.id]}
         onWorktreeOpenChange={onWorktreeOpenChange}
         onReorderPanes={onReorderPanes}
+        onCloseProject={onCloseProject}
         dragHandleProps={{
           ...attributes,
           ...listeners,

@@ -7,19 +7,13 @@ import {
   scheduleTerminalInputDiagnosticCapture,
   traceTerminalEvent,
 } from "../../../lib/terminal-trace.js";
-import {
-  captureScrollAnchor,
-  restoreScrollAnchor,
-} from "./terminal-scroll-anchor.js";
+import { captureScrollAnchor } from "./terminal-scroll-anchor.js";
 import { terminalBufferTrace } from "./terminal-trace-snapshot.js";
 
 const FIT_MIN_COLS = 2;
 const FIT_MIN_ROWS = 1;
 const RESIZE_DEBOUNCE_MS = 100;
 const RESIZE_OUTPUT_FLUSH_MAX_WAIT_MS = 120;
-// How long to keep the viewport pinned to the tail after the keyboard opens,
-// so a TUI's SIGWINCH repaint settles on the input line instead of the top.
-const KEYBOARD_BOTTOM_PIN_MS = 500;
 
 type SendTerminalMessage = (msg: WsTerminalClientMessage) => void;
 
@@ -35,14 +29,17 @@ type UseTerminalViewportLifecycleArgs = {
   terminalConfig: TerminalConfig;
   xtermRef: RefObject<XTerm | null>;
   fitRef: RefObject<FitAddon | null>;
-  refreshVisibleRows: (term: XTerm) => void;
   flushPendingOutput: (onFlushed?: () => void) => boolean;
   keyboardSettling: boolean;
   /** Touch-primary device -- a row-shrinking resize there is the keyboard. */
   isTouch: boolean;
   firstDataTimerRef: MutableRefObject<number | null>;
   hasReceivedDataRef: RefObject<boolean>;
-  onResizeApplied?: () => void;
+  onResizeProposed?: (proposal: {
+    cols: number;
+    rows: number;
+    preferBottom: boolean;
+  }) => void;
   send: SendTerminalMessage;
   sendInit: (cols: number, rows: number) => void;
   setLastForegroundAtMs: (value: number) => void;
@@ -56,13 +53,6 @@ type AttachViewportLifecycleArgs = {
 };
 
 type ViewportLifecycleCleanup = () => void;
-
-function dimensionsChanged(
-  before: { cols: number; rows: number },
-  term: XTerm,
-): boolean {
-  return term.cols !== before.cols || term.rows !== before.rows;
-}
 
 function isValidProposedDimensions(
   proposed: { cols: number; rows: number } | undefined,
@@ -82,13 +72,12 @@ export function useTerminalViewportLifecycle({
   terminalConfig,
   xtermRef,
   fitRef,
-  refreshVisibleRows,
   flushPendingOutput,
   keyboardSettling,
   isTouch,
   firstDataTimerRef,
   hasReceivedDataRef,
-  onResizeApplied,
+  onResizeProposed,
   send,
   sendInit,
   setLastForegroundAtMs,
@@ -137,9 +126,15 @@ export function useTerminalViewportLifecycle({
         initFallbackTimer = null;
       };
 
-      const sendResize = (): boolean => {
+      const sendResize = (
+        dimensions: { cols: number; rows: number } = term,
+      ): boolean => {
         if (isEnded) return false;
-        send({ type: "resize", cols: term.cols, rows: term.rows });
+        send({
+          type: "resize",
+          cols: dimensions.cols,
+          rows: dimensions.rows,
+        });
         return true;
       };
 
@@ -157,19 +152,16 @@ export function useTerminalViewportLifecycle({
             rows: term.rows,
           });
           sendInit(term.cols, term.rows);
-          if (isTouchRef.current) {
-            // On mobile, terminal mount means this pane is the foreground
-            // surface. Existing running PTYs ignore passive attach dimensions,
-            // so explicitly claim this viewport size.
-            const ptyResizeSent = sendResize();
-            traceTerminalEvent("terminal-viewport-claim", {
-              sessionId,
-              reason: "mount",
-              cols: term.cols,
-              rows: term.rows,
-              ptyResizeSent,
-            });
-          }
+          // Mount is an active pane selection. Attach stays passive, while the
+          // explicit claim is replay-fenced by the socket before it reaches PTY.
+          const ptyResizeSent = sendResize();
+          traceTerminalEvent("terminal-viewport-claim", {
+            sessionId,
+            reason: "mount",
+            cols: term.cols,
+            rows: term.rows,
+            ptyResizeSent,
+          });
           firstDataTimerRef.current = window.setTimeout(() => {
             firstDataTimerRef.current = null;
             if (!hasReceivedDataRef.current) {
@@ -199,32 +191,7 @@ export function useTerminalViewportLifecycle({
       let resizeTimer: number | null = null;
       let resizeAfterFlushFrame: number | null = null;
       let keyboardResizeDeferred = false;
-      // After a foreground/keyboard resize claim, a full-screen TUI
-      // (codex/claude) repaints on SIGWINCH -- it clears and redraws from the
-      // top, which can strand the viewport away from its input line. A single
-      // scrollToBottom before that repaint is overwritten. Instead, pin the
-      // viewport to the tail for a short window so it follows the repaint.
-      let tailPinFrame: number | null = null;
-      let tailPinUntil = 0;
-      const stopTailPin = () => {
-        if (tailPinFrame === null) return;
-        cancelAnimationFrame(tailPinFrame);
-        tailPinFrame = null;
-      };
-      const startTailPin = () => {
-        term.scrollToBottom();
-        tailPinUntil = performance.now() + KEYBOARD_BOTTOM_PIN_MS;
-        if (tailPinFrame !== null) return;
-        const tick = () => {
-          term.scrollToBottom();
-          if (performance.now() < tailPinUntil) {
-            tailPinFrame = requestAnimationFrame(tick);
-          } else {
-            tailPinFrame = null;
-          }
-        };
-        tailPinFrame = requestAnimationFrame(tick);
-      };
+      let lastResizeProposal: { cols: number; rows: number } | null = null;
       const clearResizeTimer = () => {
         if (resizeTimer === null) return;
         clearTimeout(resizeTimer);
@@ -307,12 +274,9 @@ export function useTerminalViewportLifecycle({
           }
         }
         if (proposed.cols === term.cols && proposed.rows === term.rows) {
-          // Local size already matches, but on engagement still (re)claim the
-          // shared PTY -- it may be sized for another connected device.
-          const anchor = captureScrollAnchor(term);
-          if (forceClaim && anchor.wasAtBottom) startTailPin();
+          // A duplicate claim is server-side no-op. Do not touch xterm or its
+          // viewport merely because the browser returned to foreground.
           const ptyResizeSent = forceClaim ? sendResize() : false;
-          refreshVisibleRows(term);
           const reason = forceClaim ? "claim-unchanged" : "unchanged";
           traceTerminalEvent("terminal-resize-skip", {
             sessionId,
@@ -340,63 +304,51 @@ export function useTerminalViewportLifecycle({
           }
           return;
         }
-        const anchor = captureScrollAnchor(term);
-        const rowsBeforeResize = term.rows;
-        const resizeStartedAt = performance.now();
-        term.resize(proposed.cols, proposed.rows);
-        const resizeDurationMs = performance.now() - resizeStartedAt;
-        // On a touch device, a row-shrinking resize is the on-screen keyboard
-        // opening -- the user is entering input mode, so pin to the live tail
-        // (input cursor) regardless of prior scroll position. This also
-        // re-engages xterm's tail-following, so the PTY's SIGWINCH redraw keeps
-        // the viewport at the bottom instead of the program's repaint scrolling
-        // it to the top. Keyboard close (rows grow) and desktop resizes fall
-        // through to anchor restore, preserving the reading position.
-        const keyboardOpening =
-          isTouchRef.current && proposed.rows < rowsBeforeResize;
-        const foregroundBottomClaim = forceClaim && anchor.wasAtBottom;
-        let reason: string;
-        let targetViewportY: number | undefined;
-        if (keyboardOpening) {
-          startTailPin();
-          reason = "keyboard-open-bottom";
-          targetViewportY = undefined;
-        } else if (foregroundBottomClaim) {
-          startTailPin();
-          reason = "foreground-bottom";
-          targetViewportY = undefined;
-        } else {
-          const restore = restoreScrollAnchor(term, anchor);
-          reason = restore.reason;
-          targetViewportY =
-            restore.reason === "anchor-changed"
-              ? restore.targetViewportY
-              : undefined;
+        if (
+          !forceClaim &&
+          lastResizeProposal?.cols === proposed.cols &&
+          lastResizeProposal.rows === proposed.rows
+        ) {
+          traceTerminalEvent("terminal-resize-skip", {
+            sessionId,
+            ...terminalBufferTrace(term),
+            proposedCols: proposed.cols,
+            proposedRows: proposed.rows,
+            reason: "proposal-pending",
+            ptyResizeSent: false,
+            durationMs: performance.now() - startedAt,
+            proposeDurationMs,
+          });
+          return;
         }
-        onResizeApplied?.();
-        refreshVisibleRows(term);
-        const ptyResizeSent = sendResize();
-        const resizeApplyEvent = {
-          type: "terminal-resize-apply",
+        const anchor = captureScrollAnchor(term);
+        const preferBottom =
+          (isTouchRef.current && proposed.rows < term.rows) ||
+          (forceClaim && anchor.wasAtBottom);
+        lastResizeProposal = { cols: proposed.cols, rows: proposed.rows };
+        onResizeProposed?.({
+          cols: proposed.cols,
+          rows: proposed.rows,
+          preferBottom,
+        });
+        const ptyResizeSent = sendResize(proposed);
+        const resizeProposalEvent = {
+          type: "terminal-resize-propose",
           sessionId,
           ...terminalBufferTrace(term),
           proposedCols: proposed.cols,
           proposedRows: proposed.rows,
-          previousViewportY: anchor.viewportY,
-          previousBaseY: anchor.baseY,
           deferred: keyboardSettlingRef.current,
-          targetViewportY,
-          reason,
+          reason: preferBottom ? "prefer-bottom" : "preserve-anchor",
           ptyResizeSent,
           durationMs: performance.now() - startedAt,
           proposeDurationMs,
-          resizeDurationMs,
         };
-        traceTerminalEvent("terminal-resize-apply", resizeApplyEvent);
+        traceTerminalEvent("terminal-resize-propose", resizeProposalEvent);
         if (captureDiagnostics) {
           scheduleTerminalInputDiagnosticCapture(
-            "terminal-resize-apply",
-            resizeApplyEvent,
+            "terminal-resize-propose",
+            resizeProposalEvent,
           );
         }
       };
@@ -431,13 +383,8 @@ export function useTerminalViewportLifecycle({
       });
       observer.observe(container);
 
-      // The terminal width is a single shared PTY dimension, so connected
-      // devices should not keep re-claiming it. A device claims the width
-      // (fits + resizes the PTY) only when the user engages with it: on a
-      // touch device when its pane is foregrounded; on desktop when the cursor
-      // enters the terminal. Window-resize (ResizeObserver) still re-fits -- that
-      // is a deliberate "I want this width" signal -- and commitInit establishes
-      // the initial width regardless.
+      // Mount, foreground, layout resize, and input are the complete set of
+      // viewport claims. The server deduplicates equal PTY geometry.
       const onForeground = () => {
         const visible = document.visibilityState === "visible";
         traceTerminalEvent("terminal-engage", {
@@ -448,37 +395,10 @@ export function useTerminalViewportLifecycle({
         });
         if (!visible) return;
         setLastForegroundAtMs(Date.now());
-        // Foreground is the touch device's engagement signal. On desktop a
-        // browser-tab switch must not send SIGWINCH just because the pointer
-        // happens to rest over the terminal: full-screen TUIs can repaint and
-        // move their composer without any desktop interaction. Pointer entry,
-        // focus-in, and input still explicitly claim the desktop viewport.
-        if (isTouchRef.current) applyResize(true);
+        applyResize(true);
       };
       document.addEventListener("visibilitychange", onForeground);
       window.addEventListener("focus", onForeground);
-
-      const onPointerEnter = () => {
-        traceTerminalEvent("terminal-engage", {
-          sessionId,
-          reason: "pointer-enter",
-          surface: isTouchRef.current ? "touch" : "desktop",
-        });
-        if (isTouchRef.current) return;
-        applyResize(true);
-      };
-      container.addEventListener("mouseenter", onPointerEnter);
-
-      const onFocusIn = () => {
-        traceTerminalEvent("terminal-engage", {
-          sessionId,
-          reason: "focus-in",
-          surface: isTouchRef.current ? "touch" : "desktop",
-        });
-        if (isTouchRef.current) return;
-        applyResize(true);
-      };
-      container.addEventListener("focusin", onFocusIn);
       claimViewportRef.current = (reason: string) => {
         traceTerminalEvent("terminal-engage", {
           sessionId,
@@ -493,7 +413,6 @@ export function useTerminalViewportLifecycle({
         clearInitFallbackTimer();
         clearResizeTimer();
         clearResizeAfterFlushFrame();
-        stopTailPin();
         if (flushDeferredResizeRef.current === flushDeferredKeyboardResize) {
           flushDeferredResizeRef.current = null;
         }
@@ -503,8 +422,6 @@ export function useTerminalViewportLifecycle({
         observer.disconnect();
         document.removeEventListener("visibilitychange", onForeground);
         window.removeEventListener("focus", onForeground);
-        container.removeEventListener("mouseenter", onPointerEnter);
-        container.removeEventListener("focusin", onFocusIn);
       };
     },
     [
@@ -512,9 +429,8 @@ export function useTerminalViewportLifecycle({
       firstDataTimerRef,
       hasReceivedDataRef,
       isEnded,
-      onResizeApplied,
-      refreshVisibleRows,
       flushPendingOutput,
+      onResizeProposed,
       send,
       sendInit,
       sessionId,
@@ -526,20 +442,22 @@ export function useTerminalViewportLifecycle({
     const term = xtermRef.current;
     const fit = fitRef.current;
     if (!term) return;
-    const before = { cols: term.cols, rows: term.rows };
     term.options.fontSize = terminalConfig.fontSize;
     term.options.fontFamily = terminalConfig.fontFamily;
     term.options.theme = terminalConfig.theme;
     const proposed = fit?.proposeDimensions();
-    if (isValidProposedDimensions(proposed)) {
-      term.resize(proposed.cols, proposed.rows);
-    }
-    if (!isEnded && dimensionsChanged(before, term)) {
-      send({ type: "resize", cols: term.cols, rows: term.rows });
+    if (
+      !isEnded &&
+      isValidProposedDimensions(proposed) &&
+      (proposed.cols !== term.cols || proposed.rows !== term.rows)
+    ) {
+      onResizeProposed?.({ ...proposed, preferBottom: false });
+      send({ type: "resize", cols: proposed.cols, rows: proposed.rows });
     }
   }, [
     fitRef,
     isEnded,
+    onResizeProposed,
     send,
     terminalConfig.fontFamily,
     terminalConfig.fontSize,

@@ -45,6 +45,7 @@ import type { AppStateStore } from "../state/app-state.js";
 import type { ProjectManager } from "../state/project-manager.js";
 import type { ServerNoticesStore } from "../state/server-notices.js";
 import type { WorktreeCache } from "../state/worktree-cache.js";
+import { ClientActivityTracker } from "../ws/client-activity.js";
 import { type EventBus, handleEventClientMessage } from "../ws/events.js";
 import { attachKeepalive } from "../ws/keepalive.js";
 import {
@@ -123,6 +124,21 @@ export function createAppServer({
   onServiceConfigChanged,
 }: CreateAppServerDeps) {
   const app = new Hono();
+  const clientActivity = new ClientActivityTracker();
+  const applyActiveProject = (
+    ws: Parameters<EventBus["removeClient"]>[0],
+    rawId: string | null,
+  ) => {
+    const next = rawId !== null && projectManager.get(rawId) ? rawId : null;
+    const prev = clientActivity.setActiveProject(ws, next);
+    if (prev === next) return;
+    projectRuntime.onClientActiveProject(prev, next);
+  };
+  const dropClient = (ws: Parameters<EventBus["removeClient"]>[0]) => {
+    const prev = clientActivity.removeClient(ws);
+    if (prev) projectRuntime.onClientActiveProject(prev, null);
+  };
+  eventBus.setOnClientDropped?.(dropClient);
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
   const keepaliveConfig = wsKeepalive ?? {
     pingIntervalMs: 20_000,
@@ -165,6 +181,11 @@ export function createAppServer({
       appStateStore,
       worktreeCache,
       reconcileWorktrees,
+      {
+        isProjectMissing: (projectId) => projectRuntime.isMissing(projectId),
+        noteMissingPath: (projectId) =>
+          projectRuntime.noteMissingPath(projectId, "worktree-list"),
+      },
     ),
   );
   app.route(
@@ -200,6 +221,7 @@ export function createAppServer({
       eventBus,
       appStateStore,
       terminalTraceRecorder,
+      (projectId) => projectRuntime.isMissing(projectId),
     ),
   );
   app.route("/api/fs", createFilesystemRoutes());
@@ -236,6 +258,7 @@ export function createAppServer({
     "/api/files",
     createFileRoutes(projectManager, getFilesystemService, {
       isWritable: (projectId) => !projectManager.get(projectId)?.readOnly,
+      isProjectMissing: (projectId) => projectRuntime.isMissing(projectId),
     }),
   );
   app.route("/api/fonts", createFontRoutes(new FontInstaller()));
@@ -355,7 +378,9 @@ export function createAppServer({
           await eventBus.addClient(ws);
         },
         onMessage(event, ws) {
-          handleEventClientMessage(ws, event.data);
+          handleEventClientMessage(ws, event.data, {
+            onActiveProject: applyActiveProject,
+          });
         },
         onClose(_event, ws) {
           disposeKeepalive?.();

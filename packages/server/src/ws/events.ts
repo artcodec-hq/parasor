@@ -36,6 +36,7 @@ export interface HydrationSources {
    * would otherwise leak events to a connecting client.
    */
   getWorktrees: () => Record<string, Worktree[]>;
+  getMissingProjectIds?: () => string[];
 }
 
 export type ClientCountListener = (count: number) => void;
@@ -51,9 +52,14 @@ export class EventBus {
   private sources: HydrationSources | null = null;
   private notifications: Notification[] = [];
   private clientCountListeners = new Set<ClientCountListener>();
+  private onClientDropped: ((ws: WSContext) => void) | null = null;
 
   setHydrationSources(sources: HydrationSources): void {
     this.sources = sources;
+  }
+
+  setOnClientDropped(listener: ((ws: WSContext) => void) | null): void {
+    this.onClientDropped = listener;
   }
 
   addNotification(n: Notification): void {
@@ -95,6 +101,7 @@ export class EventBus {
           gitStates: this.sources.getGitStates(),
           worktrees: this.sources.getWorktrees(),
           hostPlatform: process.platform,
+          missingProjectIds: this.sources.getMissingProjectIds?.() ?? [],
         }
       : {
           seq: snapshotSeq,
@@ -124,6 +131,7 @@ export class EventBus {
           gitStates: {},
           worktrees: {},
           hostPlatform: process.platform,
+          missingProjectIds: [],
         };
 
     this.clients.add(ws);
@@ -134,7 +142,10 @@ export class EventBus {
 
   removeClient(ws: WSContext): void {
     const had = this.clients.delete(ws);
-    if (had) this.emitClientCount();
+    if (had) {
+      this.onClientDropped?.(ws);
+      this.emitClientCount();
+    }
   }
 
   private emitClientCount(): void {
@@ -155,6 +166,7 @@ export class EventBus {
           client.send(data);
         } catch {
           this.clients.delete(client);
+          this.onClientDropped?.(client);
           dropped = true;
         }
       }
@@ -172,8 +184,11 @@ export class EventBus {
  * -- forward-compat for future client->server messages.
  */
 export function handleEventClientMessage(
-  ws: Pick<WSContext, "send">,
+  ws: WSContext,
   raw: unknown,
+  hooks?: {
+    onActiveProject?: (ws: WSContext, projectId: string | null) => void;
+  },
 ): void {
   if (typeof raw !== "string") return;
   let parsed: unknown;
@@ -182,13 +197,18 @@ export function handleEventClientMessage(
   } catch {
     return;
   }
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    (parsed as { type?: unknown }).type !== "ping" ||
-    !Number.isFinite((parsed as { ts?: unknown }).ts)
-  ) {
+  if (parsed === null || typeof parsed !== "object") return;
+  const type = (parsed as { type?: unknown }).type;
+  if (type === "ping") {
+    if (!Number.isFinite((parsed as { ts?: unknown }).ts)) return;
+    ws.send(
+      JSON.stringify({ type: "pong", ts: (parsed as { ts: number }).ts }),
+    );
     return;
   }
-  ws.send(JSON.stringify({ type: "pong", ts: (parsed as { ts: number }).ts }));
+  if (type === "active-project") {
+    const projectId = (parsed as { projectId?: unknown }).projectId;
+    if (projectId !== null && typeof projectId !== "string") return;
+    hooks?.onActiveProject?.(ws, projectId);
+  }
 }

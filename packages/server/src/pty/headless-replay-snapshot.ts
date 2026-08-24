@@ -375,8 +375,8 @@ function snapshotTerminal(
 
 export class HeadlessTerminalState {
   private readonly term: import("@xterm/headless").Terminal;
-  private readonly cols: number;
-  private readonly rows: number;
+  private cols: number;
+  private rows: number;
   private readonly scrollbackLines: number;
   private readonly maxBytes: number;
   private rawBytes = 0;
@@ -403,6 +403,17 @@ export class HeadlessTerminalState {
     this.pendingWrite = this.pendingWrite.then(() =>
       writeTerminal(this.term, data),
     );
+    return this.pendingWrite;
+  }
+
+  resize(cols: number, rows: number): Promise<void> {
+    const nextCols = clampPositiveInteger(cols, this.cols);
+    const nextRows = clampPositiveInteger(rows, this.rows);
+    this.cols = nextCols;
+    this.rows = nextRows;
+    this.pendingWrite = this.pendingWrite.then(() => {
+      this.term.resize(nextCols, nextRows);
+    });
     return this.pendingWrite;
   }
 

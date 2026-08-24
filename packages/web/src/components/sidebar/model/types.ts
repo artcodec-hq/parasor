@@ -86,6 +86,11 @@ export interface SidebarProject {
    * default to "is a repo" so they don't strobe-disable on hydration.
    */
   isRepo?: boolean;
+  /**
+   * Project root is missing on disk. Close-only tombstone; do not set
+   * worktree `orphan` on the root for this signal.
+   */
+  missing?: boolean;
   worktrees: SidebarWorktree[];
 }
 

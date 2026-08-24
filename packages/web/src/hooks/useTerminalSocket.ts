@@ -1,5 +1,6 @@
 import {
   decodeBinaryFrame,
+  type TerminalGeometry,
   type TerminalLastSeen,
   type WsTerminalClientMessage,
   type WsTerminalServerMessage,
@@ -61,14 +62,15 @@ export type TerminalSocketStatus =
   | "connecting"
   // Browser WebSocket is OPEN, but init-ack has not attached the PTY yet.
   | "open"
-  // init-ack received; queued PTY-dependent messages can flush.
+  // init-ack received; queued PTY-dependent messages flush after replay applies.
   | "attached"
   | "reconnecting"
   | "ended";
 
 interface UseTerminalSocketOptions {
   sessionId: string | null;
-  onData: (data: string) => void;
+  onData: (data: string, onApplied?: () => void) => void;
+  onGeometry?: (geometry: TerminalGeometry) => void;
   initialLastSeen?: TerminalLastSeen | null;
   resolveInitialLastSeen?: (dims: {
     cols: number;
@@ -99,6 +101,7 @@ export function useTerminalSocket({
   initialLastSeen,
   resolveInitialLastSeen,
   onFullReplay,
+  onGeometry,
 }: UseTerminalSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   /*
@@ -161,6 +164,11 @@ export function useTerminalSocket({
   onDataRef.current = onData;
   const onFullReplayRef = useRef(onFullReplay);
   onFullReplayRef.current = onFullReplay;
+  const onGeometryRef = useRef(onGeometry);
+  onGeometryRef.current = onGeometry;
+  const replayAppliedRef = useRef(true);
+  const replayCycleRef = useRef(0);
+  const pendingDeltaReplaySeqRef = useRef<string | null>(null);
   /*
    * `initialLastSeen` seeds the reconnect cursor at connect time only. It is
    * read through a ref so a post-replay change to its identity (the cache
@@ -232,6 +240,7 @@ export function useTerminalSocket({
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     if (!initSentRef.current) return;
     if (!initAckedRef.current) return;
+    if (!replayAppliedRef.current) return;
     const queue = sendQueueRef.current;
     if (queue.length === 0) return;
     const flushStart = performance.now();
@@ -316,6 +325,13 @@ export function useTerminalSocket({
     // the close handler to distinguish a stable drop from an immediate flap.
     let establishedAt = 0;
     let pendingFullReplayLastSeen: TerminalLastSeen | null = null;
+
+    const finishReplay = (cycle: number) => {
+      if (cycle !== replayCycleRef.current) return;
+      replayAppliedRef.current = true;
+      pendingDeltaReplaySeqRef.current = null;
+      flushQueue();
+    };
 
     const scheduleReconnect = (established: boolean) => {
       if (cancelled || endedRef.current) return;
@@ -427,6 +443,17 @@ export function useTerminalSocket({
           // PTY generation gate: seed the generation tag from server-confirmed state.
           currentGenerationRef.current = msg.serverState.generation;
           initAckedRef.current = true;
+          if (msg.serverState.geometry) {
+            onGeometryRef.current?.(msg.serverState.geometry);
+          }
+          const replayPending =
+            msg.replay === "full" ||
+            (msg.replay === "delta" &&
+              msg.serverState.lastDeliveredSeq !== null);
+          replayCycleRef.current += 1;
+          replayAppliedRef.current = !replayPending;
+          pendingDeltaReplaySeqRef.current =
+            msg.replay === "delta" ? msg.serverState.lastDeliveredSeq : null;
           setStatus("attached");
           establishedAt = Date.now();
           traceTerminalEvent("socket-init-ack", {
@@ -456,6 +483,10 @@ export function useTerminalSocket({
           flushQueue();
           return;
         }
+        if (msg && msg.type === "geometry") {
+          onGeometryRef.current?.(msg.geometry);
+          return;
+        }
         if (msg && msg.type === "replay") {
           // Full snapshot -- server already decoded to UTF-8.
           onFullReplayRef.current?.(
@@ -463,7 +494,8 @@ export function useTerminalSocket({
           );
           pendingFullReplayLastSeen = null;
           resetForReplayRef.current = false;
-          onDataRef.current(msg.data);
+          const cycle = replayCycleRef.current;
+          onDataRef.current(msg.data, () => finishReplay(cycle));
           return;
         }
         return;
@@ -499,7 +531,21 @@ export function useTerminalSocket({
             byteLength: frame.data.byteLength,
             generation: frame.generation,
           }));
-          onDataRef.current(text);
+          const replaySeq = pendingDeltaReplaySeqRef.current;
+          const cycle = replayCycleRef.current;
+          if (replaySeq !== null && String(frame.seq) === replaySeq) {
+            onDataRef.current(text, () => finishReplay(cycle));
+          } else {
+            onDataRef.current(text);
+          }
+        } else if (
+          pendingDeltaReplaySeqRef.current !== null &&
+          String(frame.seq) === pendingDeltaReplaySeqRef.current
+        ) {
+          const cycle = replayCycleRef.current;
+          // Preserve xterm write ordering even when TextDecoder buffers the
+          // final replay frame without producing a string.
+          onDataRef.current("", () => finishReplay(cycle));
         }
         // PTY generation gate: track the generation server-side has bumped to (e.g.
         // after auto-resume) so subsequent INPUT carries the new tag.
@@ -634,6 +680,9 @@ export function useTerminalSocket({
       wsRef.current = ws;
       initSentRef.current = false;
       initAckedRef.current = false;
+      replayCycleRef.current += 1;
+      replayAppliedRef.current = false;
+      pendingDeltaReplaySeqRef.current = null;
       establishedAt = 0;
       binaryAttachedRef.current = false;
       decoderRef.current = null;
@@ -677,6 +726,9 @@ export function useTerminalSocket({
         wsRef.current = null;
         initSentRef.current = false;
         initAckedRef.current = false;
+        replayCycleRef.current += 1;
+        replayAppliedRef.current = false;
+        pendingDeltaReplaySeqRef.current = null;
         binaryAttachedRef.current = false;
         decoderRef.current = null;
         resetForReplayRef.current = false;
@@ -732,6 +784,9 @@ export function useTerminalSocket({
       sendQueueRef.current = [];
       initSentRef.current = false;
       initAckedRef.current = false;
+      replayCycleRef.current += 1;
+      replayAppliedRef.current = true;
+      pendingDeltaReplaySeqRef.current = null;
       binaryAttachedRef.current = false;
       decoderRef.current = null;
       resetForReplayRef.current = false;

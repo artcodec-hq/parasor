@@ -100,6 +100,8 @@ export function createProjectRoutes(
     openInIde?: typeof openInIde;
     isLocalMachineAddress?: (address: string | null) => boolean;
     remoteAddress?: (c: Context) => string | null;
+    isProjectMissing?: (projectId: string) => boolean;
+    noteMissingPath?: (projectId: string) => void;
   } = {},
 ): Hono {
   const routes = new Hono();
@@ -329,14 +331,25 @@ export function createProjectRoutes(
   routes.get("/:id/worktrees", async (c) => {
     const id = c.req.param("id");
     try {
-      const worktrees = await projectQueries.getProjectWorktrees(id);
+      const result = await projectQueries.getProjectWorktrees(id);
       // Fan-out deltas so other clients' sidebars catch up without waiting on
       // the next poll. Forward the freshly-enumerated list so the reconciler
       // does not re-run `git worktree list` + N×`git status` on every request.
-      if (reconcileWorktrees) {
-        void reconcileWorktrees(id, worktrees);
+      // missing-path and git-error must not pass prefetched [] (that deletes cache).
+      if (result.status === "ok") {
+        if (reconcileWorktrees) {
+          void reconcileWorktrees(id, result.worktrees);
+        }
+        return c.json({ worktrees: result.worktrees });
       }
-      return c.json({ worktrees });
+      if (result.status === "missing-path") {
+        opts.noteMissingPath?.(id);
+        return c.json({ worktrees: [], missing: true });
+      }
+      return c.json({
+        worktrees: worktreeCache.get()[id] ?? [],
+        error: "git-error",
+      });
     } catch (error) {
       if (error instanceof WorkspaceNotFoundError) {
         return c.json({ error: "Not found" }, 404);
@@ -375,6 +388,9 @@ export function createProjectRoutes(
     if (!body.branch) {
       return c.json({ error: "branch is required" }, 400);
     }
+    if (opts.isProjectMissing?.(id)) {
+      return c.json({ error: "Project directory is missing" }, 409);
+    }
     try {
       const worktree = await worktreeCommands.createProjectWorktree(id, {
         branch: body.branch,
@@ -407,6 +423,9 @@ export function createProjectRoutes(
   // Reveal worktree directory in the host OS file manager.
   routes.post("/:id/worktrees/open-os", async (c) => {
     const id = c.req.param("id");
+    if (opts.isProjectMissing?.(id)) {
+      return c.json({ error: "Project directory is missing" }, 409);
+    }
     const body = await c.req
       .json<{ worktreePath?: string }>()
       .catch(() => ({}) as { worktreePath?: string });
@@ -439,6 +458,9 @@ export function createProjectRoutes(
   // Open worktree directory in a whitelisted IDE on the parasor server host.
   routes.post("/:id/worktrees/open-ide", async (c) => {
     const id = c.req.param("id");
+    if (opts.isProjectMissing?.(id)) {
+      return c.json({ error: "Project directory is missing" }, 409);
+    }
     const body = await c.req
       .json<{ worktreePath?: string; editor?: unknown }>()
       .catch(() => ({}) as { worktreePath?: string; editor?: unknown });

@@ -607,6 +607,38 @@ describe("project routes", () => {
       const res = await app.request("/api/projects/nonexistent/worktrees");
       expect(res.status).toBe(404);
     });
+
+    it("returns 200 with missing flag when the project directory is gone", async () => {
+      mocks.projects.set(
+        "p1",
+        makeProject({
+          id: "p1",
+          path: `/tmp/parasor-missing-never-${Date.now()}`,
+        }),
+      );
+      const res = await app.request("/api/projects/p1/worktrees");
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toEqual({
+        worktrees: [],
+        missing: true,
+      });
+    });
+
+    it("returns 200 with git-error and cached worktrees when git fails", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "parasor-not-git-"));
+      mocks.projects.set("p1", makeProject({ id: "p1", path: dir }));
+      mocks.worktreeStore.set("p1", [
+        { path: dir, head: "abc", branch: "main" },
+      ]);
+      const res = await app.request("/api/projects/p1/worktrees");
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.error).toBe("git-error");
+      expect(body.worktrees).toEqual([
+        { path: dir, head: "abc", branch: "main" },
+      ]);
+      rmSync(dir, { recursive: true, force: true });
+    });
   });
 
   describe("GET /api/projects/:id/worktree-local-files", () => {

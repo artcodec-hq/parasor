@@ -58,6 +58,7 @@ class FakeHost implements PtyHost {
     | { ok: true; session: Session }
     | { ok: false; err: Error } = { ok: true, session: makeSession("default") };
   initClientResult: boolean | Error = true;
+  initClientGeometry?: { cols: number; rows: number; epoch: number };
   onInitClient?: (id: string, clientId: string) => void;
 
   private dataListeners: ((
@@ -66,6 +67,13 @@ class FakeHost implements PtyHost {
     generation: number,
   ) => void)[] = [];
   private inputListeners: ((sessionId: string, data: string) => void)[] = [];
+  private geometryListeners: Array<
+    (
+      sessionId: string,
+      geometry: { cols: number; rows: number; epoch: number },
+    ) => void
+  > = [];
+  private geometryEpoch = 0;
   onSessionExit:
     | ((id: string, generation: number, reason: SessionEndReason) => void)
     | null = null;
@@ -130,6 +138,10 @@ class FakeHost implements PtyHost {
   }
   resize(id: string, cols: number, rows: number): void {
     this.resizes.push({ id, cols, rows });
+    this.geometryEpoch += 1;
+    for (const listener of this.geometryListeners) {
+      listener(id, { cols, rows, epoch: this.geometryEpoch });
+    }
   }
   refresh(id: string): void {
     this.refreshes.push(id);
@@ -148,12 +160,23 @@ class FakeHost implements PtyHost {
     rows: number,
     _listener: (data: string) => void,
     attachToken?: number,
-  ): Promise<{ ok: true; attachToken: number } | { ok: false }> {
+  ): Promise<
+    | {
+        ok: true;
+        attachToken: number;
+        geometry?: { cols: number; rows: number; epoch: number };
+      }
+    | { ok: false }
+  > {
     this.initClients.push({ id, clientId, cols, rows });
     if (this.initClientResult instanceof Error) throw this.initClientResult;
     if (!this.initClientResult) return { ok: false };
     this.onInitClient?.(id, clientId);
-    return { ok: true, attachToken: attachToken ?? 1 };
+    return {
+      ok: true,
+      attachToken: attachToken ?? 1,
+      geometry: this.initClientGeometry,
+    };
   }
   async attachClient(): Promise<{ ok: false }> {
     return { ok: false };
@@ -183,6 +206,14 @@ class FakeHost implements PtyHost {
     listener: (sessionId: string, data: string, generation: number) => void,
   ): void {
     this.dataListeners.push(listener);
+  }
+  onSessionGeometry(
+    listener: (
+      sessionId: string,
+      geometry: { cols: number; rows: number; epoch: number },
+    ) => void,
+  ): void {
+    this.geometryListeners.push(listener);
   }
 
   emitData(sessionId: string, data: string, generation = 1): void {
@@ -529,6 +560,28 @@ describe("RemotePtyHost -- async PtyHost methods", () => {
     expect(result).toEqual({ ok: false });
   });
 
+  it("attachClient() propagates the daemon PTY geometry instead of requested dimensions", async () => {
+    h.host.sessions.set("s1", makeSession("s1"));
+    h.host.initClientGeometry = { cols: 43, rows: 20, epoch: 7 };
+
+    const result = await h.remote.attachClient(
+      "s1",
+      "client-A",
+      105,
+      51,
+      { binary: true, chunkedReplay: true },
+      { onChunk: () => {} },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.serverState.geometry).toEqual({
+      cols: 43,
+      rows: 20,
+      epoch: 7,
+    });
+  });
+
   it("attachClient() forwards daemon DATA through sink.onChunk tagged with the per-session generation (PTY generation gate)", async () => {
     const chunks: { generation: number; seq: bigint; data: string }[] = [];
     const sink = {
@@ -687,6 +740,32 @@ describe("RemotePtyHost -- fire-and-forget mutators", () => {
     h.remote.resize("s1", 100, 30);
     await vi.waitFor(() =>
       expect(h.host.resizes).toEqual([{ id: "s1", cols: 100, rows: 30 }]),
+    );
+  });
+
+  it("forwards daemon geometry to an attached client before later output", async () => {
+    h.host.sessions.set("s1", makeSession("s1"));
+    const events: string[] = [];
+    const result = await h.remote.attachClient(
+      "s1",
+      "client-A",
+      80,
+      24,
+      { binary: true, chunkedReplay: true },
+      {
+        onChunk: (_generation, _seq, data) =>
+          events.push(`output:${data.toString("utf8")}`),
+        onGeometry: (geometry) =>
+          events.push(`geometry:${geometry.cols}x${geometry.rows}`),
+      },
+    );
+    expect(result.ok).toBe(true);
+
+    h.remote.resize("s1", 43, 20);
+    await vi.waitFor(() => expect(events).toEqual(["geometry:43x20"]));
+    h.host.emitData("s1", "redraw");
+    await vi.waitFor(() =>
+      expect(events).toEqual(["geometry:43x20", "output:redraw"]),
     );
   });
 

@@ -1,6 +1,7 @@
 import type {
   SessionCommand,
   SessionEndReason,
+  TerminalGeometry,
   TerminalLastSeen,
   WsTerminalClientMessage,
 } from "@parasor/shared";
@@ -53,6 +54,10 @@ import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
 import { resolveTerminalReconnectingOverlayDelay } from "./terminal-reconnecting-overlay.js";
 import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
 import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
+import {
+  captureScrollAnchor,
+  restoreScrollAnchor,
+} from "./terminal-scroll-anchor.js";
 import { attachTerminalScrollState } from "./terminal-scroll-state.js";
 import {
   getXtermScreenElement,
@@ -169,6 +174,17 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         worktreePath,
       });
     const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
+    const pendingGeometryIntentRef = useRef<{
+      cols: number;
+      rows: number;
+      preferBottom: boolean;
+    } | null>(null);
+    const recordGeometryIntent = useCallback(
+      (intent: { cols: number; rows: number; preferBottom: boolean }) => {
+        pendingGeometryIntentRef.current = intent;
+      },
+      [],
+    );
 
     const showError = shouldShowTerminalSessionError({
       sessionState,
@@ -220,6 +236,57 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       [onFullReplay, startFullReplay],
     );
 
+    const applyServerGeometry = useCallback(
+      (geometry: TerminalGeometry) => {
+        const term = xtermRef.current;
+        if (!term) return;
+        if (term.cols === geometry.cols && term.rows === geometry.rows) return;
+        const anchor = captureScrollAnchor(term);
+        const previousRows = term.rows;
+        const pendingIntent = pendingGeometryIntentRef.current;
+        const preferBottom =
+          pendingIntent?.cols === geometry.cols &&
+          pendingIntent.rows === geometry.rows &&
+          pendingIntent.preferBottom;
+        if (
+          pendingIntent?.cols === geometry.cols &&
+          pendingIntent.rows === geometry.rows
+        ) {
+          pendingGeometryIntentRef.current = null;
+        }
+        term.resize(geometry.cols, geometry.rows);
+        suppressHistoryLoadAfterResize();
+        const rowGrowth = geometry.rows - previousRows;
+        const bottomAnchor =
+          rowGrowth > 0 &&
+          (anchor.wasAtBottom || preferBottom) &&
+          term.buffer.active.type === "normal";
+        if (bottomAnchor) {
+          // xterm grows a normal buffer from the top. Shift the old viewport
+          // down before the PTY redraw arrives so both use the same bottom edge.
+          term.write(`\x1b[${rowGrowth}T`, () => refreshVisibleRows(term));
+        } else if (preferBottom) {
+          term.scrollToBottom();
+          refreshVisibleRows(term);
+        } else {
+          restoreScrollAnchor(term, anchor);
+          refreshVisibleRows(term);
+        }
+        traceTerminalEvent("terminal-authoritative-geometry", {
+          sessionId,
+          cols: geometry.cols,
+          rows: geometry.rows,
+          geometryEpoch: geometry.epoch,
+          reason: bottomAnchor
+            ? "bottom-anchor"
+            : preferBottom
+              ? "prefer-bottom"
+              : "preserve-anchor",
+        });
+      },
+      [refreshVisibleRows, sessionId, suppressHistoryLoadAfterResize],
+    );
+
     const loadOlderHistory = useCallback(async () => {
       await loadOlderHistoryWithRestore(restoreExpandedReplay);
     }, [loadOlderHistoryWithRestore, restoreExpandedReplay]);
@@ -234,6 +301,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       resolveInitialLastSeen,
       onData,
       onFullReplay: handleFullReplay,
+      onGeometry: applyServerGeometry,
     });
     sendRef.current = send;
 
@@ -385,13 +453,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
         terminalConfig: terminalConfigRef.current,
         xtermRef,
         fitRef,
-        refreshVisibleRows,
         flushPendingOutput,
         keyboardSettling,
         isTouch,
         firstDataTimerRef,
         hasReceivedDataRef,
-        onResizeApplied: suppressHistoryLoadAfterResize,
+        onResizeProposed: recordGeometryIntent,
         send,
         sendInit,
         setLastForegroundAtMs,

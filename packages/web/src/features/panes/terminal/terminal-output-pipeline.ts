@@ -59,7 +59,7 @@ export function useTerminalOutputPipeline({
 }: UseTerminalOutputPipelineArgs): {
   firstDataTimerRef: MutableRefObject<number | null>;
   hasReceivedDataRef: RefObject<boolean>;
-  onData: (data: string) => void;
+  onData: (data: string, onApplied?: () => void) => void;
   onFullReplay: () => void;
   refreshVisibleRows: (term: XTerm) => void;
   restoreExpandedReplay: (
@@ -75,9 +75,11 @@ export function useTerminalOutputPipeline({
   const replayStartAtRef = useRef<number | null>(null);
   const outputBatchRef = useRef<{
     chunks: string[];
+    appliedCallbacks: Array<() => void>;
     timer: number | null;
   }>({
     chunks: [],
+    appliedCallbacks: [],
     timer: null,
   });
   const hasReceivedDataRef = useRef(false);
@@ -150,7 +152,9 @@ export function useTerminalOutputPipeline({
       if (batch.chunks.length === 0) return false;
       const term = xtermRef.current;
       const chunks = batch.chunks;
+      const appliedCallbacks = batch.appliedCallbacks;
       batch.chunks = [];
+      batch.appliedCallbacks = [];
       if (!term) return false;
       const data = chunks.length === 1 ? chunks[0] : chunks.join("");
       if (chunks.length >= OUTPUT_BATCH_TRACE_CHUNK_THRESHOLD) {
@@ -160,7 +164,14 @@ export function useTerminalOutputPipeline({
           queueLength: chunks.length,
         });
       }
-      writeTerminalOutput(term, data, onFlushed);
+      const complete =
+        appliedCallbacks.length > 0 || onFlushed
+          ? () => {
+              for (const callback of appliedCallbacks) callback();
+              onFlushed?.();
+            }
+          : undefined;
+      writeTerminalOutput(term, data, complete);
       return true;
     },
     [sessionId, writeTerminalOutput, xtermRef],
@@ -173,12 +184,14 @@ export function useTerminalOutputPipeline({
       batch.timer = null;
     }
     batch.chunks = [];
+    batch.appliedCallbacks = [];
   }, []);
 
   const queueTerminalOutput = useCallback(
-    (data: string) => {
+    (data: string, onApplied?: () => void) => {
       const batch = outputBatchRef.current;
       batch.chunks.push(data);
+      if (onApplied) batch.appliedCallbacks.push(onApplied);
       if (batch.timer !== null) return;
       batch.timer = requestAnimationFrame(() => {
         batch.timer = null;
@@ -210,7 +223,7 @@ export function useTerminalOutputPipeline({
   );
 
   const onData = useCallback(
-    (data: string) => {
+    (data: string, onApplied?: () => void) => {
       const term = xtermRef.current;
       if (!term) return;
       if (!hasReceivedDataRef.current && hasVisibleTerminalContent(data)) {
@@ -258,6 +271,7 @@ export function useTerminalOutputPipeline({
                 : performance.now() - replayStartAt,
           });
           onReplayWriteComplete?.(data, term);
+          onApplied?.();
           requestAnimationFrame(() => {
             const sinceReplayStartMs =
               replayStartAt === null
@@ -277,7 +291,7 @@ export function useTerminalOutputPipeline({
         });
         return;
       }
-      queueTerminalOutput(data);
+      queueTerminalOutput(data, onApplied);
     },
     [
       onReplayWriteComplete,

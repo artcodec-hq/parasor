@@ -114,6 +114,8 @@ function wireDeps(overrides: {
     } as unknown as ProjectManager,
     projectRuntime: {
       getGitStates: () => ({}),
+      getMissingProjectIds: () => [],
+      isMissing: () => false,
       handleBroadcast: vi.fn(),
       handleSessionEnded: vi.fn(),
     } as unknown as ProjectRuntime,

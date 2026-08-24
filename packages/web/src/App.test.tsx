@@ -283,6 +283,7 @@ function eventStore(overrides: Record<string, unknown> = {}) {
     seedPaneCommands: vi.fn(),
     seedIdeCommands: vi.fn(),
     seedSidebarState: vi.fn(),
+    setActiveProject: vi.fn(),
     ...overrides,
   };
 }
