@@ -831,56 +831,6 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
   });
 });
 
-describe("buildSidebarProjects -- work item panes", () => {
-  it("shows a work item child with title and status", () => {
-    const result = buildSidebarProjects({
-      projects: [project({})],
-      activeProjectId: "p1",
-      activeWorktrees: [
-        {
-          path: "/repos/p1",
-          panes: [
-            {
-              id: "work-item:pane",
-              kind: "work-item",
-              worktreePath: "/repos/p1",
-              state: { kind: "work-item", workItemId: "item-1" },
-            },
-          ],
-        },
-      ],
-      sessions: [],
-      agentStates: {},
-      reviewPendingSessions: new Set(),
-      workItemsByProject: {
-        p1: [
-          {
-            id: "item-1",
-            projectId: "p1",
-            title: "Ship work item pane",
-            status: "in_progress",
-            acceptanceCriteria: [],
-            attachments: [],
-            createdAt: 1,
-            updatedAt: 1,
-          },
-        ],
-      },
-    });
-
-    expect(result[0]?.worktrees[0]?.children).toEqual([
-      {
-        id: "work-item:pane",
-        kind: "work-item",
-        label: "Ship work item pane",
-        hint: "in progress",
-        status: "idle",
-        pinned: false,
-      },
-    ]);
-  });
-});
-
 describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
   it("uses activeWorktrees pane data when project is active", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];

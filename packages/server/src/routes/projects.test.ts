@@ -134,18 +134,19 @@ function makeMocks() {
   } as unknown as PtyHost;
 
   const projectStates: Record<string, ProjectState> = {};
-  const workItems = {};
   let ideCommands: IdeCommandConfig[] = [];
   const store = {
     get: vi.fn(() => ({
       projects: [...projects.values()],
       sessions: [],
       projectStates,
-      workItems,
       ideCommands,
     })),
     mutateProjects: vi.fn((fn: (s: ProjectsMutateView) => void) =>
-      fn({ projects: [...projects.values()], projectStates, workItems }),
+      fn({
+        projects: [...projects.values()],
+        projectStates,
+      }),
     ),
     mutateProjectStates: vi.fn((fn: (s: ProjectStatesMutateView) => void) =>
       fn({ projectStates, projects: [...projects.values()], sessions: [] }),

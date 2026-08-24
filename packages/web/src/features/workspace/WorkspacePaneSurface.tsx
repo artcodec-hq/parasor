@@ -1,10 +1,4 @@
-import type {
-  IdeCommandConfig,
-  Session,
-  UpdateWorkItemInput,
-  WorkItem,
-  Worktree,
-} from "@parasor/shared";
+import type { IdeCommandConfig, Session } from "@parasor/shared";
 import { filesPaneId, gitPaneId } from "@parasor/shared";
 import type { IdeEditor } from "../../lib/git-api.js";
 import type { OpenUrlOptions } from "../../lib/open-url-options.js";
@@ -50,7 +44,7 @@ interface WorkspacePaneSurfaceProps {
   onRenameSession: (sessionId: string, title: string) => Promise<void> | void;
   onRequestClosePane: (
     paneId: string,
-    paneKind: "work-item" | "terminal" | "browser",
+    paneKind: "terminal" | "browser",
     title: string,
   ) => void;
   onRestartSession: (sessionId: string) => Promise<void> | void;
@@ -58,13 +52,6 @@ interface WorkspacePaneSurfaceProps {
   paneModel: WorkspacePaneModel;
   projectSessions: Session[];
   setFocusedPaneId: (paneId: string) => void;
-  workItems: WorkItem[];
-  worktrees: Worktree[];
-  onUpdateWorkItem: (
-    workItemId: string,
-    input: UpdateWorkItemInput,
-  ) => Promise<void> | void;
-  onDeleteWorkItem: (workItemId: string) => Promise<void> | void;
 }
 
 export function WorkspacePaneSurface({
@@ -98,10 +85,6 @@ export function WorkspacePaneSurface({
   paneModel,
   projectSessions,
   setFocusedPaneId,
-  workItems,
-  worktrees,
-  onUpdateWorkItem,
-  onDeleteWorkItem,
 }: WorkspacePaneSurfaceProps) {
   return (
     <WorkspacePaneRouter
@@ -134,10 +117,6 @@ export function WorkspacePaneSurface({
       onClearCommitError={gitWorkflow.clearCommitError}
       onSubmitInlineCommit={gitWorkflow.submitInlineCommit}
       sessions={projectSessions}
-      workItems={workItems}
-      worktrees={worktrees}
-      onUpdateWorkItem={onUpdateWorkItem}
-      onDeleteWorkItem={onDeleteWorkItem}
       onToggleDrawer={() => navigate({ kind: "root" })}
       onClosePane={onClosePane}
       onRequestClosePane={onRequestClosePane}

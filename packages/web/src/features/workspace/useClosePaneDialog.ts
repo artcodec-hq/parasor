@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 
 export interface ClosePaneTarget {
   paneId: string;
-  paneKind: "work-item" | "terminal" | "browser";
+  paneKind: "terminal" | "browser";
   title: string;
 }
 
@@ -12,7 +12,7 @@ export interface ClosePaneDialogControl {
   /** Open the confirm dialog for a pane. */
   request: (
     paneId: string,
-    paneKind: "work-item" | "terminal" | "browser",
+    paneKind: "terminal" | "browser",
     title: string,
   ) => void;
   /** Dismiss the dialog without closing the pane (user clicked Cancel). */
@@ -47,11 +47,7 @@ export function useClosePaneDialog({
   const [target, setTarget] = useState<ClosePaneTarget | null>(null);
 
   const request = useCallback(
-    (
-      paneId: string,
-      paneKind: "work-item" | "terminal" | "browser",
-      title: string,
-    ) => {
+    (paneId: string, paneKind: "terminal" | "browser", title: string) => {
       setTarget({ paneId, paneKind, title });
     },
     [],

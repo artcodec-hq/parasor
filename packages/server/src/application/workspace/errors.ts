@@ -32,10 +32,3 @@ export class WorkspaceValidationError extends Error {
     this.name = "WorkspaceValidationError";
   }
 }
-
-export class WorkItemNotFoundError extends Error {
-  constructor() {
-    super("Work item not found");
-    this.name = "WorkItemNotFoundError";
-  }
-}

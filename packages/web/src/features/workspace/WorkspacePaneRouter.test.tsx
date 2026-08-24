@@ -888,10 +888,6 @@ function makeRouterProps(
     onClearCommitError: vi.fn(),
     onSubmitInlineCommit: vi.fn(),
     sessions: [],
-    workItems: [],
-    worktrees: [],
-    onUpdateWorkItem: vi.fn(),
-    onDeleteWorkItem: vi.fn(),
     onToggleDrawer: vi.fn(),
     onClosePane: vi.fn(),
     onRequestClosePane: vi.fn(),
@@ -930,7 +926,7 @@ function renderBrowserPane({
   worktreePath?: string;
   onRequestClosePane?: (
     paneId: string,
-    paneKind: "work-item" | "terminal" | "browser",
+    paneKind: "terminal" | "browser",
     title: string,
   ) => void;
   onBrowserUrlChange?: (paneId: string, url: string) => void;

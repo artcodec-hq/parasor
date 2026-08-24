@@ -2,7 +2,6 @@ import type {
   HydrationPayload,
   Session,
   SessionActivityRecord,
-  WorkItem,
   WsEventMessage,
 } from "@parasor/shared";
 import {
@@ -33,17 +32,6 @@ const SESSION: Session = {
   pid: 1234,
   createdAt: 1000,
   generation: 0,
-};
-
-const WORK_ITEM: WorkItem = {
-  id: "work-1",
-  projectId: "p1",
-  title: "Sync work items",
-  status: "todo",
-  acceptanceCriteria: [],
-  attachments: [],
-  createdAt: 1,
-  updatedAt: 1,
 };
 
 describe("applyEvent: session-cwd-changed", () => {
@@ -328,44 +316,12 @@ describe("applyEvent: panes-updated", () => {
       type: "panes-updated",
       projectId: "p1",
       worktrees: [{ path: "/repo", panes: [] }],
-      focusedPaneId: "work-item:1",
+      focusedPaneId: "files:/repo",
     });
     expect(next.projectStates.p1.worktrees).toEqual([
       { path: "/repo", panes: [] },
     ]);
-    expect(next.projectStates.p1.focusedPaneId).toBe("work-item:1");
-  });
-});
-
-describe("applyEvent: work items", () => {
-  it("upserts created and updated work items", () => {
-    const created = applyEvent(EMPTY_STORE, {
-      type: "work-item-created",
-      item: WORK_ITEM,
-    });
-    expect(created.workItems.p1).toEqual([WORK_ITEM]);
-
-    const updatedItem = {
-      ...WORK_ITEM,
-      title: "Synced",
-      status: "review" as const,
-      updatedAt: 2,
-    };
-    const updated = applyEvent(created, {
-      type: "work-item-updated",
-      item: updatedItem,
-    });
-    expect(updated.workItems.p1).toEqual([updatedItem]);
-  });
-
-  it("deletes work items", () => {
-    const store = storeWith({ workItems: { p1: [WORK_ITEM] } });
-    const next = applyEvent(store, {
-      type: "work-item-deleted",
-      projectId: "p1",
-      workItemId: WORK_ITEM.id,
-    });
-    expect(next.workItems.p1).toEqual([]);
+    expect(next.projectStates.p1.focusedPaneId).toBe("files:/repo");
   });
 });
 
@@ -702,7 +658,6 @@ describe("applySnapshot: missingProjectIds", () => {
         version: 1,
         projects: [],
         projectStates: {},
-        workItems: {},
         sessions: [],
         sessionRecords: [],
         ideCommands: [],
@@ -798,7 +753,6 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
       version: 1,
       projects: [],
       projectStates: {},
-      workItems: { p1: [WORK_ITEM] },
       sessions: [],
       sessionRecords: [],
       paneCommands: [],
@@ -857,7 +811,6 @@ describe("snapshotApplied flag (warm-boot priming gate)", () => {
       ACTIVITY_HISTORY.slice().reverse(),
     );
     expect(store.paneCommands).toEqual([]);
-    expect(store.workItems.p1).toEqual([WORK_ITEM]);
     expect(store.services).toEqual({});
     expect(store.terminalPresences.s1?.driver).toEqual({
       kind: "mobile",

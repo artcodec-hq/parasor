@@ -3,9 +3,6 @@ import type {
   IdeCommandConfig,
   PaneEntry,
   Session,
-  UpdateWorkItemInput,
-  WorkItem,
-  Worktree,
 } from "@parasor/shared";
 import { useCallback, useEffect, useState } from "react";
 import { DialogRoot, PaGlyph } from "../../components/primitives/index.js";
@@ -85,18 +82,11 @@ interface WorkspacePaneRouterProps {
     paths: string[];
   }) => Promise<void> | void;
   sessions: Session[];
-  workItems: WorkItem[];
-  worktrees: Worktree[];
-  onUpdateWorkItem: (
-    workItemId: string,
-    input: UpdateWorkItemInput,
-  ) => Promise<void> | void;
-  onDeleteWorkItem: (workItemId: string) => Promise<void> | void;
   onToggleDrawer: () => void;
   onClosePane: (paneId: string) => Promise<void> | void;
   onRequestClosePane: (
     paneId: string,
-    paneKind: "work-item" | "terminal" | "browser",
+    paneKind: "terminal" | "browser",
     title: string,
   ) => void;
   onNewProject: () => void;
@@ -153,10 +143,6 @@ export function WorkspacePaneRouter({
   onClearCommitError,
   onSubmitInlineCommit,
   sessions,
-  workItems,
-  worktrees,
-  onUpdateWorkItem,
-  onDeleteWorkItem,
   onToggleDrawer,
   onClosePane,
   onRequestClosePane,
@@ -197,7 +183,7 @@ export function WorkspacePaneRouter({
   const childTitle = isGitChild
     ? buildGitChildTitle(gitGraphSelection)
     : focusedPane
-      ? buildChildTitle(focusedPane, sessions, workItems)
+      ? buildChildTitle(focusedPane, sessions)
       : null;
   const focusedWorktreeIsActive =
     !!focusedPane &&
@@ -349,11 +335,6 @@ export function WorkspacePaneRouter({
                       onSubmitInlineCommit={onSubmitInlineCommit}
                       isMobile={isMobile}
                       browserOnClose={onClose}
-                      workItemOnClose={onClose}
-                      workItems={workItems}
-                      worktrees={worktrees}
-                      onUpdateWorkItem={onUpdateWorkItem}
-                      onDeleteWorkItem={onDeleteWorkItem}
                       onBrowserUrlChange={onBrowserUrlChange}
                       onSelectWorktreeTab={onSelectWorktreeTab}
                       onOpenFilePath={handleOpenFilePath}
@@ -419,11 +400,7 @@ function buildGitChildTitle(selection: GitGraphSelection): string {
   return selection.commit.sha.slice(0, 7);
 }
 
-function buildChildTitle(
-  pane: PaneEntry,
-  sessions: Session[],
-  workItems: WorkItem[],
-): string | null {
+function buildChildTitle(pane: PaneEntry, sessions: Session[]): string | null {
   const { state } = pane;
   if (state.kind === "terminal") {
     const session = sessions.find((s) => s.id === state.sessionId);
@@ -435,12 +412,6 @@ function buildChildTitle(
     } catch {
       return state.url;
     }
-  }
-  if (state.kind === "work-item") {
-    return (
-      workItems.find((item) => item.id === state.workItemId)?.title ??
-      "work item"
-    );
   }
   return null;
 }

@@ -24,7 +24,6 @@ function emptyState(): AppState {
     version: 1,
     projects: [],
     projectStates: {},
-    workItems: {},
     sessions: [],
     sessionRecords: [],
     paneCommands: [],
@@ -40,16 +39,13 @@ function emptyState(): AppState {
 
 function hydratedState(): AppState {
   const state = emptyState();
-  state.workItems.p1 = [
+  state.projects = [
     {
-      id: "work-1",
-      projectId: "p1",
-      title: "Hydrate me",
-      status: "todo",
-      acceptanceCriteria: [],
-      attachments: [],
+      id: "p1",
+      name: "Hydrate me",
+      path: "/tmp/p1",
       createdAt: 1,
-      updatedAt: 1,
+      lastAccessedAt: 1,
     },
   ];
   return state;
@@ -86,8 +82,8 @@ describe("EventBus", () => {
     expect(msg.payload.seq).toBe(0);
     expect(msg.payload.missingProjectIds).toEqual([]);
     expect(msg.payload.services).toEqual({});
-    expect(msg.payload.state.workItems.p1).toEqual([
-      expect.objectContaining({ id: "work-1", title: "Hydrate me" }),
+    expect(msg.payload.state.projects).toEqual([
+      expect.objectContaining({ id: "p1", name: "Hydrate me" }),
     ]);
   });
 

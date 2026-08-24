@@ -9,14 +9,12 @@ import type {
   WorktreeLineageMetadata,
 } from "./runtime.js";
 import type { SessionLaunchPreset } from "./shell-presets.js";
-import type { WorkItem } from "./work-items.js";
 import type { WorktreeLocalFileCandidate } from "./worktree-local-files.js";
 
 export interface AppState {
   version: 1;
   projects: Project[];
   projectStates: Record<string, ProjectState>;
-  workItems: Record<string, WorkItem[]>;
   sessions: Session[];
   /**
    * Daemon-mode persisted PTY records. Owned by

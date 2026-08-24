@@ -9,21 +9,21 @@ import {
   normalizePaneCommands,
   normalizeProjectSidebarState,
   normalizeSessionLaunchPreset,
-  normalizeWorkItemsByProject,
   normalizeWorktreeLocalFileAllowlist,
   normalizeWorktreeMetadataMap,
+  type PaneEntry,
   type PortDetectionMode,
   type Project,
   type ProjectState,
   type ServiceConfig,
   type Session,
+  type WorktreePanes,
 } from "@parasor/shared";
 
 const EMPTY_STATE: AppState = {
   version: 1,
   projects: [],
   projectStates: {},
-  workItems: {},
   sessions: [],
   sessionRecords: [],
   ideCommands: [],
@@ -77,25 +77,25 @@ function migrate(raw: Partial<AppState>): AppState {
     DEFAULT_DROP_SIZE_MAX_BYTES,
     hardMax,
   );
-  return {
+  const projects = Array.isArray(raw.projects)
+    ? raw.projects.map((project) => {
+        const worktreeLocalFileAllowlist = normalizeWorktreeLocalFileAllowlist(
+          project.worktreeLocalFileAllowlist,
+        );
+        return {
+          ...project,
+          ...(worktreeLocalFileAllowlist.length > 0 && {
+            worktreeLocalFileAllowlist,
+          }),
+        };
+      })
+    : [];
+
+  const migrated: AppState = {
     ...structuredClone(EMPTY_STATE),
     ...raw,
-    projects: Array.isArray(raw.projects)
-      ? raw.projects.map((project) => {
-          const worktreeLocalFileAllowlist =
-            normalizeWorktreeLocalFileAllowlist(
-              project.worktreeLocalFileAllowlist,
-            );
-          return {
-            ...project,
-            ...(worktreeLocalFileAllowlist.length > 0 && {
-              worktreeLocalFileAllowlist,
-            }),
-          };
-        })
-      : [],
+    projects,
     projectStates: normalizeProjectStates(raw.projectStates),
-    workItems: normalizeWorkItemsByProject(raw.workItems),
     sessions: normalizeSessions(raw.sessions),
     sessionRecords: Array.isArray(raw.sessionRecords) ? raw.sessionRecords : [],
     ideCommands: normalizeIdeCommands(raw.ideCommands),
@@ -107,6 +107,10 @@ function migrate(raw: Partial<AppState>): AppState {
       dropSizeHardMaxBytes: hardMax,
     },
   };
+  delete (migrated as unknown as Record<string, unknown>).workItems;
+  delete (migrated as unknown as Record<string, unknown>).todos;
+  delete (migrated as unknown as Record<string, unknown>).todoWorkflows;
+  return migrated;
 }
 
 function normalizeSessions(value: unknown): Session[] {
@@ -139,14 +143,22 @@ function normalizeProjectStates(value: unknown): Record<string, ProjectState> {
   for (const [id, state] of Object.entries(value)) {
     if (!state || typeof state !== "object" || Array.isArray(state)) continue;
     const raw = state as Partial<ProjectState>;
+    const worktrees = normalizeWorktreePanes(raw.worktrees);
+    const focusedPaneId =
+      typeof raw.focusedPaneId === "string" &&
+      worktrees.some((worktree) =>
+        worktree.panes.some((pane) => pane.id === raw.focusedPaneId),
+      )
+        ? raw.focusedPaneId
+        : null;
     out[id] = {
       ...raw,
       projectId: typeof raw.projectId === "string" ? raw.projectId : id,
       layout: raw.layout ?? null,
-      worktrees: Array.isArray(raw.worktrees) ? raw.worktrees : [],
+      worktrees,
       openFiles: Array.isArray(raw.openFiles) ? raw.openFiles : [],
       lastFocusedPaneId: raw.lastFocusedPaneId ?? null,
-      focusedPaneId: raw.focusedPaneId ?? null,
+      focusedPaneId,
       sidebar: normalizeProjectSidebarState(raw.sidebar),
       worktreeMetadata: normalizeWorktreeMetadataMap(raw.worktreeMetadata),
       lastAccessedAt:
@@ -154,6 +166,98 @@ function normalizeProjectStates(value: unknown): Record<string, ProjectState> {
     };
   }
   return out;
+}
+
+function normalizeWorktreePanes(value: unknown): WorktreePanes[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((rawWorktree) => {
+    if (
+      !rawWorktree ||
+      typeof rawWorktree !== "object" ||
+      Array.isArray(rawWorktree) ||
+      typeof (rawWorktree as WorktreePanes).path !== "string"
+    ) {
+      return [];
+    }
+    const path = (rawWorktree as WorktreePanes).path;
+    const rawPanes = (rawWorktree as { panes?: unknown }).panes;
+    const panes = Array.isArray(rawPanes)
+      ? rawPanes.flatMap((pane) => {
+          const normalized = normalizePaneEntry(pane, path);
+          return normalized ? [normalized] : [];
+        })
+      : [];
+    return [
+      {
+        path,
+        ...((rawWorktree as WorktreePanes).orphan === true
+          ? { orphan: true }
+          : {}),
+        panes,
+      },
+    ];
+  });
+}
+
+function normalizePaneEntry(
+  value: unknown,
+  worktreePath: string,
+): PaneEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Partial<PaneEntry> & { state?: Record<string, unknown> };
+  if (
+    typeof raw.id !== "string" ||
+    !raw.state ||
+    typeof raw.state.kind !== "string"
+  ) {
+    return null;
+  }
+  const kind = raw.state.kind;
+  if (
+    kind === "files" &&
+    (typeof raw.state.selectedFilePath === "string" ||
+      raw.state.selectedFilePath === null)
+  ) {
+    return {
+      id: raw.id,
+      kind,
+      worktreePath,
+      state: { kind, selectedFilePath: raw.state.selectedFilePath },
+    };
+  }
+  if (kind === "terminal" && typeof raw.state.sessionId === "string") {
+    return {
+      id: raw.id,
+      kind,
+      worktreePath,
+      state: { kind, sessionId: raw.state.sessionId },
+    };
+  }
+  if (kind === "browser" && typeof raw.state.url === "string") {
+    return {
+      id: raw.id,
+      kind,
+      worktreePath,
+      state: {
+        kind,
+        url: raw.state.url,
+        ...(raw.state.auto === true ? { auto: true } : {}),
+      },
+    };
+  }
+  if (
+    kind === "git" &&
+    (typeof raw.state.selectedCommitSha === "string" ||
+      raw.state.selectedCommitSha === null)
+  ) {
+    return {
+      id: raw.id,
+      kind,
+      worktreePath,
+      state: { kind, selectedCommitSha: raw.state.selectedCommitSha },
+    };
+  }
+  return null;
 }
 
 export interface AppStateStoreOpts {
@@ -201,10 +305,7 @@ export interface AppStatePersistenceDelegate {
  * desync the mirror in remote mode. The view types make those misuses
  * compile errors.
  */
-export type ProjectsMutateView = Pick<
-  AppState,
-  "projects" | "projectStates" | "workItems"
->;
+export type ProjectsMutateView = Pick<AppState, "projects" | "projectStates">;
 
 export type ProjectStatesMutateView = Pick<AppState, "projectStates"> &
   Readonly<{
@@ -216,9 +317,6 @@ export type ServiceConfigMutateView = Pick<AppState, "serviceConfig">;
 
 export type PaneCommandsMutateView = Pick<AppState, "paneCommands">;
 export type IdeCommandsMutateView = Pick<AppState, "ideCommands">;
-
-export type WorkItemsMutateView = Pick<AppState, "workItems"> &
-  Readonly<{ projects: ReadonlyArray<Readonly<Project>> }>;
 
 export type SessionsMutateView = Pick<AppState, "sessions" | "sessionRecords"> &
   Readonly<{ projects: ReadonlyArray<Readonly<Project>> }>;
@@ -345,13 +443,6 @@ export class AppStateStore {
    * being able to write into either domain.
    */
   mutateProjectStates(fn: (state: ProjectStatesMutateView) => void): void {
-    if (this.destroyed) return;
-    fn(this.state);
-    this.scheduleFlush();
-  }
-
-  /** Server-owned, project-scoped work item records. */
-  mutateWorkItems(fn: (state: WorkItemsMutateView) => void): void {
     if (this.destroyed) return;
     fn(this.state);
     this.scheduleFlush();

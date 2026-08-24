@@ -1,4 +1,4 @@
-import type { Session, WorkItem, Worktree } from "@parasor/shared";
+import type { Session, Worktree } from "@parasor/shared";
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
@@ -47,73 +47,6 @@ function renderModel(
 }
 
 describe("useWorkspacePaneModel", () => {
-  it("projects valid persisted work item panes before terminal panes", () => {
-    const item: WorkItem = {
-      id: "item-1",
-      projectId: "p1",
-      title: "Ship pane",
-      status: "todo",
-      acceptanceCriteria: [],
-      attachments: [],
-      createdAt: 1,
-      updatedAt: 1,
-    };
-    const model = renderModel({
-      projectId: "p1",
-      projectPath: "/repo",
-      worktrees: [worktree("/repo")],
-      sessions: [session({ id: "term" })],
-      focusedPaneId: "work-item:pane",
-      workItems: [item],
-      serverWorktreePanes: [
-        {
-          path: "/repo",
-          panes: [
-            {
-              id: "work-item:pane",
-              kind: "work-item",
-              worktreePath: "/repo",
-              state: { kind: "work-item", workItemId: item.id },
-            },
-          ],
-        },
-      ],
-    });
-
-    expect(model.worktrees[0].panes.map((pane) => pane.kind)).toEqual([
-      "files",
-      "work-item",
-      "terminal",
-      "git",
-    ]);
-    expect(model.focusedPane?.id).toBe("work-item:pane");
-  });
-
-  it("drops persisted panes whose work item was deleted", () => {
-    const model = renderModel({
-      projectId: "p1",
-      projectPath: "/repo",
-      worktrees: [worktree("/repo")],
-      sessions: [],
-      focusedPaneId: "work-item:stale",
-      workItems: [],
-      serverWorktreePanes: [
-        {
-          path: "/repo",
-          panes: [
-            {
-              id: "work-item:stale",
-              kind: "work-item",
-              worktreePath: "/repo",
-              state: { kind: "work-item", workItemId: "missing" },
-            },
-          ],
-        },
-      ],
-    });
-    expect(model.paneById.has("work-item:stale")).toBe(false);
-    expect(model.effectiveFocusedPaneId).toBe("files:/repo");
-  });
   it("preserves incoming worktree snapshot order after the project root", () => {
     const model = renderModel({
       projectId: "p1",
