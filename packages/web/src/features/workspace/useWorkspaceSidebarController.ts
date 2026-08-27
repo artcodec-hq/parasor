@@ -33,6 +33,11 @@ interface UseWorkspaceSidebarControllerOptions {
   monitorActive: boolean;
   navigate: (route: WorkspaceRoute, opts?: { replace?: boolean }) => void;
   onNewProject: () => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onOpenSettings: () => void;
   onOpenUrl: (url: string, options?: OpenUrlOptions) => void;
   onToggleSessionPin: (sessionId: string) => void;
@@ -65,6 +70,7 @@ export function useWorkspaceSidebarController({
   monitorActive,
   navigate,
   onNewProject,
+  onPruneStaleWorktree,
   onOpenSettings,
   onOpenUrl,
   onToggleSessionPin,
@@ -213,6 +219,7 @@ export function useWorkspaceSidebarController({
       onCloseSearch: handleCloseSearch,
       onNewProject,
       onNewSession: handleNewSession,
+      onPruneStaleWorktree,
       onOpenSettings,
       onOpenUrl,
       onReorderPanes: sidebarModel.reorderPanes,
@@ -263,6 +270,7 @@ export function useWorkspaceSidebarController({
       monitorActive,
       onCloseProject,
       onNewProject,
+      onPruneStaleWorktree,
       onOpenSettings,
       onOpenUrl,
       pinnedMonitorCount,

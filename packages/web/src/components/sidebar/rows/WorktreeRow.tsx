@@ -34,6 +34,11 @@ interface WorktreeRowProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   disclosure?: { open: boolean; onToggle: () => void };
   showChildren?: boolean;
@@ -56,6 +61,7 @@ export function WorktreeRow({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   disclosure,
   showChildren = true,
@@ -169,8 +175,18 @@ export function WorktreeRow({
           <WorktreeRowActions
             label={label}
             onNewSession={
-              onNewSession
+              !orphan && onNewSession
                 ? () => onNewSession(project.id, worktree.id)
+                : undefined
+            }
+            onPruneStaleWorktree={
+              orphan && onPruneStaleWorktree
+                ? () =>
+                    onPruneStaleWorktree(
+                      project.id,
+                      worktree.path,
+                      worktree.name,
+                    )
                 : undefined
             }
           />

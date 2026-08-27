@@ -391,6 +391,7 @@ export function App() {
     onNewProject: handleNewProject,
     onOpenSettings: handleOpenSettings,
     onOpenUrl: openUrl,
+    onPruneStaleWorktree: worktreeActions.removeWorktree,
     onToggleSessionPin: (sessionId) => void toggleSessionPin(sessionId),
     paneModelWorktrees: paneModel.worktrees,
     ports: store.ports,

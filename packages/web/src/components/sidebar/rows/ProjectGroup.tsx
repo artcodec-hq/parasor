@@ -17,6 +17,11 @@ interface ProjectGroupProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpen?: Record<string, boolean>;
   onWorktreeOpenChange?: (
@@ -55,6 +60,7 @@ export function ProjectGroup({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpen,
   onWorktreeOpenChange,
@@ -108,6 +114,7 @@ export function ProjectGroup({
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
             onNewSession={onNewSession}
+            onPruneStaleWorktree={onPruneStaleWorktree}
             onToggleChildPin={onToggleChildPin}
             disclosure={
               root

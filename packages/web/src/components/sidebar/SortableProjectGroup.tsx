@@ -53,6 +53,11 @@ interface SortableProjectsProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -77,6 +82,7 @@ export function SortableProjects({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -156,6 +162,7 @@ export function SortableProjects({
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
             onNewSession={onNewSession}
+            onPruneStaleWorktree={onPruneStaleWorktree}
             onToggleChildPin={onToggleChildPin}
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}
@@ -178,6 +185,11 @@ interface SortableProjectItemProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -199,6 +211,7 @@ function SortableProjectItem({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -229,6 +242,7 @@ function SortableProjectItem({
         onSelectWorktree={onSelectWorktree}
         onSelectChild={onSelectChild}
         onNewSession={onNewSession}
+        onPruneStaleWorktree={onPruneStaleWorktree}
         onToggleChildPin={onToggleChildPin}
         worktreeOpen={worktreeOpenByProject?.[project.id]}
         onWorktreeOpenChange={onWorktreeOpenChange}

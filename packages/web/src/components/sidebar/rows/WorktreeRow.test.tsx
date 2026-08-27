@@ -269,6 +269,35 @@ describe("WorktreeRow external / missing-path icons", () => {
     expect(screen.getByText("main").className).toContain("line-through");
   });
 
+  it("replaces new-session with an accessible prune action for an orphan", () => {
+    const onNewSession = vi.fn();
+    const onPruneStaleWorktree = vi.fn();
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), orphan: true }}
+        selection={selection}
+        onNewSession={onNewSession}
+        onPruneStaleWorktree={onPruneStaleWorktree}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "New session in main" }),
+    ).toBeNull();
+    const prune = screen.getByRole("button", {
+      name: "Prune stale worktree main",
+    });
+    expect(prune.getAttribute("title")).toBe("Prune stale worktree");
+    prune.click();
+    expect(onNewSession).not.toHaveBeenCalled();
+    expect(onPruneStaleWorktree).toHaveBeenCalledWith(
+      "p1",
+      "/tmp/demo",
+      "main",
+    );
+  });
+
   it("does not render a provenance pill for Parasor-created lineage metadata", () => {
     const { queryByLabelText } = render(
       <WorktreeRow
