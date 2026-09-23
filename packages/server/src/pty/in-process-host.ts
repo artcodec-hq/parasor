@@ -37,6 +37,10 @@ const BOOTSTRAP_INPUT_READLINE_READY_DELAY_MS = 25;
 const BOOTSTRAP_INPUT_AFTER_OUTPUT_QUIET_MS = 500;
 const BOOTSTRAP_INPUT_FALLBACK_DELAY_MS = 2500;
 const READLINE_READY_SEQUENCE = "\x1b[?2004h";
+// These configure Parasor's own server/dev listeners. Child PTYs must not
+// inherit them: projects conventionally use the same generic names for their
+// own development servers.
+const PTY_EXCLUDED_PARENT_ENV_KEYS = new Set(["PORT", "HOST", "WEB_PORT"]);
 
 function readPositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name];
@@ -254,7 +258,7 @@ export class InProcessPtyHost implements PtyHost {
   ): Record<string, string> {
     const env: Record<string, string> = {};
     for (const [k, v] of Object.entries(process.env)) {
-      if (v !== undefined) env[k] = v;
+      if (v !== undefined && !PTY_EXCLUDED_PARENT_ENV_KEYS.has(k)) env[k] = v;
     }
     Object.assign(env, this.ptyEnv, {
       PROMPT_EOL_MARK: "",

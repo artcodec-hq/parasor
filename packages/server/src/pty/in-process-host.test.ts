@@ -88,6 +88,21 @@ function makeBootstrapFakePtyProcess() {
   };
 }
 
+function buildSessionEnv(
+  host: InProcessPtyHost,
+  sessionId = "session-1",
+  projectId = "project-1",
+): Record<string, string> {
+  return (
+    host as unknown as {
+      buildSessionEnv: (
+        sessionId: string,
+        projectId: string,
+      ) => Record<string, string>;
+    }
+  ).buildSessionEnv(sessionId, projectId);
+}
+
 describe("InProcessPtyHost", () => {
   let manager: InProcessPtyHost;
   let scrollbackLog: ScrollbackLog;
@@ -135,18 +150,87 @@ describe("InProcessPtyHost", () => {
   });
 
   it("marks spawned PTYs as truecolor-capable terminals", () => {
-    const env = (
-      manager as unknown as {
-        buildSessionEnv: (
-          sessionId: string,
-          projectId: string,
-        ) => Record<string, string>;
-      }
-    ).buildSessionEnv("session-1", "project-1");
+    const env = buildSessionEnv(manager);
 
     expect(env.TERM).toBe("xterm-256color");
     expect(env.COLORTERM).toBe("truecolor");
     expect(env.TERM_PROGRAM).toBe("parasor");
+  });
+
+  it("isolates Parasor listener env from in-process and daemon-backed PTYs", async () => {
+    const keys = [
+      "PORT",
+      "HOST",
+      "WEB_PORT",
+      "PTY_ENV_ISOLATION_INHERITED_TEST",
+    ] as const;
+    const original = new Map(keys.map((key) => [key, process.env[key]]));
+    const daemonResult = makeStore();
+    const daemonHost = new InProcessPtyHost(daemonResult.store, null, {
+      pid: 4242,
+      startedAt: "2026-09-04T00:00:00.000Z",
+    });
+
+    try {
+      process.env.PORT = "7682";
+      process.env.HOST = "127.0.0.1";
+      process.env.WEB_PORT = "7683";
+      process.env.PTY_ENV_ISOLATION_INHERITED_TEST = "inherited";
+      const ambientEnv = buildSessionEnv(manager);
+      expect(ambientEnv.PORT).toBeUndefined();
+      expect(ambientEnv.HOST).toBeUndefined();
+      expect(ambientEnv.WEB_PORT).toBeUndefined();
+      manager.setPtyEnv({
+        PORT: "9000",
+        PARASOR_PORT: "7682",
+        PTY_ENV_ISOLATION_EXPLICIT_TEST: "explicit",
+      });
+      daemonHost.setPtyEnv({
+        PORT: "9000",
+        PARASOR_PORT: "7682",
+        PTY_ENV_ISOLATION_EXPLICIT_TEST: "explicit",
+      });
+
+      for (const host of [manager, daemonHost]) {
+        const env = buildSessionEnv(host);
+        expect(env.PORT).toBe("9000");
+        expect(env.HOST).toBeUndefined();
+        expect(env.WEB_PORT).toBeUndefined();
+        expect(env.PARASOR_PORT).toBe("7682");
+        expect(env.PTY_ENV_ISOLATION_INHERITED_TEST).toBe("inherited");
+        expect(env.PTY_ENV_ISOLATION_EXPLICIT_TEST).toBe("explicit");
+        expect(env.PARASOR_SESSION_ID).toBe("session-1");
+        expect(env.PARASOR_PROJECT_ID).toBe("project-1");
+
+        const session = await host.create({
+          projectId: "project-1",
+          cwd: process.cwd(),
+          command: {
+            type: "custom",
+            command: process.execPath,
+            args: [
+              "-e",
+              'console.log(JSON.stringify(["PORT", "HOST", "WEB_PORT", "PARASOR_PORT"].map(key => process.env[key] ?? null)))',
+            ],
+          },
+        });
+        let output = "";
+        await host.initClient(session.id, "env-check", 80, 24, (data) => {
+          output += data;
+        });
+        await vi.waitFor(() =>
+          expect(output).toContain('["9000",null,null,"7682"]'),
+        );
+      }
+    } finally {
+      await daemonHost.disposeAll();
+      daemonResult.cleanup();
+      for (const key of keys) {
+        const value = original.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it("testEagerSpawn transitions spawning -> running and assigns a pid", async () => {
