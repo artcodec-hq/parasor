@@ -11,6 +11,7 @@ import {
 interface UseWorkspaceOpenUrlOptions {
   activeProjectId: string | null;
   clearPendingUrl: () => void;
+  onUnreachablePort: (port: number) => void;
   pendingOpenUrl: string | null;
   ports: Record<string, PortInfo[]>;
 }
@@ -18,6 +19,7 @@ interface UseWorkspaceOpenUrlOptions {
 export function useWorkspaceOpenUrl({
   activeProjectId,
   clearPendingUrl,
+  onUnreachablePort,
   pendingOpenUrl,
   ports,
 }: UseWorkspaceOpenUrlOptions) {
@@ -40,9 +42,13 @@ export function useWorkspaceOpenUrl({
     (url: string, options?: OpenUrlOptions) => {
       const target = resolveOpenUrlTarget(url, options, findReachablePort);
       if (target === null) return;
-      openHttpUrlInNewTab(target);
+      if (target.kind === "unreachable-loopback") {
+        onUnreachablePort(target.port);
+        return;
+      }
+      openHttpUrlInNewTab(target.url);
     },
-    [findReachablePort],
+    [findReachablePort, onUnreachablePort],
   );
 
   useEffect(() => {

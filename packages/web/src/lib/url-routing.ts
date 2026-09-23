@@ -61,10 +61,6 @@ export function shouldOpenInEmbeddedBrowser(
  *   rewriting the host but not the port would just be a connection-refused on
  *   `<host>:<devPort>`. The `localhost` URL still works when the viewer *is*
  *   this machine, so leave it.
- *   Mobile callers may opt into a host-only fallback via
- *   `fallbackToPageHostWithoutReachablePort`: `localhost` on the phone is
- *   always wrong, while `<page-host>:<devPort>` can work for all-interface
- *   dev servers even if port detection missed the reachable mapping.
  * - hostname is loopback with a valid `opts.reachablePort` ⇒ host ->
  *   `window.location.hostname`, port -> `opts.reachablePort` (the per-port TCP
  *   forwarder's OS-assigned listen port). Path, query and hash are preserved
@@ -78,7 +74,6 @@ export function shouldOpenInEmbeddedBrowser(
 export function resolveReachableBrowserUrl(
   url: string,
   opts: {
-    fallbackToPageHostWithoutReachablePort?: boolean;
     reachablePort?: number;
   },
 ): string {
@@ -99,9 +94,7 @@ export function resolveReachableBrowserUrl(
     return parsed.toString();
   }
   if (!isValidPort(opts.reachablePort)) {
-    if (!opts.fallbackToPageHostWithoutReachablePort) return url;
-    parsed.hostname = host;
-    return parsed.toString();
+    return url;
   }
   parsed.hostname = host;
   parsed.port = String(opts.reachablePort);
