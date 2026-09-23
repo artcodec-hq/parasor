@@ -3839,6 +3839,31 @@ describe("Terminal", () => {
     expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
   });
 
+  it("routes a tap on a soft-wrapped loopback URL through onOpenUrl", () => {
+    const onOpenUrl = vi.fn();
+    const lines = new Map<number, unknown>([
+      [5, makeBufferLine(cellsFromText("http://local"))],
+      [6, makeBufferLine(cellsFromText("host:5173"), true)],
+    ]);
+    mockTermGetLine.mockImplementation((lineNumber: number) =>
+      lines.get(lineNumber),
+    );
+    render(<Terminal sessionId="s1" projectId="p1" onOpenUrl={onOpenUrl} />, {
+      wrapper,
+    });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    // y=15 selects buffer row 6; x=45 selects the continuation's "host".
+    plainTapOnScreen(screen, 45, 15);
+
+    expect(mockTermSelect).toHaveBeenCalledWith(0, 6, 9);
+    expect(onOpenUrl).toHaveBeenCalledWith("http://localhost:5173", {
+      projectId: "p1",
+    });
+    expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
+  });
+
   it("routes tapped IPv6 loopback and wildcard URLs through onOpenUrl for reachable host resolution", () => {
     const onOpenUrl = vi.fn();
     mockTermGetLine.mockReturnValue(
