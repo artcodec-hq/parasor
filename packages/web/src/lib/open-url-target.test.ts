@@ -61,7 +61,7 @@ describe("resolveOpenUrlTarget", () => {
         undefined,
         findReachablePort,
       ),
-    ).toBe("https://example.com/path?q=1");
+    ).toEqual({ kind: "open", url: "https://example.com/path?q=1" });
     expect(findReachablePort).not.toHaveBeenCalled();
   });
 
@@ -73,7 +73,7 @@ describe("resolveOpenUrlTarget", () => {
       findReachablePort,
     );
     expect(findReachablePort).toHaveBeenCalledWith(5173, undefined);
-    expect(out).toBe("http://phone.lan:51234/foo");
+    expect(out).toEqual({ kind: "open", url: "http://phone.lan:51234/foo" });
   });
 
   it("loopback http URL without explicit port defaults devPort to 80", () => {
@@ -104,15 +104,24 @@ describe("resolveOpenUrlTarget", () => {
     expect(findReachablePort).toHaveBeenCalledWith(5173, undefined);
   });
 
-  it("returns original URL when reachable port lookup misses and pointer is precise", () => {
+  it("returns unavailable when a remote viewer has no reachable port", () => {
     const findReachablePort = vi.fn(() => undefined);
     const out = resolveOpenUrlTarget(
       "http://localhost:5173/",
       undefined,
       findReachablePort,
     );
-    // No forwarder mapping known; precise pointer = no host-only fallback.
-    expect(out).toBe("http://localhost:5173/");
+    expect(out).toEqual({ kind: "unreachable-loopback", port: 5173 });
+  });
+
+  it("keeps a loopback URL openable when parasor itself is local", () => {
+    setLocationHost("localhost");
+    const out = resolveOpenUrlTarget(
+      "http://localhost:5173/",
+      undefined,
+      () => undefined,
+    );
+    expect(out).toEqual({ kind: "open", url: "http://localhost:5173/" });
   });
 
   it("does not call findReachablePort for a non-loopback host", () => {

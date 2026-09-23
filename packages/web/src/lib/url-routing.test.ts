@@ -115,15 +115,6 @@ describe("resolveReachableBrowserUrl", () => {
     );
   });
 
-  it("can host-swap a loopback URL without reachablePort for mobile fallback", () => {
-    stubHostname("100.101.102.103");
-    expect(
-      resolveReachableBrowserUrl("http://localhost:5173/app?q=1#x", {
-        fallbackToPageHostWithoutReachablePort: true,
-      }),
-    ).toBe("http://100.101.102.103:5173/app?q=1#x");
-  });
-
   it("remaps an IPv6 loopback ([::1]) URL too", () => {
     stubHostname("192.168.1.42");
     expect(

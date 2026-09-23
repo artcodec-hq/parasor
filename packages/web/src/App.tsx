@@ -297,9 +297,15 @@ export function App() {
     setOptimisticSessions,
   });
 
+  const handleUnreachablePort = useCallback(
+    (port: number) =>
+      setErrorToast(`Port ${port} is not reachable from this device yet.`),
+    [setErrorToast],
+  );
   const openUrl = useWorkspaceOpenUrl({
     activeProjectId,
     clearPendingUrl: store.clearPendingUrl,
+    onUnreachablePort: handleUnreachablePort,
     pendingOpenUrl: store.pendingOpenUrl,
     ports: store.ports,
   });
