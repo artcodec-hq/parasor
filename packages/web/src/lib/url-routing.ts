@@ -22,6 +22,18 @@ export function isUnspecifiedHostname(hostname: string): boolean {
   return UNSPECIFIED_HOSTS.has(hostname.toLowerCase());
 }
 
+/** Remote dev previews are suspended until their authentication is isolated. */
+export function isRemoteDevServerUrl(url: URL): boolean {
+  if (typeof window === "undefined" || !window.location.hostname) return false;
+  if (isLoopbackHostname(window.location.hostname)) return false;
+  return (
+    isLoopbackHostname(url.hostname) ||
+    isUnspecifiedHostname(url.hostname) ||
+    (url.hostname === window.location.hostname &&
+      url.port !== window.location.port)
+  );
+}
+
 /** A TCP port number is valid iff it is an integer in `1..65535`. */
 function isValidPort(value: number | undefined): value is number {
   return (
@@ -39,7 +51,9 @@ export function shouldOpenInEmbeddedBrowser(
   try {
     const parsed = new URL(url);
     const hosts = allowlist ?? DEFAULT_EMBEDDED_HOSTS;
-    return hosts.some((h) => parsed.hostname === h);
+    return (
+      hosts.some((h) => parsed.hostname === h) || isRemoteDevServerUrl(parsed)
+    );
   } catch {
     return false;
   }

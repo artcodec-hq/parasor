@@ -40,7 +40,7 @@ describe("useWorkspaceOpenUrl", () => {
     expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
   });
 
-  it("opens a resolved reachable URL", () => {
+  it("opens a separately hosted preview URL", () => {
     const { result } = renderHook(() =>
       useWorkspaceOpenUrl({
         activeProjectId: "p1",
@@ -53,10 +53,10 @@ describe("useWorkspaceOpenUrl", () => {
       }),
     );
 
-    act(() => result.current("http://localhost:7783/path?x=1#section"));
+    act(() => result.current("https://preview.example.test/path?x=1#section"));
 
     expect(mockOpenHttpUrlInNewTab).toHaveBeenCalledWith(
-      "http://phone.lan:51234/path?x=1#section",
+      "https://preview.example.test/path?x=1#section",
     );
   });
   it("clears a pending unreachable URL once without opening a tab", () => {

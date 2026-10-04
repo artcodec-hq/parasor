@@ -1,6 +1,7 @@
 import type { OpenUrlOptions } from "./open-url-options.js";
 import {
   isLoopbackHostname,
+  isRemoteDevServerUrl,
   resolveReachableBrowserUrl,
 } from "./url-routing.js";
 
@@ -36,6 +37,12 @@ export function resolveOpenUrlTarget(
     return null;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (isRemoteDevServerUrl(parsed)) {
+    return {
+      kind: "unreachable-loopback",
+      port: Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80)),
+    };
+  }
   let reachablePort: number | undefined;
   let loopbackPort: number | undefined;
   if (isLoopbackHostname(parsed.hostname)) {

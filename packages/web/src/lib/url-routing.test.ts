@@ -54,6 +54,16 @@ describe("shouldOpenInEmbeddedBrowser", () => {
     expect(shouldOpenInEmbeddedBrowser("not a url")).toBe(false);
   });
 
+  it("routes explicit remote host ports through the preview availability check", () => {
+    vi.stubGlobal("window", { location: new URL("http://phone.lan:7681") });
+    try {
+      expect(shouldOpenInEmbeddedBrowser("http://phone.lan:5173")).toBe(true);
+      expect(shouldOpenInEmbeddedBrowser("http://phone.lan:7681")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("honours an explicit allowlist", () => {
     expect(
       shouldOpenInEmbeddedBrowser("http://example.test:5173", ["example.test"]),
