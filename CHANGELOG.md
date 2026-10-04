@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.5 - Unreleased
+
+### Upgrade notes
+
+- Upgrading from 0.1.4 changes the PTY host protocol from 2.x to 3.x.
+  Finish active terminal work before restarting: this upgrade ends existing
+  PTY sessions. The restart command warns and requires confirmation;
+  non-interactive restarts require `--yes`.
+
+### Fixed
+
+- Preserve terminal geometry and cursor state across focus changes and replay.
+- Keep the server available when a registered project directory is missing.
+- Keep Parasor listener environment variables out of child terminal sessions.
+- Open complete soft-wrapped terminal URLs, including wide characters, without
+  launching truncated links.
+- Report unavailable remote development previews before opening a browser tab.
+- Improve stale-worktree cleanup, project titles, Git refresh and sidebar use.
+
+### Security
+
+- Update Hono, its Node adapter, WebSocket dependencies and DOMPurify to patched
+  compatible releases.
+- Suspend automatic loopback forwarding and remote localhost/wildcard/same-host
+  alternate-port preview links pending isolated authentication. Remote terminal
+  access and local development-server access remain available. Follow-up: #127.
+
 ## 0.1.4 - 2026-06-23
 
 ### Added

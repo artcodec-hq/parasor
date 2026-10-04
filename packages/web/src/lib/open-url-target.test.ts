@@ -1,132 +1,76 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveOpenUrlTarget } from "./open-url-target.js";
 
-const ORIG_WINDOW = globalThis.window;
+afterEach(() => vi.unstubAllGlobals());
 
-function setLocationHost(host: string): void {
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: { location: { hostname: host } } as Window & typeof globalThis,
-  });
+function setLocation(url: string) {
+  vi.stubGlobal("window", { location: new URL(url) });
 }
-
-function restoreWindow(): void {
-  if (ORIG_WINDOW === undefined) {
-    // jsdom should always provide one, but keep the path defined for safety.
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: undefined,
-    });
-  } else {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: ORIG_WINDOW,
-    });
-  }
-}
-
-afterEach(() => {
-  restoreWindow();
-  vi.restoreAllMocks();
-});
 
 describe("resolveOpenUrlTarget", () => {
-  beforeEach(() => {
-    setLocationHost("phone.lan");
+  it.each([
+    "not a url",
+    "javascript:alert(1)",
+    "ftp://example.com",
+    "file:///etc/passwd",
+  ])("rejects invalid or non-HTTP input: %s", (url) => {
+    expect(resolveOpenUrlTarget(url, undefined, () => undefined)).toBeNull();
   });
 
-  it("returns null for unparseable input", () => {
-    expect(
-      resolveOpenUrlTarget("not a url", undefined, () => undefined),
-    ).toBeNull();
+  it.each([
+    "http://localhost:5173/path?q=1#fragment",
+    "http://127.0.0.1:5173/",
+    "http://[::1]:5173/",
+    "http://0.0.0.0:5173/",
+    "http://[::]:5173/",
+    "http://phone.lan:5173/",
+  ])("blocks remote preview links even with a stale reachable mapping: %s", (url) => {
+    setLocation("http://phone.lan:7681");
+    const lookup = vi.fn(() => 51234);
+    expect(resolveOpenUrlTarget(url, { projectId: "p1" }, lookup)).toEqual({
+      kind: "unreachable-loopback",
+      port: 5173,
+    });
+    expect(lookup).not.toHaveBeenCalled();
   });
 
-  it("returns null for non-http(s) schemes", () => {
-    expect(
-      resolveOpenUrlTarget("javascript:alert(1)", undefined, () => undefined),
-    ).toBeNull();
-    expect(
-      resolveOpenUrlTarget("ftp://example.com", undefined, () => undefined),
-    ).toBeNull();
-    expect(
-      resolveOpenUrlTarget("file:///etc/passwd", undefined, () => undefined),
-    ).toBeNull();
+  it.each([
+    "http://localhost/",
+    "https://localhost/",
+  ])("reports the default port for %s", (url) => {
+    setLocation("http://phone.lan:7681");
+    expect(resolveOpenUrlTarget(url, undefined, () => undefined)).toEqual({
+      kind: "unreachable-loopback",
+      port: url.startsWith("https:") ? 443 : 80,
+    });
   });
 
-  it("passes a public http(s) URL through unchanged without consulting findReachablePort", () => {
-    const findReachablePort = vi.fn(() => undefined);
+  it.each([
+    "https://preview.example.test/path?q=1#fragment",
+    "http://phone.lan:7681/sessions/demo",
+  ])("allows a separate host or the control application itself: %s", (url) => {
+    setLocation("http://phone.lan:7681");
+    expect(resolveOpenUrlTarget(url, undefined, () => undefined)).toEqual({
+      kind: "open",
+      url,
+    });
+  });
+
+  it.each([
+    "http://localhost:7681",
+    "http://127.0.0.1:7681",
+    "http://[::1]:7681",
+  ])("preserves local browser access from %s", (pageUrl) => {
+    setLocation(pageUrl);
     expect(
       resolveOpenUrlTarget(
-        "https://example.com/path?q=1",
+        "http://localhost:5173/",
         undefined,
-        findReachablePort,
+        () => undefined,
       ),
-    ).toEqual({ kind: "open", url: "https://example.com/path?q=1" });
-    expect(findReachablePort).not.toHaveBeenCalled();
-  });
-
-  it("loopback URL with explicit port asks findReachablePort with that port", () => {
-    const findReachablePort = vi.fn(() => 51234);
-    const out = resolveOpenUrlTarget(
-      "http://localhost:5173/foo",
-      undefined,
-      findReachablePort,
-    );
-    expect(findReachablePort).toHaveBeenCalledWith(5173, undefined);
-    expect(out).toEqual({ kind: "open", url: "http://phone.lan:51234/foo" });
-  });
-
-  it("loopback http URL without explicit port defaults devPort to 80", () => {
-    const findReachablePort = vi.fn(() => 9090);
-    resolveOpenUrlTarget("http://127.0.0.1/", undefined, findReachablePort);
-    expect(findReachablePort).toHaveBeenCalledWith(80, undefined);
-  });
-
-  it("loopback https URL without explicit port defaults devPort to 443", () => {
-    const findReachablePort = vi.fn(() => 9443);
-    resolveOpenUrlTarget("https://localhost/", undefined, findReachablePort);
-    expect(findReachablePort).toHaveBeenCalledWith(443, undefined);
-  });
-
-  it("forwards options.projectId to findReachablePort", () => {
-    const findReachablePort = vi.fn(() => 42000);
-    resolveOpenUrlTarget(
-      "http://localhost:5173/",
-      { projectId: "proj-1" },
-      findReachablePort,
-    );
-    expect(findReachablePort).toHaveBeenCalledWith(5173, "proj-1");
-  });
-
-  it("[::1] loopback hostname is recognised", () => {
-    const findReachablePort = vi.fn(() => 51234);
-    resolveOpenUrlTarget("http://[::1]:5173/", undefined, findReachablePort);
-    expect(findReachablePort).toHaveBeenCalledWith(5173, undefined);
-  });
-
-  it("returns unavailable when a remote viewer has no reachable port", () => {
-    const findReachablePort = vi.fn(() => undefined);
-    const out = resolveOpenUrlTarget(
-      "http://localhost:5173/",
-      undefined,
-      findReachablePort,
-    );
-    expect(out).toEqual({ kind: "unreachable-loopback", port: 5173 });
-  });
-
-  it("keeps a loopback URL openable when parasor itself is local", () => {
-    setLocationHost("localhost");
-    const out = resolveOpenUrlTarget(
-      "http://localhost:5173/",
-      undefined,
-      () => undefined,
-    );
-    expect(out).toEqual({ kind: "open", url: "http://localhost:5173/" });
-  });
-
-  it("does not call findReachablePort for a non-loopback host", () => {
-    const findReachablePort = vi.fn(() => 1);
-    resolveOpenUrlTarget("https://example.com/", undefined, findReachablePort);
-    expect(findReachablePort).not.toHaveBeenCalled();
+    ).toEqual({
+      kind: "open",
+      url: "http://localhost:5173/",
+    });
   });
 });

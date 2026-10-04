@@ -299,7 +299,9 @@ export function App() {
 
   const handleUnreachablePort = useCallback(
     (port: number) =>
-      setErrorToast(`Port ${port} is not reachable from this device yet.`),
+      setErrorToast(
+        `Remote preview for port ${port} is unavailable in this release.`,
+      ),
     [setErrorToast],
   );
   const openUrl = useWorkspaceOpenUrl({

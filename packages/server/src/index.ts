@@ -149,10 +149,9 @@ enforceSafetyGate({
 // IPC
 const ipcServer = new IpcServer({ dir: configDir });
 
-// Port Scanner + per-port TCP forwarder (Tier A .). One
-// shared instance: `startRuntimeLoops` drives it from port-scan ticks and the
-// `portDetection` setting; `wireRuntime` reads it to enrich the hydration
-// snapshot's ports. Loopback-bound parasor ⇒ inert (no forwarders).
+// Discover services without opening forwarding listeners. The forwarder
+// contract remains for reachability reporting; automatic remote previews
+// are suspended until authentication isolation is implemented (issue #127).
 const portScanner = new PortScanner();
 const portForwarder = new PortForwarder(resolveForwarderBindHost(hostname));
 const advertisedUrlWatcher = new RuntimeServiceAdvertisedUrlWatcher();
