@@ -73,6 +73,7 @@ export type TerminalTraceEvent = {
   reason?: string;
   replay?: string;
   generation?: number;
+  geometryEpoch?: number;
   driftMs?: number;
   durationMs?: number;
   wallMs?: number;

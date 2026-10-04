@@ -17,6 +17,7 @@ import {
 import { PairingTokenStore } from "./auth/pairing-token.js";
 import { TokenAuth } from "./auth/token.js";
 import { createAppServer } from "./bootstrap/create-app-server.js";
+import { createProjectPresence } from "./bootstrap/project-presence.js";
 import { createProjectRuntime } from "./bootstrap/project-runtime.js";
 import { buildStaticPtyEnv } from "./bootstrap/pty-env.js";
 import { reconcileStartupState } from "./bootstrap/reconcile-state.js";
@@ -148,10 +149,9 @@ enforceSafetyGate({
 // IPC
 const ipcServer = new IpcServer({ dir: configDir });
 
-// Port Scanner + per-port TCP forwarder (Tier A .). One
-// shared instance: `startRuntimeLoops` drives it from port-scan ticks and the
-// `portDetection` setting; `wireRuntime` reads it to enrich the hydration
-// snapshot's ports. Loopback-bound parasor ⇒ inert (no forwarders).
+// Discover services without opening forwarding listeners. The forwarder
+// contract remains for reachability reporting; automatic remote previews
+// are suspended until authentication isolation is implemented (issue #127).
 const portScanner = new PortScanner();
 const portForwarder = new PortForwarder(resolveForwarderBindHost(hostname));
 const advertisedUrlWatcher = new RuntimeServiceAdvertisedUrlWatcher();
@@ -377,18 +377,30 @@ agentStateStore.replace(agentDetector.getStates());
 // reintroduce inside `EventBus.addClient`. The project runtime needs the
 // cache to enumerate per-worktree FileWatchers on activation, so it is
 // created after priming.
+const projectPresence = createProjectPresence();
+for (const project of projectManager.list()) {
+  projectPresence.probeSync(project);
+}
+
 const worktreeCache = new WorktreeCache();
-worktreeCache.setAll(
-  await createProjectQueries({
-    projectManager,
-    getWorktreeMetadata: (projectId) =>
-      appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
-  }).listAllWorktrees(),
-);
+const projectQueries = createProjectQueries({
+  projectManager,
+  getWorktreeMetadata: (projectId) =>
+    appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
+});
+worktreeCache.setAll(await projectQueries.listAllWorktrees());
 const projectRuntime = createProjectRuntime({
   projectManager,
   eventBus,
   worktreeCache,
+  presence: projectPresence,
+  enumerateWorktrees: (projectId) =>
+    projectQueries.getProjectWorktrees(projectId),
+});
+projectPresence.setOnChange((projectId, missing) => {
+  eventBus.broadcast({ type: "project-path-status", projectId, missing });
+  if (missing) projectRuntime.onPathMissing(projectId);
+  else projectRuntime.onPathRestored(projectId);
 });
 
 wireRuntime({
@@ -407,23 +419,25 @@ wireRuntime({
   projectRuntime,
   worktreeCache,
   uploadStaging,
+  projectPresence,
 });
-const projectQueriesForReconcile = createProjectQueries({
-  projectManager,
-  getWorktreeMetadata: (projectId) =>
-    appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
-});
+const projectQueriesForReconcile = projectQueries;
 const worktreeReconciler = createWorktreeReconciler({
   projectManager,
   worktreeCache,
   eventBus,
   liveList: async (projectId) => {
     if (!projectManager.get(projectId)) return null;
-    try {
-      return await projectQueriesForReconcile.getProjectWorktrees(projectId);
-    } catch {
-      return null;
+    const result =
+      await projectQueriesForReconcile.getProjectWorktrees(projectId);
+    if (result.status === "ok") return result.worktrees;
+    if (result.status === "missing-path") {
+      const project = projectManager.get(projectId);
+      if (project) {
+        projectPresence.markMissing(projectId, project.path, "worktree-list");
+      }
     }
+    return null;
   },
 });
 
@@ -434,15 +448,18 @@ const runtimeLoops = startRuntimeLoops({
   ptyManager,
   projectRuntime,
   uploadStaging,
+  worktreeCache,
   portForwarder,
   serviceRegistry,
   advertisedUrlWatcher,
   reconcileWorktrees: (projectId, prefetched) =>
     worktreeReconciler.reconcile(projectId, prefetched),
 });
-projectRuntime.activatePersistedProjects(
-  appStateStore.get().projects.map((project) => project.id),
-);
+for (const session of ptyManager.list()) {
+  if (session.state !== "ended") {
+    projectRuntime.noteLiveSession(session.projectId);
+  }
+}
 
 /*
  * Upload staging isolation -- retire the in-tree drop layout. For every project we know

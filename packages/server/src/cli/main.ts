@@ -6,6 +6,13 @@ export async function runCli(args: string[]): Promise<void> {
   const command = args[0];
 
   switch (command) {
+    case "version":
+    case "--version":
+    case "-v": {
+      const { printVersion } = await import("./version.js");
+      printVersion();
+      return;
+    }
     case "help":
     case "--help":
     case "-h": {

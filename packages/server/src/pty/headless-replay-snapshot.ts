@@ -141,6 +141,10 @@ interface HeadlessMouseStateService {
   activeEncoding?: unknown;
 }
 
+interface HeadlessCoreService {
+  isCursorHidden?: boolean;
+}
+
 function mouseProtocolSequence(mode: HeadlessTerminalModes): string {
   switch (mode.mouseTrackingMode) {
     case "x10":
@@ -174,10 +178,21 @@ function mouseEncodingSequence(
   }
 }
 
+function cursorVisibilitySequence(
+  term: import("@xterm/headless").Terminal,
+): string {
+  const coreService = (
+    term as unknown as {
+      _core?: { coreService?: HeadlessCoreService };
+    }
+  )._core?.coreService;
+  return coreService?.isCursorHidden ? "\x1b[?25l" : "";
+}
+
 function terminalModePrologue(
   term: import("@xterm/headless").Terminal,
 ): string {
-  return `${mouseProtocolSequence(term.modes)}${mouseEncodingSequence(term)}`;
+  return `${mouseProtocolSequence(term.modes)}${mouseEncodingSequence(term)}${cursorVisibilitySequence(term)}`;
 }
 
 function lineCursorEndColumn(line: HeadlessBufferLine | undefined): number {
@@ -360,8 +375,8 @@ function snapshotTerminal(
 
 export class HeadlessTerminalState {
   private readonly term: import("@xterm/headless").Terminal;
-  private readonly cols: number;
-  private readonly rows: number;
+  private cols: number;
+  private rows: number;
   private readonly scrollbackLines: number;
   private readonly maxBytes: number;
   private rawBytes = 0;
@@ -388,6 +403,17 @@ export class HeadlessTerminalState {
     this.pendingWrite = this.pendingWrite.then(() =>
       writeTerminal(this.term, data),
     );
+    return this.pendingWrite;
+  }
+
+  resize(cols: number, rows: number): Promise<void> {
+    const nextCols = clampPositiveInteger(cols, this.cols);
+    const nextRows = clampPositiveInteger(rows, this.rows);
+    this.cols = nextCols;
+    this.rows = nextRows;
+    this.pendingWrite = this.pendingWrite.then(() => {
+      this.term.resize(nextCols, nextRows);
+    });
     return this.pendingWrite;
   }
 

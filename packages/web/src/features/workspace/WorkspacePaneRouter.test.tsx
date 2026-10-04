@@ -62,12 +62,20 @@ vi.mock("./views/TerminalPaneView.js", () => ({
         </button>
       )}
       {onOpenFilePath && (
-        <button
-          type="button"
-          onClick={() => onOpenFilePath("packages/web/src/App.tsx")}
-        >
-          open file
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() => onOpenFilePath("packages/web/src/App.tsx")}
+          >
+            open file
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenFilePath("/tmp/parasor-preview/result.png")}
+          >
+            open temp image
+          </button>
+        </>
       )}
     </div>
   ),
@@ -114,15 +122,18 @@ vi.mock("../panes/editor/EditorPane.js", () => ({
   EditorPane: ({
     worktreePath,
     filePath,
+    temporaryFilePath,
     onClose,
   }: {
     worktreePath?: string;
     filePath: string;
+    temporaryFilePath?: string;
     onClose?: () => void;
   }) => (
     <section aria-label="File preview">
       <span>{worktreePath}</span>
       <span>{filePath}</span>
+      {temporaryFilePath && <span>{temporaryFilePath}</span>}
       {onClose && (
         <button type="button" onClick={onClose}>
           Close file preview
@@ -449,13 +460,11 @@ describe("WorkspacePaneRouter open IDE menu", () => {
     const onCopyWorktreePath = vi.fn();
     const onDeleteProject = vi.fn();
     const onRemoveWorktree = vi.fn();
-    const onRenameWorktree = vi.fn();
     renderBrowserPane({
       isMobile: false,
       onCopyWorktreePath,
       onDeleteProject,
       onRemoveWorktree,
-      onRenameWorktree,
       onOpenWorktreeInIde: vi.fn(),
       canOpenLocalIde: true,
     });
@@ -532,6 +541,29 @@ describe("WorkspacePaneRouter terminal retention", () => {
     expect(
       localStorage.getItem("parasor:files-pane-selection:files:/repo"),
     ).toBe("packages/web/src/App.tsx");
+  });
+
+  it("opens temporary media links without changing file tree selection", async () => {
+    const terminalPane = makeTerminalPane("terminal:s1", "/repo", "s1");
+    render(
+      <WorkspacePaneRouter
+        {...makeRouterProps({
+          allPanes: [terminalPane],
+          focusedPane: terminalPane,
+          sessions: [makeSession({ id: "s1" })],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "open temp image" }));
+
+    const preview = await screen.findByRole("region", {
+      name: "File preview",
+    });
+    expect(preview.textContent).toContain("/tmp/parasor-preview/result.png");
+    expect(
+      localStorage.getItem("parasor:files-pane-selection:files:/repo"),
+    ).toBeNull();
   });
 
   it("blurs the focused mobile input before opening a terminal file link", async () => {
@@ -880,7 +912,6 @@ function renderBrowserPane({
   onCopyWorktreePath,
   onOpenWorktreeInIde,
   canOpenLocalIde,
-  onRenameWorktree,
   onRemoveWorktree,
   onDeleteProject,
 }: {
@@ -906,11 +937,6 @@ function renderBrowserPane({
   ) => void;
   canOpenLocalIde?: boolean;
   onCopyWorktreePath?: (worktreePath: string) => void;
-  onRenameWorktree?: (
-    projectId: string,
-    worktreePath: string,
-    branch: string,
-  ) => void;
   onRemoveWorktree?: (
     projectId: string,
     worktreePath: string,
@@ -931,7 +957,6 @@ function renderBrowserPane({
         ideCommands,
         canOpenLocalIde,
         onCopyWorktreePath,
-        onRenameWorktree,
         onRemoveWorktree,
         onDeleteProject,
       })}

@@ -78,6 +78,7 @@ export const FrameType = {
   SESSION_LIST: 0x32,
   SESSION_EXIT: 0x33,
   SESSION_INPUT: 0x34, // echo of WRITE input for server hooks (osc7 / port detect)
+  GEOMETRY: 0x35,
 } as const;
 
 export type FrameTypeValue = (typeof FrameType)[keyof typeof FrameType];

@@ -42,8 +42,26 @@ export function useFilteredSettingsResults(
 }
 
 export function FieldRow({ field }: { field: SettingField }) {
+  if (field.layout === "row") {
+    return (
+      <div className="flex min-h-12 flex-col gap-2 border-b border-border/60 py-3 last:border-b-0 md:flex-row md:items-center md:gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-text-primary">
+            {field.label}
+          </div>
+          {field.description && (
+            <div className="text-xs text-text-secondary">
+              {field.description}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 md:max-w-[18rem]">{field.render()}</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 pb-1">
       <div>
         <div className="text-sm font-semibold text-text-primary">
           {field.label}

@@ -148,13 +148,12 @@ describe("buildCodexWrapper", () => {
       '-c "hooks.UserPromptSubmit=$HOOK_USER_PROMPT_SUBMIT"',
     );
     expect(script).toContain('-c "hooks.PostToolUse=$HOOK_POST_TOOL_USE"');
-    expect(script).toContain(
-      '-c "hooks.PermissionRequest=$HOOK_PERMISSION_REQUEST"',
-    );
     expect(script).toContain('-c "hooks.Stop=$HOOK_STOP"');
     expect(script).toContain("statusMessage");
     expect(script).toContain("parasor-codex-user-prompt-submit");
-    expect(script).toContain("parasor-codex-permission-request");
+    expect(script).not.toContain("HOOK_PERMISSION_REQUEST=");
+    expect(script).not.toContain("hooks.PermissionRequest");
+    expect(script).not.toContain("parasor-codex-permission-request");
     expect(script).not.toContain("--dangerously-bypass-hook-trust");
   });
 

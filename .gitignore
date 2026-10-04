@@ -11,3 +11,6 @@ tmp/
 .env
 .env.*
 .DS_Store
+
+# Playwright / test artifacts
+output/

@@ -73,6 +73,25 @@ export function CirclePlusIcon(props: IconProps) {
   );
 }
 
+export function CircleOffIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="m2 2 20 20" />
+      <path d="M8.35 2.69A10 10 0 0 1 21.3 15.65" />
+      <path d="M19.08 19.08A10 10 0 1 1 4.92 4.92" />
+    </StrokeIcon>
+  );
+}
+
+export function LinkIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </StrokeIcon>
+  );
+}
+
 export function CornerDownLeftIcon(props: IconProps) {
   return (
     <StrokeIcon {...props}>

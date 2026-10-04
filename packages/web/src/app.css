@@ -435,6 +435,23 @@ svg * {
     -1px 0 0 var(--color-accent),
     1px 0 0 var(--color-accent);
 }
+
+.cm-shell-resizer,
+.cm-shell-resizer:hover,
+.cm-shell-resizer:active,
+.cm-shell-resizer:focus-visible {
+  background: transparent;
+  box-shadow: none;
+}
+
+.cm-shell-resizer:hover::after,
+.cm-shell-resizer:active::after,
+.cm-shell-resizer:focus-visible::after {
+  background: var(--color-accent);
+  box-shadow:
+    -1px 0 0 var(--color-accent),
+    1px 0 0 var(--color-accent);
+}
 /*
  * MarkdownPreview uses minimal typography for rendered .md. Tailwind v4 +
  * @tailwindcss/typography is not installed; use design tokens directly so

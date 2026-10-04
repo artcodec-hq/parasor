@@ -270,6 +270,30 @@ describe("ws/terminal -- capability negotiation", () => {
     expect(events).toEqual(["init-ack", "replay"]);
   });
 
+  it("forwards authoritative PTY geometry before later output", async () => {
+    await handleTerminalMessage(
+      ws,
+      "sess",
+      "client",
+      host,
+      strEvent(
+        JSON.stringify({
+          type: "init",
+          cols: 80,
+          rows: 24,
+          capabilities: { binary: true, chunkedReplay: true },
+        }),
+      ),
+    );
+
+    host.capturedSink?.onGeometry?.({ cols: 43, rows: 20, epoch: 7 });
+
+    expect(JSON.parse(ws.sent.at(-1) as string)).toEqual({
+      type: "geometry",
+      geometry: { cols: 43, rows: 20, epoch: 7 },
+    });
+  });
+
   it("includes replay diagnostics in full replay trace events", async () => {
     const recorder = new TerminalTraceRecorder({
       enabled: true,

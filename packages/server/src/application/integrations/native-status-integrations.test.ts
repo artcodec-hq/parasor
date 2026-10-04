@@ -59,8 +59,10 @@ describe("native status integrations", () => {
       nativeStatusIntegrationForHookAgent("codex")?.hookEvents,
     ).toMatchObject({
       userpromptsubmit: "running",
-      permissionrequest: "waiting",
       stop: "completed",
     });
+    expect(
+      nativeStatusIntegrationForHookAgent("codex")?.hookEvents,
+    ).not.toHaveProperty("permissionrequest");
   });
 });

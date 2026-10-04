@@ -1,5 +1,5 @@
-import { realpathSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
 import { type AsyncSubscription, subscribe } from "@parcel/watcher";
 
 export type FileChangeEvent = "create" | "update" | "delete";
@@ -47,7 +47,12 @@ export class FileWatcher {
     onGitRefChange?: GitRefChangeCallback,
     isIgnored?: IsIgnoredCallback,
   ) {
-    this.root = realpathSync(root);
+    const resolved = resolve(root);
+    try {
+      this.root = realpathSync(resolved);
+    } catch {
+      this.root = resolved;
+    }
     this.onChange = onChange;
     this.onGitignoreChange = onGitignoreChange ?? (() => {});
     this.onGitRefChange = onGitRefChange ?? (() => {});
@@ -55,6 +60,11 @@ export class FileWatcher {
   }
 
   async start(): Promise<void> {
+    if (!existsSync(this.root)) {
+      console.warn(`File watching disabled for ${this.root}: missing`);
+      this.subscription = null;
+      return;
+    }
     try {
       this.subscription = await subscribe(
         this.root,

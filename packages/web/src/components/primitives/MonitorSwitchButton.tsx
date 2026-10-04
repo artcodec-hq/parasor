@@ -3,28 +3,26 @@ import type { ButtonHTMLAttributes } from "react";
 interface MonitorSwitchButtonProps
   extends Omit<
     ButtonHTMLAttributes<HTMLButtonElement>,
-    "aria-label" | "aria-pressed" | "children" | "title" | "type"
+    "aria-label" | "aria-pressed" | "children" | "className" | "title" | "type"
   > {
+  className?: string;
   pressed: boolean;
-  trackSurface?: "content" | "sidebar";
 }
 
 export function MonitorSwitchButton({
   pressed,
-  trackSurface = "content",
   className,
   ...buttonProps
 }: MonitorSwitchButtonProps) {
   const label = pressed ? "Remove from Monitor" : "Pin to Monitor";
-  const trackClassName =
-    trackSurface === "sidebar" ? "bg-bg-primary/80" : "bg-bg-primary";
+  const trackClassName = className ?? "bg-bg-primary/80";
   return (
     <button
       type="button"
       aria-label={label}
       aria-pressed={pressed}
       title={label}
-      className={`relative flex h-5 shrink-0 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']${className ? ` ${className}` : ""}`}
+      className="relative flex h-5 shrink-0 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']"
       {...buttonProps}
     >
       <span

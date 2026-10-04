@@ -62,6 +62,7 @@ function makeHarness(): Harness {
   const projectRuntime = {
     refreshGitState,
     getGitStates: () => gitStates,
+    isMissing: () => false,
   } as unknown as ProjectRuntime;
 
   const app = new Hono();
@@ -129,6 +130,32 @@ describe("git routes", () => {
       expect(res.status).toBe(404);
       const data = (await res.json()) as { error: string };
       expect(data.error).toBe("Project not found");
+    });
+
+    it("returns 409 when the project directory is missing", async () => {
+      const refreshGitState = vi.fn(async () => {});
+      const projectRuntime = {
+        refreshGitState,
+        getGitStates: () => ({}),
+        isMissing: () => true,
+      } as unknown as ProjectRuntime;
+      const app = new Hono();
+      app.route(
+        "/api/projects",
+        createGitRoutes({
+          projectManager: { get: vi.fn() } as unknown as ProjectManager,
+          worktreeCache: new WorktreeCache(),
+          projectRuntime,
+        }),
+      );
+      const res = await app.request(
+        "/api/projects/p1/git/status?worktreePath=%2Ftmp%2Fx",
+      );
+      expect(res.status).toBe(409);
+      await expect(res.json()).resolves.toEqual({
+        error: "Project directory is missing",
+      });
+      expect(refreshGitState).not.toHaveBeenCalled();
     });
 
     it("refreshes and returns the cached state", async () => {
@@ -548,6 +575,7 @@ describe("git routes", () => {
       const projectRuntime = {
         refreshGitState: vi.fn(async () => {}),
         getGitStates: () => ({}),
+        isMissing: () => false,
       } as unknown as ProjectRuntime;
       const app = new Hono();
       app.route(
@@ -611,6 +639,7 @@ describe("git routes", () => {
       const projectRuntime = {
         refreshGitState: vi.fn(async () => {}),
         getGitStates: () => ({}),
+        isMissing: () => false,
       } as unknown as ProjectRuntime;
       const app = new Hono();
       app.route(
@@ -712,6 +741,7 @@ describe("git routes", () => {
           projectRuntime: {
             refreshGitState: refreshGitState as never,
             getGitStates: () => ({}),
+            isMissing: () => false,
           } as unknown as ProjectRuntime,
         }),
       );

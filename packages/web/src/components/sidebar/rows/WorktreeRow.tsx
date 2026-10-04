@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from "react";
+import type { ComponentType, HTMLAttributes, SVGProps } from "react";
 import { PaGlyph } from "../../primitives/index.js";
 import type {
   SidebarProject,
@@ -18,14 +18,12 @@ import {
 } from "./SidebarMetrics.js";
 import { WorktreeChildren } from "./WorktreeChildren.js";
 import { WorktreeRowActions } from "./WorktreeRowActions.js";
-import { useWorktreeDisclosure } from "./worktree-disclosure.js";
 
 interface WorktreeRowProps {
   project: SidebarProject;
   worktree: SidebarWorktree;
   selection: SidebarSelection;
   displayName?: string;
-  forceOpen?: boolean;
   isProjectRoot?: boolean;
   showTopBorder?: boolean;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
@@ -36,18 +34,20 @@ interface WorktreeRowProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
-  onToggleChildPin?: (childId: string) => void;
-  worktreeOpen?: Record<string, boolean>;
-  onWorktreeOpenChange?: (
+  onPruneStaleWorktree?: (
     projectId: string,
     worktreePath: string,
-    open: boolean,
+    branch: string,
   ) => void;
+  onToggleChildPin?: (childId: string) => void;
+  disclosure?: { open: boolean; onToggle: () => void };
+  showChildren?: boolean;
   onReorderPanes?: (
     projectId: string,
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 export function WorktreeRow({
@@ -55,24 +55,19 @@ export function WorktreeRow({
   worktree,
   selection,
   displayName,
-  forceOpen = false,
   isProjectRoot = false,
   showTopBorder = false,
   dragHandleProps,
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
-  worktreeOpen,
-  onWorktreeOpenChange,
+  disclosure,
+  showChildren = true,
   onReorderPanes,
+  onCloseProject,
 }: WorktreeRowProps) {
-  const { open: isOpen, toggle: toggleOpen } = useWorktreeDisclosure(
-    worktree.path,
-    forceOpen,
-    worktreeOpen,
-    (path, open) => onWorktreeOpenChange?.(project.id, path, open),
-  );
   const worktreeFocused =
     selection.selectedWorktreeId === worktree.id &&
     selection.selectedChildId === null;
@@ -80,20 +75,19 @@ export function WorktreeRow({
   // the row. Render a plain folder so the sidebar matches the `root` label.
   const nonRepo = project.isRepo === false;
   const label = displayName ?? worktree.name;
+  const projectMissing = project.missing === true;
   const orphan = worktree.orphan === true;
-  const labelClassName = orphan
-    ? "text-text-secondary line-through decoration-danger"
-    : "text-text-secondary";
   const rowMetrics = metricsForWorktree(worktree);
   const metricsTitle = formatSidebarMetricsTitle(rowMetrics);
-  const dirtyFallbackTitle =
-    !metricsTitle && worktree.dirty > 0
-      ? `${worktree.dirty} uncommitted change${worktree.dirty === 1 ? "" : "s"}`
-      : undefined;
-  const rowTitle = metricsTitle || dirtyFallbackTitle;
-  const lineageTitle = worktree.lineage
-    ? formatLineageTitle(worktree.lineage)
-    : null;
+  const rowTitle = metricsTitle || undefined;
+  const dirtyStatus = hasDirtyStatus(rowMetrics);
+  const labelClassName =
+    projectMissing || orphan
+      ? "text-text-secondary line-through decoration-danger"
+      : dirtyStatus
+        ? "text-warning/80"
+        : "text-text-secondary";
+  const externalWorktreeTitle = externalWorktreeStatusTitle(worktree);
 
   return (
     <div className={showTopBorder ? "border-t border-border" : undefined}>
@@ -102,25 +96,27 @@ export function WorktreeRow({
         rootProps={dragHandleProps}
         className="group select-none"
       >
-        <SidebarRowActionButton
-          onClick={toggleOpen}
-          onKeyDown={(event) => {
-            if (event.key === " " || event.key === "Enter") {
-              event.stopPropagation();
-            }
-          }}
-          aria-expanded={isOpen}
-          aria-label={`${isOpen ? "Collapse" : "Expand"} ${label}`}
-        >
-          <span
-            aria-hidden
-            className={`transition-transform duration-[120ms] ${
-              isOpen ? "rotate-90" : "rotate-0"
-            }`}
+        {disclosure && (
+          <SidebarRowActionButton
+            onClick={disclosure.onToggle}
+            onKeyDown={(event) => {
+              if (event.key === " " || event.key === "Enter") {
+                event.stopPropagation();
+              }
+            }}
+            aria-expanded={disclosure.open}
+            aria-label={`${disclosure.open ? "Collapse" : "Expand"} ${label}`}
           >
-            <PaGlyph.disclosure />
-          </span>
-        </SidebarRowActionButton>
+            <span
+              aria-hidden
+              className={`transition-transform duration-[120ms] ${
+                disclosure.open ? "rotate-90" : "rotate-0"
+              }`}
+            >
+              <PaGlyph.disclosure />
+            </span>
+          </SidebarRowActionButton>
+        )}
         {!isProjectRoot && (
           <SidebarRowIcon
             tone={worktreeFocused ? "accent" : "secondary"}
@@ -131,14 +127,21 @@ export function WorktreeRow({
         )}
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           aria-label={rowTitle ? `${label}, ${rowTitle}` : undefined}
-          onClick={() => onSelectWorktree?.(project.id, worktree.id)}
+          onClick={() => {
+            if (projectMissing && onCloseProject) {
+              onCloseProject(project.id);
+              return;
+            }
+            onSelectWorktree?.(project.id, worktree.id);
+          }}
         >
           <SidebarRowLabel
             title={rowTitle}
             selected={worktreeFocused}
             weight={worktreeFocused ? "semibold" : "medium"}
+            grow={false}
             className={labelClassName}
           >
             {label}
@@ -148,56 +151,49 @@ export function WorktreeRow({
               <PaGlyph.readOnlyProject />
             </span>
           )}
-          {worktree.origin === "agent" && (
-            <span
-              role="img"
-              aria-label="Agent worktree"
-              title="Created by an agent (Agent Team isolated checkout)"
-              className="shrink-0 rounded-tag border border-accent/40 bg-accent/10 px-1 text-[10px] font-medium leading-tight text-accent"
-            >
-              agent
-            </span>
-          )}
-          {lineageTitle && (
-            <span
-              role="img"
-              aria-label="Linked worktree"
-              title={lineageTitle}
-              className="shrink-0 rounded-tag border border-text-secondary/30 bg-bg-primary px-1 text-[10px] font-medium leading-tight text-text-secondary"
-            >
-              linked
-            </span>
-          )}
-          {worktree.orphan && (
-            <span
-              role="img"
-              aria-label="Missing worktree"
-              title="Path is missing on disk - prune the stale worktree entry"
-              className="shrink-0 rounded-tag border border-danger/40 bg-danger/10 px-1 text-[10px] font-medium leading-tight text-danger"
-            >
-              missing
-            </span>
-          )}
+          <WorktreeStatusIcons
+            externalTitle={externalWorktreeTitle}
+            missing={projectMissing || worktree.orphan === true}
+            projectMissing={projectMissing}
+          />
         </button>
         <SidebarMetricsView metrics={rowMetrics} />
-        {dirtyFallbackTitle && (
-          <span
-            aria-hidden
-            title={dirtyFallbackTitle}
-            className="h-1.5 w-1.5 shrink-0 rounded-tag bg-[var(--theme-git-modified)]"
+        {projectMissing && onCloseProject ? (
+          <span className="shrink-0">
+            <SidebarRowActionButton
+              aria-label={`Close project ${label}`}
+              tone="dangerPrimaryHover"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCloseProject(project.id);
+              }}
+            >
+              <PaGlyph.close />
+            </SidebarRowActionButton>
+          </span>
+        ) : (
+          <WorktreeRowActions
+            label={label}
+            onNewSession={
+              !orphan && onNewSession
+                ? () => onNewSession(project.id, worktree.id)
+                : undefined
+            }
+            onPruneStaleWorktree={
+              orphan && onPruneStaleWorktree
+                ? () =>
+                    onPruneStaleWorktree(
+                      project.id,
+                      worktree.path,
+                      worktree.name,
+                    )
+                : undefined
+            }
           />
         )}
-        <WorktreeRowActions
-          label={label}
-          onNewSession={
-            onNewSession
-              ? () => onNewSession(project.id, worktree.id)
-              : undefined
-          }
-        />
       </SidebarRow>
 
-      {isOpen && (
+      {showChildren && (
         <WorktreeChildren
           project={project}
           worktree={worktree}
@@ -215,24 +211,94 @@ function metricsForWorktree(worktree: SidebarWorktree): SidebarRowMetrics {
   return {
     dirtyAdded: worktree.dirtyAdded,
     dirtyDeleted: worktree.dirtyDeleted,
+    dirtyCount: worktree.dirty,
     serviceCount: worktree.serviceCount,
   };
 }
 
-function formatLineageTitle(
-  lineage: NonNullable<SidebarWorktree["lineage"]>,
-): string {
-  const parts = ["Created from workspace context"];
-  if (lineage.parentWorktreePath) {
-    parts.push(`parent: ${lastPathSegment(lineage.parentWorktreePath)}`);
-  }
-  if (lineage.createdByPaneCommandLabel) {
-    parts.push(`command: ${lineage.createdByPaneCommandLabel}`);
-  }
-  return parts.join(" | ");
+function hasDirtyStatus(metrics: SidebarRowMetrics): boolean {
+  return hasDirtyLineMetrics(metrics) || (metrics.dirtyCount ?? 0) > 0;
 }
 
-function lastPathSegment(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  return trimmed.split("/").pop() || path;
+function hasDirtyLineMetrics(metrics: SidebarRowMetrics): boolean {
+  return (metrics.dirtyAdded ?? 0) > 0 || (metrics.dirtyDeleted ?? 0) > 0;
+}
+
+function externalWorktreeStatusTitle(worktree: SidebarWorktree): string | null {
+  const externalReasons: string[] = [];
+  if (worktree.origin === "agent") {
+    externalReasons.push("agent-created");
+  }
+  if (worktree.provenance === "imported") {
+    externalReasons.push("imported");
+  }
+  if (externalReasons.length === 0) return null;
+  return `External worktree: ${externalReasons.join(", ")}`;
+}
+
+function WorktreeStatusIcons({
+  externalTitle,
+  missing,
+  projectMissing,
+}: {
+  externalTitle: string | null;
+  missing: boolean;
+  projectMissing: boolean;
+}) {
+  if (!externalTitle && !missing) return null;
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {externalTitle && (
+        <WorktreeStatusIcon
+          glyph={PaGlyph.link}
+          label="Linked worktree"
+          title={externalTitle}
+          tone="secondary"
+        />
+      )}
+      {missing && (
+        <WorktreeStatusIcon
+          glyph={PaGlyph.circleOff}
+          label={projectMissing ? "Missing project" : "Missing worktree"}
+          title={
+            projectMissing
+              ? "Project directory is missing on disk"
+              : "Path is missing on disk - prune the stale worktree entry"
+          }
+          tone="danger"
+        />
+      )}
+    </span>
+  );
+}
+
+type WorktreeStatusIconTone = "secondary" | "danger";
+
+const WORKTREE_STATUS_ICON_TONE: Record<WorktreeStatusIconTone, string> = {
+  danger: "text-danger/80",
+  secondary: "text-text-secondary/75",
+};
+
+function WorktreeStatusIcon({
+  glyph: Glyph,
+  label,
+  title,
+  tone,
+}: {
+  glyph: ComponentType<SVGProps<SVGSVGElement>>;
+  label: string;
+  title: string;
+  tone: WorktreeStatusIconTone;
+}) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={title}
+      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center ${WORKTREE_STATUS_ICON_TONE[tone]}`}
+    >
+      <Glyph className="h-3.5 w-3.5" />
+    </span>
+  );
 }

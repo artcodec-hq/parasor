@@ -187,4 +187,21 @@ describe("FileWatcher", () => {
       warn.mockRestore();
     }
   });
+
+  it("constructor does not throw when the root is missing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const missing = join(tmpdir(), `parasor-watch-missing-${Date.now()}-nope`);
+    try {
+      expect(() => new FileWatcher(missing, () => {})).not.toThrow();
+      const watcher = new FileWatcher(missing, () => {});
+      await expect(watcher.start()).resolves.toBeUndefined();
+      expect(watcherMock.callback).toBeNull();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/File watching disabled.*missing/),
+      );
+      await expect(watcher.stop()).resolves.toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

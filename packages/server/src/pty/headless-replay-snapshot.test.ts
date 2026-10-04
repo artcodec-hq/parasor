@@ -75,6 +75,20 @@ function mouseEncoding(
   );
 }
 
+function cursorHidden(
+  term: import("@xterm/headless").Terminal,
+): boolean | undefined {
+  return (
+    term as unknown as {
+      _core?: {
+        coreService?: {
+          isCursorHidden?: boolean;
+        };
+      };
+    }
+  )._core?.coreService?.isCursorHidden;
+}
+
 describe("buildHeadlessReplaySnapshot", () => {
   it("renders terminal output into a bounded text snapshot", async () => {
     const snapshot = await buildHeadlessReplaySnapshot(
@@ -266,6 +280,20 @@ describe("buildHeadlessReplaySnapshot", () => {
     expect(snapshot.text).toContain("\x1b[?1003h\x1b[?1006hOpenCode");
     expect(replayed.modes.mouseTrackingMode).toBe("any");
     expect(mouseEncoding(replayed)).toBe("SGR");
+  });
+
+  it("preserves a hidden cursor in the replay prologue", async () => {
+    const snapshot = await buildHeadlessReplaySnapshot(
+      "composer\x1b[4;1Hstatus footer\x1b[?25l",
+      { cols: 40, rows: 4, scrollbackLines: 10, maxBytes: 1024 },
+    );
+    const replayed = await replayIntoTerminal(snapshot.text, {
+      cols: 40,
+      rows: 4,
+    });
+
+    expect(snapshot.text).toContain("\x1b[?25l");
+    expect(cursorHidden(replayed)).toBe(true);
   });
 
   it("accounts for the mouse mode prologue when applying the byte cap", async () => {

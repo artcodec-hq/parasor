@@ -1,6 +1,11 @@
 import { Buffer } from "node:buffer";
 import type { Duplex } from "node:stream";
-import type { AppState, Session, SessionEndReason } from "@parasor/shared";
+import type {
+  AppState,
+  Session,
+  SessionEndReason,
+  TerminalGeometry,
+} from "@parasor/shared";
 import { ConnectionLifecycle } from "./connection-lifecycle.js";
 import { raceHandshakeWithTimeout } from "./handshake-timeout-race.js";
 import { HeadlessTerminalStateCache } from "./headless-terminal-state-cache.js";
@@ -31,6 +36,7 @@ import {
   decodeJsonPayload,
   encodeJsonPayload,
   type FlowControlPayload,
+  type GeometryPayload,
   type HelloPayload,
   type InitClientAckPayload,
   type InitClientReqPayload,
@@ -173,6 +179,11 @@ export interface RemotePtyHostDeps {
 
 interface AttachedClient {
   listener: (data: string) => void;
+  onGeometry?: (geometry: {
+    cols: number;
+    rows: number;
+    epoch: number;
+  }) => void;
   /**
    * Attach fencing fence -- server-side monotonic stamp. Echoed in
    * `INIT_CLIENT_REQ` so the daemon can stamp the same value on its
@@ -226,6 +237,7 @@ export class RemotePtyHost implements PtyHost {
    */
   private readonly mirror = new SessionMirror();
   private readonly attached = new Map<string, Map<string, AttachedClient>>();
+  private readonly sessionGeometry = new Map<string, TerminalGeometry>();
   /** Attach fencing -- server-local monotonic counter for attach-token mintage. */
   private nextAttachToken = 1;
   /**
@@ -409,6 +421,9 @@ export class RemotePtyHost implements PtyHost {
       case FrameType.SESSION_INPUT:
         this.applySessionInput(frame);
         return;
+      case FrameType.GEOMETRY:
+        this.applyGeometry(frame);
+        return;
       default:
         // Unknown daemon->server frame type. Log-equivalent is no-op
         // since we don't have a console channel here; the daemon would
@@ -492,6 +507,22 @@ export class RemotePtyHost implements PtyHost {
       body.sessionGeneration,
       body.endReason,
     );
+  }
+
+  private applyGeometry(frame: Frame): void {
+    const geometry = decodeJsonPayload<GeometryPayload>(frame.payload);
+    this.sessionGeometry.set(geometry.sessionId, geometry);
+    void this.headlessStateCache
+      ?.resizeExisting(geometry.sessionId, geometry)
+      .catch((err) => {
+        console.warn(
+          `[terminal] headless state resize failed for session=${geometry.sessionId.slice(0, 8)}: ${(err as Error).message}`,
+        );
+        this.headlessStateCache?.delete(geometry.sessionId);
+      });
+    const clients = this.attached.get(geometry.sessionId);
+    if (!clients) return;
+    for (const client of clients.values()) client.onGeometry?.(geometry);
   }
 
   private applyData(frame: Frame): void {
@@ -683,6 +714,7 @@ export class RemotePtyHost implements PtyHost {
     await this.request(FrameType.DISPOSE_REQ, encodeJsonPayload(payload));
     this.mirror.remove(id);
     this.attached.delete(id);
+    this.sessionGeometry.delete(id);
     this.headlessStateCache?.delete(id);
     if (this.scrollbackLog) {
       this.scrollbackLog.remove(id);
@@ -694,6 +726,7 @@ export class RemotePtyHost implements PtyHost {
     await this.request(FrameType.DISPOSE_ALL_REQ, encodeJsonPayload({}));
     this.mirror.clear();
     this.attached.clear();
+    this.sessionGeometry.clear();
     this.headlessStateCache?.clear();
     if (this.scrollbackLog) {
       for (const id of this.scrollbackOwnedIds) this.scrollbackLog.remove(id);
@@ -734,8 +767,7 @@ export class RemotePtyHost implements PtyHost {
    * rejects on NACK / connection drop / IPC timeout. AppStateStore routes
    * those rejections through `onPersistError` so a transient IPC fault
    * does not silently lose project / projectStates / serviceConfig /
-   * paneCommands / ideCommands
-   * mutations.
+   * paneCommands / ideCommands mutations.
    *
    * `sessions` and `sessionRecords` are deliberately not forwarded -- the
    * daemon owns those domains and would overwrite its own snapshot if we
@@ -761,7 +793,14 @@ export class RemotePtyHost implements PtyHost {
     cols: number,
     rows: number,
     listener: (data: string) => void,
-  ): Promise<{ ok: true; attachToken: number } | { ok: false }> {
+  ): Promise<
+    | {
+        ok: true;
+        attachToken: number;
+        geometry?: { cols: number; rows: number; epoch: number };
+      }
+    | { ok: false }
+  > {
     const attachToken = this.nextAttachToken++;
     const payload: InitClientReqPayload = {
       sessionId: id,
@@ -776,13 +815,18 @@ export class RemotePtyHost implements PtyHost {
     );
     const body = decodeJsonPayload<InitClientAckPayload>(ack.payload);
     if (!body.accepted) return { ok: false };
+    if (body.geometry) this.sessionGeometry.set(id, body.geometry);
     let bySession = this.attached.get(id);
     if (!bySession) {
       bySession = new Map();
       this.attached.set(id, bySession);
     }
     bySession.set(clientId, { listener, attachToken });
-    return { ok: true, attachToken };
+    return {
+      ok: true,
+      attachToken,
+      geometry: this.sessionGeometry.get(id) ?? body.geometry,
+    };
   }
 
   /**
@@ -824,6 +868,7 @@ export class RemotePtyHost implements PtyHost {
     });
     if (!result.ok) return { ok: false };
     const seedGen = this.mirror.generationOf(id);
+    let geometry = this.sessionGeometry.get(id) ?? result.geometry;
     const tail = this.scrollbackLog?.readTail(id) ?? "";
     if (tail.length > 0) {
       let fullReplay: string;
@@ -832,12 +877,21 @@ export class RemotePtyHost implements PtyHost {
       if (this.headlessReplayEnabled && this.headlessStateCache) {
         try {
           const headlessSnapshot =
-            (await this.headlessStateCache.snapshot(id, { cols, rows })) ??
-            (await this.headlessStateCache.rebuild(id, tail, { cols, rows }));
+            (await this.headlessStateCache.snapshot(id)) ??
+            (await this.headlessStateCache.rebuild(id, tail, {
+              cols: geometry?.cols ?? cols,
+              rows: geometry?.rows ?? rows,
+            }));
           if (!headlessSnapshot) {
             throw new Error("empty headless replay snapshot");
           }
           const snapshot = headlessSnapshot.snapshot;
+          const latestGeometry = this.sessionGeometry.get(id) ?? geometry;
+          geometry = {
+            cols: headlessSnapshot.cols,
+            rows: headlessSnapshot.rows,
+            epoch: latestGeometry?.epoch ?? 0,
+          };
           fullReplay = headlessSnapshot.snapshot.text;
           replayDiagnostics = {
             source: headlessSnapshot.source,
@@ -875,6 +929,10 @@ export class RemotePtyHost implements PtyHost {
           maxBytes: this.daemonLegacyReplayMaxBytes,
         };
       }
+      const attached = this.attached.get(id)?.get(clientId);
+      if (attached?.attachToken === result.attachToken) {
+        attached.onGeometry = sink.onGeometry;
+      }
       return {
         ok: true,
         attachToken: result.attachToken,
@@ -883,12 +941,18 @@ export class RemotePtyHost implements PtyHost {
           generation: seedGen,
           lastDeliveredSeq: null,
           oldestSeq: null,
+          geometry,
         },
         replay: "full",
         fullReplay,
         replayDiagnostics,
       };
     }
+    const attached = this.attached.get(id)?.get(clientId);
+    if (attached?.attachToken === result.attachToken) {
+      attached.onGeometry = sink.onGeometry;
+    }
+    geometry = this.sessionGeometry.get(id) ?? geometry;
     return {
       ok: true,
       attachToken: result.attachToken,
@@ -897,6 +961,7 @@ export class RemotePtyHost implements PtyHost {
         generation: seedGen,
         lastDeliveredSeq: null,
         oldestSeq: null,
+        geometry,
       },
       replay: "none",
     };

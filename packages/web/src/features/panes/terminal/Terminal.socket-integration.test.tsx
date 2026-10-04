@@ -452,6 +452,9 @@ describe("Terminal × useTerminalSocket integration", () => {
     });
     await flush();
 
-    expect(mockTermWrite).toHaveBeenCalledWith("\ncatch-up");
+    expect(mockTermWrite).toHaveBeenCalledWith(
+      "\ncatch-up",
+      expect.any(Function),
+    );
   });
 });

@@ -202,6 +202,64 @@ describe("useTerminalSocket", () => {
     );
   });
 
+  it("applies authoritative geometry and holds queued resize until full replay is written", async () => {
+    const onData = vi.fn();
+    const onGeometry = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSocket({ sessionId: "s-geometry", onData, onGeometry }),
+    );
+    await settleAuth();
+    const ws = latestSocket();
+
+    act(() => result.current.sendInit(105, 51));
+    act(() => result.current.send({ type: "resize", cols: 105, rows: 51 }));
+    act(() => ws.fireOpen());
+    act(() =>
+      ws.fireMessage(
+        JSON.stringify({
+          type: "init-ack",
+          capabilities: { binary: false, chunkedReplay: false },
+          serverState: {
+            generation: 1,
+            lastDeliveredSeq: "5",
+            oldestSeq: "0",
+            geometry: { cols: 43, rows: 20, epoch: 7 },
+          },
+          replay: "full",
+        }),
+      ),
+    );
+
+    expect(onGeometry).toHaveBeenCalledWith({ cols: 43, rows: 20, epoch: 7 });
+    expect(ws.sent).toHaveLength(1);
+
+    act(() =>
+      ws.fireMessage(JSON.stringify({ type: "replay", data: "snapshot" })),
+    );
+    expect(ws.sent).toHaveLength(1);
+    const onApplied = onData.mock.calls[0]?.[1] as (() => void) | undefined;
+    expect(onApplied).toEqual(expect.any(Function));
+    act(() => onApplied?.());
+
+    expect(ws.sent.at(-1)).toBe(
+      JSON.stringify({ type: "resize", cols: 105, rows: 51 }),
+    );
+
+    act(() =>
+      ws.fireMessage(
+        JSON.stringify({
+          type: "geometry",
+          geometry: { cols: 105, rows: 51, epoch: 8 },
+        }),
+      ),
+    );
+    expect(onGeometry).toHaveBeenLastCalledWith({
+      cols: 105,
+      rows: 51,
+      epoch: 8,
+    });
+  });
+
   it("resolves the initial cached cursor after terminal dimensions are known", async () => {
     const resolveInitialLastSeen = vi.fn(
       (dims: { cols: number; rows: number }) =>
@@ -777,6 +835,47 @@ describe("useTerminalSocket -- binary capability path", () => {
     );
   });
 
+  it("holds queued messages until an empty final delta frame is applied", async () => {
+    const onData = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSocket({
+        sessionId: "s-empty-delta",
+        initialLastSeen: { generation: 1, seq: "4" },
+        onData,
+      }),
+    );
+    await settleAuth();
+    const ws = latestSocket();
+
+    act(() => result.current.sendInit(80, 24));
+    act(() => result.current.send({ type: "resize", cols: 100, rows: 30 }));
+    act(() => ws.fireOpen());
+    act(() =>
+      ws.fireMessage(
+        JSON.stringify({
+          type: "init-ack",
+          capabilities: { binary: true, chunkedReplay: true },
+          serverState: {
+            generation: 1,
+            lastDeliveredSeq: "5",
+            oldestSeq: "0",
+          },
+          replay: "delta",
+        }),
+      ),
+    );
+
+    expect(ws.sent).toHaveLength(1);
+    act(() => ws.fireMessage(encodeOutput(1, 5n, new Uint8Array())));
+    const onApplied = onData.mock.calls[0]?.[1] as (() => void) | undefined;
+    expect(onData).toHaveBeenCalledWith("", expect.any(Function));
+    expect(ws.sent).toHaveLength(1);
+
+    act(() => onApplied?.());
+    const resize = ws.sent.at(-1) as Uint8Array;
+    expect(resize[0]).toBe(0x01);
+  });
+
   /*
    * PTY generation gate: an OUTPUT frame whose generation is greater than init-ack's
    * (server auto-resumed mid-session, bumped generation, and emitted
@@ -1000,7 +1099,7 @@ describe("useTerminalSocket -- binary capability path", () => {
       onData.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
     expect(onFullReplay).toHaveBeenCalledWith({ generation: 2, seq: "42" });
-    expect(onData).toHaveBeenCalledWith("snapshot");
+    expect(onData).toHaveBeenCalledWith("snapshot", expect.any(Function));
     expect(
       sessionStorage.getItem("parasor:terminal:lastSeen:s-full"),
     ).toBeNull();

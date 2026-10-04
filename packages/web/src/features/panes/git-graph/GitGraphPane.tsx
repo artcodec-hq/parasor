@@ -20,6 +20,7 @@ export type GitGraphSelection =
   | { kind: "commit"; commit: GitCommit };
 
 export interface GitGraphActions {
+  onFetch?: () => Promise<void>;
   onPull?: () => void;
   onPush?: () => void;
 }
@@ -530,6 +531,16 @@ export function GitGraphPane({
     }
   }, [projectId, worktreePath, includeRemotes]);
 
+  const refresh = useCallback(async () => {
+    try {
+      if (actions?.onFetch) await actions.onFetch();
+    } catch {
+      // The fetch workflow shows the actionable error toast. Still reload the
+      // local graph so Refresh remains useful when origin is unavailable.
+    }
+    await reload();
+  }, [actions, reload]);
+
   const loadMore = useCallback(async () => {
     if (loadMoreLockRef.current) return;
     if (loadingMore || endReached || !commits || commits.length === 0) return;
@@ -797,7 +808,7 @@ export function GitGraphPane({
             >
               <PaGlyph.plug />
             </PaneIconButton>
-            <PaneIconButton onClick={() => void reload()} label="Refresh">
+            <PaneIconButton onClick={() => void refresh()} label="Refresh">
               <PaGlyph.refresh />
             </PaneIconButton>
           </>

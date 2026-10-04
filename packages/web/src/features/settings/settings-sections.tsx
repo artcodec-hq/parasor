@@ -7,6 +7,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { PaGlyph } from "../../components/icons/index.js";
 import { PaButton } from "../../components/primitives/index.js";
+import { APP_METADATA, APP_VERSION } from "../../lib/app-version.js";
 import { DEFAULT_UI_FONT_STACK, resolveFontStack } from "../../lib/fonts.js";
 import { ThemeValidationError } from "../../lib/theme/loader.js";
 import type { ThemeEntry } from "../../lib/theme/types.js";
@@ -22,6 +23,7 @@ export interface SettingField {
   label: string;
   description?: string;
   keywords?: string[];
+  layout?: "row" | "block";
   render: () => ReactNode;
 }
 
@@ -78,8 +80,8 @@ export function useSettingsSections(
   return useMemo<SettingSection[]>(() => {
     const sections: SettingSection[] = [
       {
-        id: "theme",
-        label: "Theme",
+        id: "appearance",
+        label: "Appearance",
         fields: [
           {
             id: "color-theme",
@@ -87,6 +89,7 @@ export function useSettingsSections(
             description:
               "Choose a bundled theme or paste a VS Code--compatible color theme JSON.",
             keywords: ["theme", "color", "palette", "dark", "light"],
+            layout: "block",
             render: () => (
               <ThemePicker
                 value={themeId}
@@ -97,15 +100,9 @@ export function useSettingsSections(
               />
             ),
           },
-        ],
-      },
-      {
-        id: "font",
-        label: "Font",
-        fields: [
           {
             id: "ui-font-family",
-            label: "UI font family",
+            label: "UI font",
             description:
               "Custom font-family stack for chrome, sidebars, menus, dialogs, and controls. Leave empty to use the system font.",
             keywords: [
@@ -119,6 +116,7 @@ export function useSettingsSections(
               "controls",
               "system",
             ],
+            layout: "block",
             render: () => (
               <FontFamilyInput
                 value={uiFontFamily}
@@ -127,12 +125,14 @@ export function useSettingsSections(
                 defaultStack={DEFAULT_UI_FONT_STACK}
                 placeholder="System default"
                 previewLines={PREVIEW_LINES_UI}
+                id="settings-ui-font-family"
+                ariaLabel="UI font"
               />
             ),
           },
           {
             id: "ui-font-size",
-            label: "UI font size",
+            label: "UI size",
             description:
               "Base size for chrome, sidebars, menus, dialogs, and controls.",
             keywords: [
@@ -146,6 +146,7 @@ export function useSettingsSections(
               "sidebar",
               "controls",
             ],
+            layout: "row",
             render: () => (
               <FontSizeStepper
                 value={uiFontSize}
@@ -156,7 +157,7 @@ export function useSettingsSections(
           },
           {
             id: "font-preset",
-            label: "Content font preset",
+            label: "Content font",
             description:
               "Bundled OFL monospace font used by terminal and editor content. Downloaded from GitHub Releases on first use for CJK-aligned or Latin-optimized rendering.",
             keywords: [
@@ -174,6 +175,7 @@ export function useSettingsSections(
               "install",
               "download",
             ],
+            layout: "block",
             render: () => (
               <FontPresetPicker
                 selectedPresetId={fontPresetId}
@@ -183,7 +185,7 @@ export function useSettingsSections(
           },
           {
             id: "custom-font",
-            label: "Content custom font family",
+            label: "Content font override",
             description:
               "Custom monospace stack for terminal and editor content. Overrides the preset; leave empty to use the preset, or the default content stack when no preset is selected.",
             keywords: [
@@ -196,18 +198,21 @@ export function useSettingsSections(
               "hack",
               "nerd",
             ],
+            layout: "block",
             render: () => (
               <FontFamilyInput
                 value={customFontFamily}
                 onChange={setCustomFontFamily}
                 previewFontSize={contentFontSize}
                 presetId={fontPresetId}
+                id="settings-custom-font"
+                ariaLabel="Content font override"
               />
             ),
           },
           {
             id: "content-font-size",
-            label: "Content font size",
+            label: "Content size",
             description: "Base size for terminal and editor content.",
             keywords: [
               "font",
@@ -220,6 +225,7 @@ export function useSettingsSections(
               "editor",
               "code",
             ],
+            layout: "row",
             render: () => (
               <FontSizeStepper
                 value={contentFontSize}
@@ -231,34 +237,38 @@ export function useSettingsSections(
         ],
       },
       {
-        id: "sounds",
-        label: "Sounds",
+        id: "notifications",
+        label: "Notifications",
         fields: [
           {
             id: "attention-sound",
-            label: "Play sound when an agent needs attention",
+            label: "Attention sound",
             description:
               "Plays through the active browser tab when an agent enters a waiting state in a background project. Audio unlocks on first tap; mobile browsers may mute backgrounded tabs.",
             keywords: ["sound", "audio", "attention", "waiting", "notify"],
+            layout: "row",
             render: () => (
               <SettingToggle
                 checked={playAttentionSound}
                 onChange={setPlayAttentionSound}
-                label="Enable attention sound"
+                label="Enabled"
+                name="settings-attention-sound"
               />
             ),
           },
           {
             id: "completion-sound",
-            label: "Play sound when an agent completes",
+            label: "Completion sound",
             description:
               "Plays through the active browser tab when an agent finishes work in a background project. Audio unlocks on first tap; mobile browsers may mute backgrounded tabs.",
             keywords: ["sound", "audio", "completion", "done", "review"],
+            layout: "row",
             render: () => (
               <SettingToggle
                 checked={playCompletionSound}
                 onChange={setPlayCompletionSound}
-                label="Enable completion sound"
+                label="Enabled"
+                name="settings-completion-sound"
               />
             ),
           },
@@ -274,7 +284,7 @@ export function useSettingsSections(
     ) {
       systemFields.push({
         id: "prevent-idle-sleep",
-        label: "Prevent idle sleep while attached",
+        label: "Prevent idle sleep",
         description:
           "Keeps this Mac awake while a browser tab is connected so long-running agents are not interrupted by sleep. Uses `caffeinate -i`; released on last disconnect.",
         keywords: [
@@ -287,11 +297,13 @@ export function useSettingsSections(
           "display",
           "wake",
         ],
+        layout: "row",
         render: () => (
           <SettingToggle
             checked={serviceConfig.preventIdleSleep}
             onChange={onPreventIdleSleepChange}
-            label="Keep Mac awake while browser tabs are connected"
+            label="Enabled"
+            name="settings-prevent-idle-sleep"
           />
         ),
       });
@@ -299,7 +311,7 @@ export function useSettingsSections(
     if (serviceConfig && onPortDetectionChange) {
       systemFields.push({
         id: "port-detection",
-        label: "Track dev server ports",
+        label: "Dev server ports",
         description:
           "Marks newly detected reachable ports in the sidebar network menu. Loopback-only ports are listed but cannot be opened from remote devices.",
         keywords: [
@@ -311,13 +323,15 @@ export function useSettingsSections(
           "iphone",
           "network",
         ],
+        layout: "row",
         render: () => (
           <SettingToggle
             checked={serviceConfig.portDetection === "all-interfaces"}
             onChange={(enabled) =>
               onPortDetectionChange(enabled ? "all-interfaces" : "off")
             }
-            label="Show a toast when a public dev server port is detected"
+            label="Enabled"
+            name="settings-port-detection"
           />
         ),
       });
@@ -329,6 +343,7 @@ export function useSettingsSections(
         description:
           "Per-file cap for Terminal drop-to-upload. The server enforces a hard cap above this limit regardless of the setting.",
         keywords: ["upload", "drop", "file", "size", "limit", "quota", "cap"],
+        layout: "row",
         render: () => (
           <DropSizePicker
             valueBytes={serviceConfig.dropSizeMaxBytes}
@@ -340,19 +355,19 @@ export function useSettingsSections(
     }
     if (systemFields.length > 0) {
       sections.push({
-        id: "system",
-        label: "System",
+        id: "local-environment",
+        label: "Local environment",
         fields: systemFields,
       });
     }
     if (ideCommands && onIdeCommandsChange) {
       sections.push({
-        id: "ide",
-        label: "IDE",
+        id: "integrations",
+        label: "Integrations",
         fields: [
           {
             id: "ide-commands",
-            label: "Custom IDE commands",
+            label: "IDE commands",
             description:
               "Additional Open in IDE actions for worktree menus. Arguments are fixed argv entries, one per line; no shell is used.",
             keywords: [
@@ -366,6 +381,7 @@ export function useSettingsSections(
               "worktree",
               "open",
             ],
+            layout: "block",
             render: () => (
               <IdeCommandsEditor
                 commands={ideCommands}
@@ -376,6 +392,64 @@ export function useSettingsSections(
         ],
       });
     }
+    sections.push({
+      id: "about",
+      label: "About",
+      fields: [
+        {
+          id: "app-summary",
+          label: "Parasor",
+          description: "Mobile-first local development workspace.",
+          keywords: ["about", "app", "application", "workspace", "local"],
+          layout: "block",
+          render: () => null,
+        },
+        {
+          id: "app-version",
+          label: "Version",
+          description: "Parasor application package version.",
+          keywords: ["about", "app", "application", "package", "release"],
+          layout: "row",
+          render: () => (
+            <span className="font-mono text-sm text-text-primary">
+              {APP_VERSION}
+            </span>
+          ),
+        },
+        {
+          id: "repository",
+          label: "Repository",
+          description: "Parasor source repository.",
+          keywords: ["github", "source", "code", "oss"],
+          layout: "row",
+          render: () => (
+            <AboutLink href={APP_METADATA.repositoryUrl}>GitHub</AboutLink>
+          ),
+        },
+        {
+          id: "report-issue",
+          label: "Report an issue",
+          description: "Open the public issue tracker.",
+          keywords: ["bug", "feedback", "github", "support"],
+          layout: "row",
+          render: () => (
+            <AboutLink href={APP_METADATA.issuesUrl}>Issues</AboutLink>
+          ),
+        },
+        {
+          id: "license",
+          label: "License",
+          description: "Open source license.",
+          keywords: ["oss", "open source", "legal"],
+          layout: "row",
+          render: () => (
+            <span className="font-mono text-sm text-text-primary">
+              {APP_METADATA.license}
+            </span>
+          ),
+        },
+      ],
+    });
 
     return sections;
   }, [
@@ -406,6 +480,20 @@ export function useSettingsSections(
     uiFontFamily,
     uiFontSize,
   ]);
+}
+
+function AboutLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      referrerPolicy="no-referrer"
+      className="text-sm font-medium text-accent hover:underline"
+    >
+      {children}
+    </a>
+  );
 }
 
 function IdeCommandsEditor({
@@ -448,6 +536,8 @@ function IdeCommandsEditor({
                 ID
                 <input
                   type="text"
+                  id={`settings-ide-command-${index}-id`}
+                  name={`settings-ide-command-${index}-id`}
                   value={command.id}
                   onChange={(event) =>
                     update(index, { id: event.target.value })
@@ -460,6 +550,8 @@ function IdeCommandsEditor({
                 Label
                 <input
                   type="text"
+                  id={`settings-ide-command-${index}-label`}
+                  name={`settings-ide-command-${index}-label`}
                   value={command.label}
                   onChange={(event) =>
                     update(index, { label: event.target.value })
@@ -472,6 +564,8 @@ function IdeCommandsEditor({
                 Command
                 <input
                   type="text"
+                  id={`settings-ide-command-${index}-command`}
+                  name={`settings-ide-command-${index}-command`}
                   value={command.command}
                   onChange={(event) =>
                     update(index, { command: event.target.value })
@@ -484,6 +578,8 @@ function IdeCommandsEditor({
             <label className="block text-xs text-text-secondary">
               Arguments
               <textarea
+                id={`settings-ide-command-${index}-args`}
+                name={`settings-ide-command-${index}-args`}
                 value={command.args.join("\n")}
                 onChange={(event) =>
                   update(index, {
@@ -566,15 +662,19 @@ function SettingToggle({
   checked,
   onChange,
   label,
+  name,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  name: string;
 }) {
   return (
     <label className="flex items-center gap-3 rounded-control border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary">
       <input
         type="checkbox"
+        id={name}
+        name={name}
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         className="h-4 w-4 accent-accent"
@@ -610,6 +710,8 @@ function DropSizePicker({
   const shown = options.filter((o) => o.value <= hardMaxBytes);
   return (
     <select
+      id="settings-drop-size-max"
+      name="settings-drop-size-max"
       aria-label="File drop size limit"
       className="rounded-control border border-border bg-bg-secondary px-3 py-1.5 text-sm text-text-primary"
       value={valueBytes}
@@ -695,6 +797,8 @@ function ThemePicker({
             Name
             <input
               type="text"
+              id="settings-custom-theme-name"
+              name="settings-custom-theme-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="My Theme"
@@ -704,6 +808,8 @@ function ThemePicker({
           <label className="block text-xs text-text-secondary">
             Theme JSON
             <textarea
+              id="settings-custom-theme-json"
+              name="settings-custom-theme-json"
               value={json}
               onChange={(event) => setJson(event.target.value)}
               rows={8}
@@ -846,6 +952,8 @@ function FontFamilyInput({
   placeholder = "Default",
   presetId = "",
   previewLines,
+  id,
+  ariaLabel,
 }: {
   value: string;
   onChange: (family: string) => void;
@@ -854,6 +962,8 @@ function FontFamilyInput({
   placeholder?: string;
   presetId?: string;
   previewLines?: string[];
+  id: string;
+  ariaLabel: string;
 }) {
   // Match the apply-side stack exactly: `resolveFontStack` quotes
   // multi-word families and falls back to the requested default when empty,
@@ -866,6 +976,9 @@ function FontFamilyInput({
     <div className="flex flex-col gap-2">
       <input
         type="text"
+        id={id}
+        name={id}
+        aria-label={ariaLabel}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}

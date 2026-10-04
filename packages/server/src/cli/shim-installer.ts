@@ -517,10 +517,6 @@ export function buildCodexWrapper(
       notifyScriptPath,
       "parasor-codex-post-tool-use",
     ),
-    PermissionRequest: buildCodexHookHandler(
-      notifyScriptPath,
-      "parasor-codex-permission-request",
-    ),
     Stop: buildCodexHookHandler(notifyScriptPath, "parasor-codex-stop"),
   };
 
@@ -535,7 +531,6 @@ SHIM_DIR='${binDir}'
 NOTIFY_ARG='${notifyConfig.replace(/'/g, "'\\''")}'
 HOOK_USER_PROMPT_SUBMIT='${codexHooks.UserPromptSubmit.replace(/'/g, "'\\''")}'
 HOOK_POST_TOOL_USE='${codexHooks.PostToolUse.replace(/'/g, "'\\''")}'
-HOOK_PERMISSION_REQUEST='${codexHooks.PermissionRequest.replace(/'/g, "'\\''")}'
 HOOK_STOP='${codexHooks.Stop.replace(/'/g, "'\\''")}'
 
 find_real_codex() {
@@ -604,7 +599,6 @@ emit_debug parasor-codex-wrapper-exec-start "\${1:-}"
   -c "notify=$NOTIFY_ARG" \\
   -c "hooks.UserPromptSubmit=$HOOK_USER_PROMPT_SUBMIT" \\
   -c "hooks.PostToolUse=$HOOK_POST_TOOL_USE" \\
-  -c "hooks.PermissionRequest=$HOOK_PERMISSION_REQUEST" \\
   -c "hooks.Stop=$HOOK_STOP" \\
   "$@"
 PARASOR_CODEX_STATUS=$?

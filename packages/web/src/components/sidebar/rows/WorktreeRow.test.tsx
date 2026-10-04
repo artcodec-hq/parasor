@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   SidebarProject,
@@ -58,7 +58,7 @@ const selection: SidebarSelection = {
 };
 
 describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
-  it("uses compact added/deleted dirty metrics and keeps the normal label color", () => {
+  it("uses compact added/deleted dirty metrics and modified label color", () => {
     render(
       <WorktreeRow
         project={project}
@@ -81,7 +81,7 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(label.getAttribute("title")).toBe(
       "2 added lines, 1 deleted line, 4 live ports",
     );
-    expect(label.className).toContain("text-text-secondary");
+    expect(label.className).toContain("text-warning");
     expect(screen.getByText("+2")).toBeTruthy();
     expect(screen.getByText("-1")).toBeTruthy();
     expect(screen.getByText("4")).toBeTruthy();
@@ -102,8 +102,8 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     ).toBeNull();
   });
 
-  it("falls back to the modified dot when only dirtyCount is available", () => {
-    const { container } = render(
+  it("falls back to muted modified title color when only dirtyCount is available", () => {
+    render(
       <WorktreeRow
         project={project}
         worktree={makeWorktree(1)}
@@ -116,12 +116,12 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(
       screen.getByRole("button", { name: "main, 1 uncommitted change" }),
     ).not.toBeNull();
-    expect(
-      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
-    ).not.toBeNull();
+    expect(screen.queryByText("~1")).toBeNull();
+    expect(screen.getByText("main").className).toContain("text-warning");
+    expect(screen.queryByLabelText("Modified worktree")).toBeNull();
   });
 
-  it("shows tracked line stats instead of the modified dot when available", () => {
+  it("shows tracked line stats instead of the dirty count when available", () => {
     const { container } = render(
       <WorktreeRow
         project={project}
@@ -142,10 +142,12 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     expect(
       container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
     ).toBeNull();
+    expect(screen.getByText("main").className).toContain("text-warning");
+    expect(screen.queryByText("~3")).toBeNull();
   });
 
-  it("falls back to the modified dot when dirty has no tracked line stats", () => {
-    const { container } = render(
+  it("falls back to dirty title color when dirty has no tracked line stats", () => {
+    render(
       <WorktreeRow
         project={project}
         worktree={{ ...makeWorktree(2), dirtyAdded: 0, dirtyDeleted: 0 }}
@@ -154,9 +156,9 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
     );
     expect(screen.queryByText("+0")).toBeNull();
     expect(screen.queryByText("-0")).toBeNull();
-    expect(
-      container.querySelector(".bg-\\[var\\(--theme-git-modified\\)\\]"),
-    ).not.toBeNull();
+    expect(screen.queryByText("~2")).toBeNull();
+    expect(screen.getByText("main").className).toContain("text-warning");
+    expect(screen.queryByLabelText("Modified worktree")).toBeNull();
   });
 
   it("uses the normal worktree label color when dirty === 0", () => {
@@ -204,8 +206,8 @@ describe("WorktreeRow dirty indicator (dirty indicator behavior)", () => {
   });
 });
 
-describe("WorktreeRow agent / missing-path pills", () => {
-  it("renders an 'agent' pill when origin is agent", () => {
+describe("WorktreeRow external / missing-path icons", () => {
+  it("renders a linked status icon when origin is agent", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -213,10 +215,15 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(getByLabelText("Agent worktree").textContent).toBe("agent");
+    const icon = getByLabelText("Linked worktree");
+    expect(icon.textContent).toBe("");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.className).not.toContain("border");
+    expect(icon.className).not.toContain("bg-");
+    expect(icon.getAttribute("title")).toBe("External worktree: agent-created");
   });
 
-  it("renders a 'missing' pill when orphan flag is set", () => {
+  it("renders a missing status icon when orphan flag is set", () => {
     const { getByLabelText } = render(
       <WorktreeRow
         project={project}
@@ -224,7 +231,30 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(getByLabelText("Missing worktree").textContent).toBe("missing");
+    const icon = getByLabelText("Missing worktree");
+    expect(icon.textContent).toBe("");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.className).not.toContain("border");
+    expect(icon.className).not.toContain("bg-");
+  });
+
+  it("strikes through the project label and shows Close for a missing project", () => {
+    const onCloseProject = vi.fn();
+    render(
+      <WorktreeRow
+        project={{ ...project, missing: true }}
+        worktree={makeWorktree(0)}
+        selection={selection}
+        displayName="kimi"
+        isProjectRoot
+        onCloseProject={onCloseProject}
+      />,
+    );
+
+    expect(screen.getByText("kimi").className).toContain("line-through");
+    expect(screen.getByLabelText("Missing project")).toBeTruthy();
+    screen.getByRole("button", { name: "Close project kimi" }).click();
+    expect(onCloseProject).toHaveBeenCalledWith("p1");
   });
 
   it("strikes through the worktree label when orphan flag is set", () => {
@@ -239,8 +269,37 @@ describe("WorktreeRow agent / missing-path pills", () => {
     expect(screen.getByText("main").className).toContain("line-through");
   });
 
-  it("renders a linked pill when lineage metadata is present", () => {
-    const { getByLabelText } = render(
+  it("replaces new-session with an accessible prune action for an orphan", () => {
+    const onNewSession = vi.fn();
+    const onPruneStaleWorktree = vi.fn();
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), orphan: true }}
+        selection={selection}
+        onNewSession={onNewSession}
+        onPruneStaleWorktree={onPruneStaleWorktree}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "New session in main" }),
+    ).toBeNull();
+    const prune = screen.getByRole("button", {
+      name: "Prune stale worktree main",
+    });
+    expect(prune.getAttribute("title")).toBe("Prune stale worktree");
+    prune.click();
+    expect(onNewSession).not.toHaveBeenCalled();
+    expect(onPruneStaleWorktree).toHaveBeenCalledWith(
+      "p1",
+      "/tmp/demo",
+      "main",
+    );
+  });
+
+  it("does not render a provenance pill for Parasor-created lineage metadata", () => {
+    const { queryByLabelText } = render(
       <WorktreeRow
         project={project}
         worktree={{
@@ -260,10 +319,70 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    const pill = getByLabelText("Linked worktree");
-    expect(pill.textContent).toBe("linked");
-    expect(pill.getAttribute("title")).toContain("parent: main");
-    expect(pill.getAttribute("title")).toContain("command: Dev");
+    expect(queryByLabelText("Linked worktree")).toBeNull();
+  });
+
+  it("renders a linked status icon when provenance is imported", () => {
+    const { getByLabelText } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{ ...makeWorktree(0), provenance: "imported" }}
+        selection={selection}
+      />,
+    );
+    const icon = getByLabelText("Linked worktree");
+    expect(icon.textContent).toBe("");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.getAttribute("title")).toBe("External worktree: imported");
+  });
+
+  it("renders one linked status icon when both external flags are set", () => {
+    const { getAllByLabelText } = render(
+      <WorktreeRow
+        project={project}
+        worktree={{
+          ...makeWorktree(0),
+          origin: "agent",
+          provenance: "imported",
+        }}
+        selection={selection}
+      />,
+    );
+    const icons = getAllByLabelText("Linked worktree");
+    expect(icons).toHaveLength(1);
+    expect(icons[0].getAttribute("title")).toBe(
+      "External worktree: agent-created, imported",
+    );
+  });
+
+  it("places status icons after the title and before right-side metrics/actions", () => {
+    render(
+      <WorktreeRow
+        project={project}
+        worktree={{
+          ...makeWorktree(2),
+          dirtyAdded: 12,
+          dirtyDeleted: 4,
+          origin: "agent",
+        }}
+        selection={selection}
+        onNewSession={vi.fn()}
+      />,
+    );
+    const label = screen.getByText("main");
+    const added = screen.getByText("+12");
+    const linked = screen.getByLabelText("Linked worktree");
+    const action = screen.getByRole("button", { name: "New session in main" });
+
+    expect(
+      label.compareDocumentPosition(linked) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      linked.compareDocumentPosition(added) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      added.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("omits both pills when neither flag is set", () => {
@@ -274,14 +393,13 @@ describe("WorktreeRow agent / missing-path pills", () => {
         selection={selection}
       />,
     );
-    expect(queryByLabelText("Agent worktree")).toBeNull();
     expect(queryByLabelText("Linked worktree")).toBeNull();
     expect(queryByLabelText("Missing worktree")).toBeNull();
   });
 });
 
 describe("WorktreeRow disclosure state", () => {
-  it("renders a collapsed worktree row from controlled state", () => {
+  it("renders worktree children without a disclosure control", () => {
     const worktree = makeWorktreeWithChild();
 
     render(
@@ -289,77 +407,11 @@ describe("WorktreeRow disclosure state", () => {
         project={project}
         worktree={worktree}
         selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Expand main" })).toBeTruthy();
-    expect(screen.queryByText("codex")).toBeNull();
-  });
-
-  it("reports user disclosure toggles per project and worktree path", () => {
-    const worktree = makeWorktreeWithChild();
-    const onWorktreeOpenChange = vi.fn();
-    const { rerender } = render(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Collapse main" }));
-    expect(onWorktreeOpenChange).toHaveBeenCalledWith(
-      project.id,
-      worktree.path,
-      false,
-    );
-
-    rerender(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Expand main" })).toBeTruthy();
-    expect(screen.queryByText("codex")).toBeNull();
-  });
-
-  it("forceOpen shows filtered results without overwriting stored disclosure state", () => {
-    const worktree = makeWorktreeWithChild();
-    const onWorktreeOpenChange = vi.fn();
-
-    const { rerender } = render(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-        forceOpen
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Collapse main" })).toBeTruthy();
     expect(screen.getByText("codex")).toBeTruthy();
-    expect(onWorktreeOpenChange).not.toHaveBeenCalled();
-
-    rerender(
-      <WorktreeRow
-        project={project}
-        worktree={worktree}
-        selection={selection}
-        worktreeOpen={{ [worktree.path]: false }}
-        onWorktreeOpenChange={onWorktreeOpenChange}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Expand main" })).toBeTruthy();
-    expect(screen.queryByText("codex")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse main" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand main" })).toBeNull();
   });
 });

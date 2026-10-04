@@ -39,6 +39,7 @@ import {
   type WorktreeListResult,
 } from "@parasor/shared";
 import { createProjectFileQueries } from "../application/files/project-file-queries.js";
+import { WorkspaceConflictError } from "../application/workspace/errors.js";
 import { createProjectQueries } from "../application/workspace/project-queries.js";
 import { createSessionCommands } from "../application/workspace/session-commands.js";
 import { createSessionQueries } from "../application/workspace/session-queries.js";
@@ -247,13 +248,14 @@ function terminalList(
 }
 
 async function terminalCreate(
-  { appStateStore, eventBus, ptyManager }: RuntimeApiDeps,
+  { appStateStore, eventBus, ptyManager, projectRuntime }: RuntimeApiDeps,
   params: TerminalCreateParams,
 ): Promise<TerminalCreateResult> {
   const session = await createSessionCommands({
     appStateStore,
     eventBus,
     ptyManager,
+    isProjectMissing: (projectId) => projectRuntime.isMissing(projectId),
   }).createSession(params);
   return { session };
 }
@@ -362,7 +364,14 @@ async function worktreeList(
     getWorktreeMetadata: (projectId) =>
       appStateStore.get().projectStates[projectId]?.worktreeMetadata ?? {},
   });
-  return { worktrees: await queries.getProjectWorktrees(params.projectId) };
+  const result = await queries.getProjectWorktrees(params.projectId);
+  if (result.status === "ok") return { worktrees: result.worktrees };
+  if (result.status === "missing-path") {
+    throw new WorkspaceConflictError("Project directory is missing");
+  }
+  throw new RuntimeApiError("internal_error", "Failed to list worktrees", {
+    retryable: true,
+  });
 }
 
 async function filesRead(
@@ -372,6 +381,9 @@ async function filesRead(
   const project = projectManager.get(params.projectId);
   if (!project) {
     throw new RuntimeApiError("project_not_found", "Project not found");
+  }
+  if (projectRuntime.isMissing(params.projectId)) {
+    throw new WorkspaceConflictError("Project directory is missing");
   }
   if (
     params.worktreePath !== undefined &&
@@ -404,6 +416,9 @@ async function gitStatus(
   { projectManager, projectRuntime, worktreeCache }: RuntimeApiDeps,
   params: GitStatusParams,
 ): Promise<GitStatusResult> {
+  if (projectRuntime.isMissing(params.projectId)) {
+    throw new WorkspaceConflictError("Project directory is missing");
+  }
   const { resolved } = await fenceWorktreePathWith(
     {
       projectManager,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isValidHttpUrlCandidate, urlAtCell } from "./terminal-url-detect.js";
+import {
+  isValidHttpUrlCandidate,
+  urlAtBufferCell,
+  urlAtCell,
+} from "./terminal-url-detect.js";
 
 type MockCellSpec = { chars: string; width: number };
 
@@ -7,9 +11,10 @@ function cellsFromText(text: string): MockCellSpec[] {
   return Array.from(text).map((chars) => ({ chars, width: 1 }));
 }
 
-function makeBufferLine(cells: MockCellSpec[]): unknown {
+function makeBufferLine(cells: MockCellSpec[], isWrapped = false): unknown {
   return {
     length: cells.length,
+    isWrapped,
     getCell(x: number, cell?: Record<string, unknown>) {
       const spec = cells[x];
       if (!spec) return undefined;
@@ -19,6 +24,13 @@ function makeBufferLine(cells: MockCellSpec[]): unknown {
       return target;
     },
   };
+}
+
+function getLine(
+  lines: Map<number, unknown>,
+): (lineNumber: number) => ReturnType<typeof makeBufferLine> | undefined {
+  return (lineNumber) =>
+    lines.get(lineNumber) as ReturnType<typeof makeBufferLine> | undefined;
 }
 
 describe("isValidHttpUrlCandidate", () => {
@@ -97,5 +109,121 @@ describe("urlAtCell", () => {
   it("skips a regex-shaped candidate the URL parser rejects", () => {
     const line = makeBufferLine(cellsFromText("http://[a"));
     expect(urlAtCell(line as never, 2)).toBeNull();
+  });
+});
+
+describe("urlAtBufferCell", () => {
+  const url = "https://example.com/path";
+  const lines = new Map<number, unknown>([
+    [1, makeBufferLine(cellsFromText("https://exa"))],
+    [2, makeBufferLine(cellsFromText("mple.com/"), true)],
+    [3, makeBufferLine(cellsFromText("path"), true)],
+  ]);
+
+  it.each([
+    [1, 2, { startCol: 0, length: 11 }],
+    [2, 3, { startCol: 0, length: 9 }],
+    [3, 1, { startCol: 0, length: 4 }],
+  ])("returns the full URL from wrapped row %i", (lineNumber, col, range) => {
+    expect(urlAtBufferCell(getLine(lines) as never, lineNumber, col)).toEqual({
+      url,
+      ...range,
+    });
+  });
+
+  it("does not open a truncated URL beyond the wrapped scan limit", () => {
+    const longLines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("https://a.co/"))],
+      [2, makeBufferLine(cellsFromText("x".repeat(2048)), true)],
+      [3, makeBufferLine(cellsFromText("/tail"), true)],
+    ]);
+    expect(urlAtBufferCell(getLine(longLines) as never, 1, 2)).toBeNull();
+  });
+
+  it("never joins a hard-newline row", () => {
+    const hardLines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("https://"))],
+      [2, makeBufferLine(cellsFromText("example.com"))],
+    ]);
+
+    expect(urlAtBufferCell(getLine(hardLines) as never, 1, 2)).toBeNull();
+    expect(urlAtBufferCell(getLine(hardLines) as never, 2, 2)).toBeNull();
+  });
+
+  it("keeps wide-cell offsets correct across a wrapped URL", () => {
+    const wideLines = new Map<number, unknown>([
+      [
+        1,
+        makeBufferLine([
+          { chars: "あ", width: 2 },
+          { chars: "", width: 0 },
+          ...cellsFromText("https://exa"),
+        ]),
+      ],
+      [2, makeBufferLine(cellsFromText("mple.com"), true)],
+    ]);
+
+    expect(urlAtBufferCell(getLine(wideLines) as never, 2, 3)).toEqual({
+      url: "https://example.com",
+      startCol: 0,
+      length: 8,
+    });
+  });
+
+  it("joins an early-wrapped wide glyph without inserting the empty margin cell", () => {
+    const wideLines = new Map<number, unknown>([
+      [
+        1,
+        makeBufferLine([
+          ...cellsFromText("https://a.co/"),
+          { chars: "", width: 1 },
+        ]),
+      ],
+      [
+        2,
+        makeBufferLine(
+          [
+            { chars: "あ", width: 2 },
+            { chars: "", width: 0 },
+            ...cellsFromText("/page"),
+          ],
+          true,
+        ),
+      ],
+    ]);
+
+    expect(urlAtBufferCell(getLine(wideLines) as never, 1, 2)?.url).toBe(
+      "https://a.co/あ/page",
+    );
+    expect(urlAtBufferCell(getLine(wideLines) as never, 2, 1)).toEqual({
+      url: "https://a.co/あ/page",
+      startCol: 0,
+      length: 7,
+    });
+    expect(urlAtBufferCell(getLine(wideLines) as never, 1, 13)).toBeNull();
+  });
+
+  it("preserves an actual trailing space as a URL delimiter", () => {
+    const spacedLines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("https://a.co/ "))],
+      [2, makeBufferLine(cellsFromText("unrelated"), true)],
+    ]);
+
+    expect(urlAtBufferCell(getLine(spacedLines) as never, 1, 2)?.url).toBe(
+      "https://a.co/",
+    );
+    expect(urlAtBufferCell(getLine(spacedLines) as never, 2, 2)).toBeNull();
+  });
+
+  it("returns null for missing lines, out-of-range cells, and invalid URLs", () => {
+    const invalidLines = new Map<number, unknown>([
+      [1, makeBufferLine(cellsFromText("http://[a"))],
+      [2, makeBufferLine(cellsFromText("bc"), true)],
+    ]);
+
+    expect(urlAtBufferCell(getLine(invalidLines) as never, 0, 0)).toBeNull();
+    expect(urlAtBufferCell(getLine(invalidLines) as never, 1, -1)).toBeNull();
+    expect(urlAtBufferCell(getLine(invalidLines) as never, 1, 99)).toBeNull();
+    expect(urlAtBufferCell(getLine(invalidLines) as never, 1, 2)).toBeNull();
   });
 });

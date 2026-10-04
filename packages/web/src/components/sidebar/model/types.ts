@@ -1,5 +1,6 @@
 import type {
   AgentStatusContext,
+  PaneKind,
   WorktreeLineageMetadata,
 } from "@parasor/shared";
 import type { AgentDotState } from "../../primitives/index.js";
@@ -10,7 +11,7 @@ import type { AgentDotState } from "../../primitives/index.js";
  * no knowledge of wire formats.
  */
 
-export type SidebarChildKind = "terminal" | "browser";
+export type SidebarChildKind = Exclude<PaneKind, "files" | "git">;
 
 export interface SidebarChild {
   id: string;
@@ -56,6 +57,12 @@ export interface SidebarWorktree {
    * Agent Team isolation root (see `Worktree.origin`).
    */
   origin?: "agent";
+  /**
+   * Optional product-level provenance surfaced as a pill only when it changes
+   * the user's expectation. Parasor-created worktrees are the default; imported
+   * means the path came from git worktree discovery without Parasor lineage.
+   */
+  provenance?: "imported";
   lineage?: WorktreeLineageMetadata;
   /**
    * `true` when the worktree path no longer exists on disk. The sidebar
@@ -79,6 +86,11 @@ export interface SidebarProject {
    * default to "is a repo" so they don't strobe-disable on hydration.
    */
   isRepo?: boolean;
+  /**
+   * Project root is missing on disk. Close-only tombstone; do not set
+   * worktree `orphan` on the root for this signal.
+   */
+  missing?: boolean;
   worktrees: SidebarWorktree[];
 }
 

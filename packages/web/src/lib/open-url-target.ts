@@ -1,20 +1,22 @@
 import type { OpenUrlOptions } from "./open-url-options.js";
-import { isCoarsePointer } from "./pointer.js";
 import {
   isLoopbackHostname,
+  isRemoteDevServerUrl,
   resolveReachableBrowserUrl,
 } from "./url-routing.js";
 
+export type OpenUrlTarget =
+  | { kind: "open"; url: string }
+  | { kind: "unreachable-loopback"; port: number };
+
 /**
  * Compute the destination URL for {@link App.openUrl} without performing the
- * `openHttpUrlInNewTab` DOM step. Pure aside from the `isCoarsePointer()`
- * media-query read, which mirrors the inline implementation.
+ * `openHttpUrlInNewTab` DOM step.
  *
- * Returns the resolved URL when the input should be handed to the device's
- * own browser; returns `null` when the input must be ignored -- non-`http(s)`
- * scheme, unparseable, or any case the loopback-rewrite contract decides not
- * to forward (`resolveReachableBrowserUrl` returning the original URL is
- * still a valid pass-through; only the parse/protocol gate produces `null`).
+ * Returns an explicit unavailable result when a remote viewer taps a loopback
+ * URL before parasor has a reachable port for it. Rewriting only the host in
+ * that state would point the viewer at a port which is still loopback-only on
+ * the parasor host.
  *
  * `findReachablePort` is injected so the orchestrator does not have to
  * carry `reachablePorts` / `activeProjectId` state -- the caller wires its
@@ -27,7 +29,7 @@ export function resolveOpenUrlTarget(
     devPort: number,
     projectId?: string,
   ) => number | undefined,
-): string | null {
+): OpenUrlTarget | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -35,7 +37,14 @@ export function resolveOpenUrlTarget(
     return null;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (isRemoteDevServerUrl(parsed)) {
+    return {
+      kind: "unreachable-loopback",
+      port: Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80)),
+    };
+  }
   let reachablePort: number | undefined;
+  let loopbackPort: number | undefined;
   if (isLoopbackHostname(parsed.hostname)) {
     const devPort = parsed.port
       ? Number(parsed.port)
@@ -43,11 +52,18 @@ export function resolveOpenUrlTarget(
         ? 443
         : 80;
     if (Number.isInteger(devPort)) {
+      loopbackPort = devPort;
       reachablePort = findReachablePort(devPort, options?.projectId);
     }
   }
-  return resolveReachableBrowserUrl(url, {
-    fallbackToPageHostWithoutReachablePort: isCoarsePointer(),
-    reachablePort,
-  });
+  const resolvedUrl = resolveReachableBrowserUrl(url, { reachablePort });
+  if (
+    loopbackPort !== undefined &&
+    reachablePort === undefined &&
+    typeof window !== "undefined" &&
+    !isLoopbackHostname(window.location.hostname)
+  ) {
+    return { kind: "unreachable-loopback", port: loopbackPort };
+  }
+  return { kind: "open", url: resolvedUrl };
 }

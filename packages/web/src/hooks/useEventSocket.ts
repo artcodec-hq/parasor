@@ -2,6 +2,7 @@ import type {
   HydrationPayload,
   Project,
   ProjectSidebarState,
+  WorktreePanes,
   WsEventEnvelope,
   WsEventMessage,
 } from "@parasor/shared";
@@ -83,6 +84,7 @@ export function useEventSocket() {
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const recoveryStartedAtRef = useRef<number | null>(null);
+  const activeProjectRef = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -197,6 +199,14 @@ export function useEventSocket() {
         if (snapshotDeadline !== null) {
           clearTimeout(snapshotDeadline);
           snapshotDeadline = null;
+        }
+      };
+      const sendActiveProject = (projectId: string | null) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        try {
+          ws.send(JSON.stringify({ type: "active-project", projectId }));
+        } catch {
+          // drop; reconnect will re-send after the next snapshot
         }
       };
       const sendPing = () => {
@@ -353,6 +363,7 @@ export function useEventSocket() {
           phaseRef.current = { state: "live", lastAppliedSeq: lastSeq };
           setStore(newStore);
           setEventSocketStatus({ phase: "open", since: Date.now() });
+          sendActiveProject(activeProjectRef.current);
           return;
         }
 
@@ -509,6 +520,35 @@ export function useEventSocket() {
     [],
   );
 
+  const seedProjectPanes = useCallback(
+    (
+      projectId: string,
+      worktrees: WorktreePanes[],
+      focusedPaneId: string | null,
+    ) => {
+      setStore((prev) =>
+        applyEvent(prev, {
+          type: "panes-updated",
+          projectId,
+          worktrees,
+          focusedPaneId,
+        }),
+      );
+    },
+    [],
+  );
+
+  const setActiveProject = useCallback((projectId: string | null) => {
+    activeProjectRef.current = projectId;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    try {
+      ws.send(JSON.stringify({ type: "active-project", projectId }));
+    } catch {
+      // reconnect re-sends after snapshot
+    }
+  }, []);
+
   const unreadCount = useMemo(
     () => store.notifications.filter((n) => !n.read).length,
     [store.notifications],
@@ -525,5 +565,7 @@ export function useEventSocket() {
     seedPaneCommands,
     seedIdeCommands,
     seedSidebarState,
+    seedProjectPanes,
+    setActiveProject,
   };
 }

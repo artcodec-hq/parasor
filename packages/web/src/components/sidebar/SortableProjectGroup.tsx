@@ -53,6 +53,11 @@ interface SortableProjectsProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -65,6 +70,7 @@ interface SortableProjectsProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 export function SortableProjects({
@@ -76,10 +82,12 @@ export function SortableProjects({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
   onReorderPanes,
+  onCloseProject,
 }: SortableProjectsProps) {
   const incomingIds = useMemo(() => projects.map((p) => p.id), [projects]);
   const [orderedIds, setOrderedIds] = useState<string[]>(incomingIds);
@@ -154,10 +162,12 @@ export function SortableProjects({
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
             onNewSession={onNewSession}
+            onPruneStaleWorktree={onPruneStaleWorktree}
             onToggleChildPin={onToggleChildPin}
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
+            onCloseProject={onCloseProject}
           />
         ))}
       </SortableContext>
@@ -175,6 +185,11 @@ interface SortableProjectItemProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -187,6 +202,7 @@ interface SortableProjectItemProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 function SortableProjectItem({
@@ -195,10 +211,12 @@ function SortableProjectItem({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
   onReorderPanes,
+  onCloseProject,
 }: SortableProjectItemProps) {
   const {
     attributes,
@@ -224,10 +242,12 @@ function SortableProjectItem({
         onSelectWorktree={onSelectWorktree}
         onSelectChild={onSelectChild}
         onNewSession={onNewSession}
+        onPruneStaleWorktree={onPruneStaleWorktree}
         onToggleChildPin={onToggleChildPin}
         worktreeOpen={worktreeOpenByProject?.[project.id]}
         onWorktreeOpenChange={onWorktreeOpenChange}
         onReorderPanes={onReorderPanes}
+        onCloseProject={onCloseProject}
         dragHandleProps={{
           ...attributes,
           ...listeners,

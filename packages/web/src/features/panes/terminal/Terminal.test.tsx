@@ -91,7 +91,12 @@ const {
     current: "attached",
   };
   const socketOptionsRef: {
-    onData?: (data: string) => void;
+    onData?: (data: string, onApplied?: () => void) => void;
+    onGeometry?: (geometry: {
+      cols: number;
+      rows: number;
+      epoch: number;
+    }) => void;
     onFullReplay?: (
       lastSeen: { generation: number; seq: string } | null,
     ) => void;
@@ -139,7 +144,11 @@ const {
       selectLines: vi.fn(),
       loadAddon: mockTermLoadAddon,
       registerLinkProvider: mockTermRegisterLinkProvider,
-      resize: mockTermResize,
+      resize(cols: number, rows: number) {
+        mockTermResize(cols, rows);
+        this.cols = cols;
+        this.rows = rows;
+      },
       refresh: mockTermRefresh,
       reset: mockTermReset,
       select: mockTermSelect,
@@ -152,6 +161,7 @@ const {
       },
       buffer: {
         active: {
+          type: "normal",
           viewportY: 5,
           baseY: 5,
           cursorX: 8,
@@ -322,7 +332,12 @@ vi.mock("../../../lib/open-external-url.js", () => ({
 
 vi.mock("../../../hooks/useTerminalSocket.js", () => ({
   useTerminalSocket: (options: {
-    onData: (data: string) => void;
+    onData: (data: string, onApplied?: () => void) => void;
+    onGeometry?: (geometry: {
+      cols: number;
+      rows: number;
+      epoch: number;
+    }) => void;
     onFullReplay?: (
       lastSeen: { generation: number; seq: string } | null,
     ) => void;
@@ -333,6 +348,7 @@ vi.mock("../../../hooks/useTerminalSocket.js", () => ({
     }) => { generation: number; seq: string } | null;
   }) => {
     socketOptionsRef.onData = options.onData;
+    socketOptionsRef.onGeometry = options.onGeometry;
     socketOptionsRef.onFullReplay = options.onFullReplay;
     socketOptionsRef.initialLastSeen =
       options.resolveInitialLastSeen?.({ cols: 80, rows: 24 }) ??
@@ -595,6 +611,7 @@ describe("Terminal", () => {
       callback?.();
     });
     socketOptionsRef.onData = undefined;
+    socketOptionsRef.onGeometry = undefined;
     socketOptionsRef.onFullReplay = undefined;
     socketOptionsRef.initialLastSeen = undefined;
     mockUploadDrops.mockResolvedValue(["/tmp/uploaded.txt"]);
@@ -640,6 +657,10 @@ describe("Terminal", () => {
       configurable: true,
       value: undefined,
     });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: undefined,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 404 })),
@@ -649,6 +670,39 @@ describe("Terminal", () => {
     window.parasorTerminalTrace?.clear();
     disableTerminalTrace();
     window.parasorTerminalTrace?.clear();
+  });
+
+  it("resizes xterm to authoritative server geometry", () => {
+    render(<Terminal sessionId="s1" />, { wrapper });
+    mockTermResize.mockClear();
+    mockTermRefresh.mockClear();
+
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 43, rows: 20, epoch: 7 });
+    });
+
+    expect(mockTermResize).toHaveBeenCalledWith(43, 20);
+    expect(mockTermRefresh).toHaveBeenCalledWith(0, 19);
+  });
+
+  it("bottom-anchors the previous normal-buffer viewport when rows grow", () => {
+    render(<Terminal sessionId="s1" />, { wrapper });
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 80, rows: 20, epoch: 2 });
+    });
+    mockTermWrite.mockClear();
+    mockTermRefresh.mockClear();
+
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 80, rows: 51, epoch: 3 });
+    });
+
+    expect(mockTermResize).toHaveBeenLastCalledWith(80, 51);
+    expect(mockTermWrite).toHaveBeenCalledWith(
+      "\x1b[31T",
+      expect.any(Function),
+    );
+    expect(mockTermRefresh).toHaveBeenCalledWith(0, 50);
   });
 
   it("opens xterm immediately on mount", () => {
@@ -662,12 +716,8 @@ describe("Terminal", () => {
     expect(mockSendInit).toHaveBeenCalledWith(80, 24);
   });
 
-  it("claims the shared PTY size on touch mount", () => {
+  it("claims the shared PTY size on mount", () => {
     enableTerminalTrace();
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: (q: string) => ({ matches: q === "(pointer: coarse)" }),
-    });
 
     render(<Terminal sessionId="s1" />, { wrapper });
 
@@ -1312,10 +1362,14 @@ describe("Terminal", () => {
       vi.advanceTimersByTime(100);
     });
 
-    expect(mockTermResize).toHaveBeenCalledWith(100, 30);
+    expect(mockTermResize).not.toHaveBeenCalled();
     expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "resize" }),
+      expect.objectContaining({ type: "resize", cols: 100, rows: 30 }),
     );
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 100, rows: 30, epoch: 2 });
+    });
+    expect(mockTermResize).toHaveBeenCalledWith(100, 30);
     vi.useRealTimers();
   });
 
@@ -1357,9 +1411,16 @@ describe("Terminal", () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
+    expect(mockTermResize).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 42, rows: 18 }),
+    );
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 42, rows: 18, epoch: 2 });
+    });
     expect(mockTermResize).toHaveBeenCalledTimes(1);
     expect(mockTermResize).toHaveBeenCalledWith(42, 18);
-    expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
+    expect(mockTermRefresh).toHaveBeenCalledWith(0, 17);
     vi.useRealTimers();
   });
 
@@ -1403,6 +1464,11 @@ describe("Terminal", () => {
       vi.advanceTimersByTime(100);
     });
 
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 42, rows: 18, epoch: 2 });
+    });
+
     expect(mockTermResize).toHaveBeenCalledWith(42, 18);
     expect(mockTermScrollToBottom).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
@@ -1429,6 +1495,11 @@ describe("Terminal", () => {
     act(() => {
       roCallbacks[0]([] as ResizeObserverEntry[]);
       vi.advanceTimersByTime(100);
+    });
+
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 42, rows: 18, epoch: 2 });
     });
 
     expect(mockTermResize).toHaveBeenCalledWith(42, 18);
@@ -1459,6 +1530,11 @@ describe("Terminal", () => {
     act(() => {
       roCallbacks[0]([] as ResizeObserverEntry[]);
       vi.advanceTimersByTime(100);
+    });
+
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 80, rows: 18, epoch: 2 });
     });
 
     expect(mockTermResize).toHaveBeenCalledWith(80, 18);
@@ -1527,6 +1603,11 @@ describe("Terminal", () => {
       vi.advanceTimersByTime(16);
     });
 
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 42, rows: 18, epoch: 2 });
+    });
+
     expect(mockTermResize).toHaveBeenCalledWith(42, 18);
     expect(mockTermScrollToBottom).not.toHaveBeenCalled();
     expect(mockTermScrollToLine).toHaveBeenCalledWith(95);
@@ -1564,6 +1645,11 @@ describe("Terminal", () => {
       vi.advanceTimersByTime(100);
     });
 
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 80, rows: 18, epoch: 2 });
+    });
+
     expect(mockTermResize).toHaveBeenCalledWith(80, 18);
     expect(mockTermScrollToBottom).toHaveBeenCalled();
     expect(mockTermScrollToLine).not.toHaveBeenCalled();
@@ -1573,10 +1659,10 @@ describe("Terminal", () => {
     expect(
       window.parasorTerminalTrace
         ?.dump()
-        .find((event) => event.type === "terminal-resize-apply"),
+        .find((event) => event.type === "terminal-resize-propose"),
     ).toEqual(
       expect.objectContaining({
-        reason: "keyboard-open-bottom",
+        reason: "prefer-bottom",
         ptyResizeSent: true,
       }),
     );
@@ -1599,6 +1685,11 @@ describe("Terminal", () => {
     act(() => {
       roCallbacks[0]([] as ResizeObserverEntry[]);
       vi.advanceTimersByTime(100);
+    });
+
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 90, rows: 18, epoch: 2 });
     });
 
     expect(mockTermResize).toHaveBeenCalledWith(90, 18);
@@ -1639,6 +1730,11 @@ describe("Terminal", () => {
       vi.advanceTimersByTime(100);
     });
 
+    expect(mockTermResize).not.toHaveBeenCalled();
+    act(() => {
+      socketOptionsRef.onGeometry?.({ cols: 80, rows: 30, epoch: 2 });
+    });
+
     expect(mockTermResize).toHaveBeenCalledWith(80, 30);
     expect(mockTermScrollToBottom).not.toHaveBeenCalled();
     expect(mockTermScrollToLine).toHaveBeenCalledWith(22);
@@ -1648,44 +1744,27 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
-  it("claims the terminal width on desktop when the cursor enters, not on bare focus", () => {
-    // Non-touch (no matchMedia mock -> isTouch false). The shared PTY width is
-    // claimed only on engagement: desktop = cursor entering the terminal.
+  it("does not claim the desktop viewport when the browser returns to foreground", () => {
     render(<Terminal sessionId="s1" />, { wrapper });
-    const termContainer = must(document.querySelector(".xterm")).parentElement;
     mockTermResize.mockClear();
     mockSend.mockClear();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
 
-    // A bare window focus (alt-tab back) must NOT re-claim the width.
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(mockTermResize).not.toHaveBeenCalled();
-
-    // The cursor entering the terminal claims it (fits + resizes the PTY).
-    act(() => {
-      termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
-    });
-    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
+    expect(mockSend).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
+    );
   });
 
-  it("re-claims the desktop width on focus when the cursor is already over the terminal", () => {
-    render(<Terminal sessionId="s1" />, { wrapper });
-    const termContainer = must(document.querySelector(".xterm")?.parentElement);
-    const term = must(
-      MockXTerm.mock.results[0]?.value as
-        | { cols: number; rows: number }
-        | undefined,
-    );
-    vi.spyOn(termContainer, "matches").mockImplementation(
-      (selector) => selector === ":hover",
-    );
-    mockTermResize.mockClear();
-    mockTermResize.mockImplementationOnce((cols: number, rows: number) => {
-      term.cols = cols;
-      term.rows = rows;
+  it("claims the touch viewport when the browser returns to foreground", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({ matches: query === "(pointer: coarse)" }),
     });
+    render(<Terminal sessionId="s1" />, { wrapper });
     mockSend.mockClear();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 90, rows: 30 });
 
@@ -1693,81 +1772,27 @@ describe("Terminal", () => {
       window.dispatchEvent(new Event("focus"));
     });
 
-    expect(mockTermResize).toHaveBeenCalledWith(90, 30);
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize", cols: 90, rows: 30 }),
     );
   });
 
-  it("re-claims the shared PTY width on cursor enter even when the local size is unchanged", () => {
-    // The shared PTY may hold another device's width. Engaging must push this
-    // device's size to the PTY even though the local xterm already matches it,
-    // otherwise the "unchanged" check would never reclaim it.
+  it("does not send an unchanged desktop foreground claim", () => {
     render(<Terminal sessionId="s1" />, { wrapper });
-    const termContainer = must(document.querySelector(".xterm")).parentElement;
-    mockTermResize.mockClear();
-    mockSend.mockClear();
-    // proposeDimensions equals the mock xterm's fixed 80x24 -> locally unchanged.
-    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
-
-    act(() => {
-      termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
-    });
-
-    expect(mockTermResize).not.toHaveBeenCalled();
-    expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
-    );
-  });
-
-  it("pins to bottom during an unchanged desktop claim only when already at bottom", () => {
-    vi.useFakeTimers();
-    render(<Terminal sessionId="s1" />, { wrapper });
-    const term = MockXTerm.mock.results[0]?.value as {
-      buffer: { active: { viewportY: number; baseY: number } };
-    };
-    const termContainer = must(document.querySelector(".xterm")).parentElement;
-
-    term.buffer.active.baseY = 60;
-    term.buffer.active.viewportY = 60;
     mockTermResize.mockClear();
     mockTermScrollToBottom.mockClear();
+    mockTermRefresh.mockClear();
     mockSend.mockClear();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
 
     act(() => {
-      termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
-    });
-
-    expect(mockTermResize).not.toHaveBeenCalled();
-    expect(mockTermScrollToBottom).toHaveBeenCalled();
-    expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
-    );
-    vi.useRealTimers();
-  });
-
-  it("keeps reading position during an unchanged desktop claim when scrolled up", () => {
-    render(<Terminal sessionId="s1" />, { wrapper });
-    const term = MockXTerm.mock.results[0]?.value as {
-      buffer: { active: { viewportY: number; baseY: number } };
-    };
-    const termContainer = must(document.querySelector(".xterm")).parentElement;
-
-    term.buffer.active.baseY = 60;
-    term.buffer.active.viewportY = 22;
-    mockTermResize.mockClear();
-    mockTermScrollToBottom.mockClear();
-    mockSend.mockClear();
-    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
-
-    act(() => {
-      termContainer?.dispatchEvent(new MouseEvent("mouseenter"));
+      window.dispatchEvent(new Event("focus"));
     });
 
     expect(mockTermResize).not.toHaveBeenCalled();
     expect(mockTermScrollToBottom).not.toHaveBeenCalled();
-    expect(mockSend).toHaveBeenCalledWith(
+    expect(mockTermRefresh).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
     );
   });
@@ -1978,7 +2003,7 @@ describe("Terminal", () => {
           skipped: false,
         }),
         expect.objectContaining({
-          type: "terminal-resize-apply",
+          type: "terminal-resize-propose",
           sessionId: "s-resize-trace",
           proposedCols: 42,
           proposedRows: 18,
@@ -1986,18 +2011,17 @@ describe("Terminal", () => {
       ]),
     );
     expect(
-      trace.find((event) => event.type === "terminal-resize-apply"),
+      trace.find((event) => event.type === "terminal-resize-propose"),
     ).toEqual(
       expect.objectContaining({
         durationMs: expect.any(Number),
         proposeDurationMs: expect.any(Number),
-        resizeDurationMs: expect.any(Number),
       }),
     );
     vi.useRealTimers();
   });
 
-  it("refreshes visible rows when layout is valid but cols and rows are unchanged", () => {
+  it("leaves xterm untouched when observed layout keeps the same grid", () => {
     vi.useFakeTimers();
     mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
     render(<Terminal sessionId="s1" />, { wrapper });
@@ -2012,7 +2036,7 @@ describe("Terminal", () => {
     });
 
     expect(mockTermResize).not.toHaveBeenCalled();
-    expect(mockTermRefresh).toHaveBeenCalledWith(0, 23);
+    expect(mockTermRefresh).not.toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "resize" }),
     );
@@ -2134,6 +2158,52 @@ describe("Terminal", () => {
     vi.useRealTimers();
   });
 
+  it("claims the desktop viewport before sending terminal input", () => {
+    render(<Terminal sessionId="s-input-claim" />, { wrapper });
+    mockSend.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    const onData = mockTermOnData.mock.calls[0]?.[0] as
+      | ((data: string) => void)
+      | undefined;
+    if (!onData) throw new Error("missing onData handler");
+
+    act(() => {
+      onData("a");
+    });
+
+    expect(mockSend.mock.calls.slice(0, 2).map(([msg]) => msg)).toEqual([
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+      { type: "input", data: "a" },
+    ]);
+  });
+
+  it("claims the desktop viewport before input even with queued output", async () => {
+    render(<Terminal sessionId="s-input-claim-queued" />, { wrapper });
+    mockSend.mockClear();
+    mockTermWrite.mockClear();
+    mockFitAddonProposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    const onData = mockTermOnData.mock.calls[0]?.[0] as
+      | ((data: string) => void)
+      | undefined;
+    if (!onData) throw new Error("missing onData handler");
+
+    act(() => {
+      socketOptionsRef.onData?.("queued output");
+      onData("a");
+    });
+
+    expect(mockTermWrite).not.toHaveBeenCalled();
+    expect(mockSend.mock.calls.slice(0, 2).map(([msg]) => msg)).toEqual([
+      expect.objectContaining({ type: "resize", cols: 80, rows: 24 }),
+      { type: "input", data: "a" },
+    ]);
+
+    await flushAnimationFrame();
+    expect(mockTermWrite).toHaveBeenCalledWith("queued output");
+  });
+
   it("suppresses duplicate text emitted during one IME composition commit", () => {
     render(<Terminal sessionId="s-ime" />, { wrapper });
     mockSend.mockClear();
@@ -2164,8 +2234,10 @@ describe("Terminal", () => {
       onData("確定");
     });
 
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend).toHaveBeenCalledWith({ type: "input", data: "確定" });
+    const inputs = mockSend.mock.calls
+      .map(([msg]) => msg)
+      .filter((msg) => msg.type === "input");
+    expect(inputs).toEqual([{ type: "input", data: "確定" }]);
   });
 
   it("does not suppress repeated text outside the IME duplicate window", () => {
@@ -2200,9 +2272,13 @@ describe("Terminal", () => {
       onData("あ");
     });
 
-    expect(mockSend).toHaveBeenCalledTimes(2);
-    expect(mockSend).toHaveBeenNthCalledWith(1, { type: "input", data: "あ" });
-    expect(mockSend).toHaveBeenNthCalledWith(2, { type: "input", data: "あ" });
+    const inputs = mockSend.mock.calls
+      .map(([msg]) => msg)
+      .filter((msg) => msg.type === "input");
+    expect(inputs).toEqual([
+      { type: "input", data: "あ" },
+      { type: "input", data: "あ" },
+    ]);
   });
 
   it("records sanitized xterm, replay, and DOM trace events when enabled", async () => {
@@ -2661,6 +2737,14 @@ describe("Terminal", () => {
     });
     expect(pointerDown.defaultPrevented).toBe(true);
     expect(rootPointerDown).not.toHaveBeenCalled();
+    const contextMenu = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      copyButton.dispatchEvent(contextMenu);
+    });
+    expect(contextMenu.defaultPrevented).toBe(true);
 
     mockTermFocus.mockClear();
     await act(async () => {
@@ -2703,6 +2787,181 @@ describe("Terminal", () => {
     });
     expect(laterMouseDown.defaultPrevented).toBe(false);
     expect(xtermMouseDownHandler).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("falls back to execCommand when native terminal copy writeText fails", async () => {
+    vi.useFakeTimers();
+    enableTerminalTrace();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    const writeText = vi
+      .fn()
+      .mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    });
+    mockTermGetSelection.mockReturnValue("copy me");
+    mockTermGetSelectionPosition.mockReturnValue({
+      start: { x: 8, y: 7 },
+      end: { x: 16, y: 7 },
+    });
+    const { container } = render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 10 },
+        ]),
+      );
+      vi.advanceTimersByTime(451);
+      screen.dispatchEvent(
+        makeTouchEvent("touchend", [
+          { identifier: 1, clientX: 120, clientY: 40 },
+        ]),
+      );
+    });
+
+    await act(async () => {
+      buttonByLabel(container, "Copy terminal selection").click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(localStorage.getItem(TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY)).toBe(
+      "copy me",
+    );
+    expect(window.parasorTerminalTrace?.dump()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-toolbar-copy",
+          status: "native",
+          dataLength: 7,
+        }),
+      ]),
+    );
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("opens an external copy dialog from a long-press on the copy action", async () => {
+    vi.useFakeTimers();
+    enableTerminalTrace();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    mockTermGetSelection.mockReturnValue("copy me");
+    mockTermGetSelectionPosition.mockReturnValue({
+      start: { x: 8, y: 7 },
+      end: { x: 16, y: 7 },
+    });
+    const { container } = render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 10 },
+        ]),
+      );
+      vi.advanceTimersByTime(451);
+      screen.dispatchEvent(
+        makeTouchEvent("touchend", [
+          { identifier: 1, clientX: 120, clientY: 40 },
+        ]),
+      );
+    });
+
+    const copyButton = buttonByLabel(container, "Copy terminal selection");
+    act(() => {
+      copyButton.dispatchEvent(
+        makePointerEvent("pointerdown", { clientX: 120, clientY: 20 }),
+      );
+      vi.advanceTimersByTime(650);
+    });
+
+    expect(
+      document.querySelector('[role="dialog"][aria-label="Copy text"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).toBeNull();
+    expect(
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.textContent === "Close",
+      ),
+    ).toBe(true);
+    const copyText = document.querySelector<HTMLTextAreaElement>(
+      '[aria-label="Selected terminal text"]',
+    );
+    expect(copyText?.value).toBe("copy me");
+    expect(copyText?.selectionStart).toBe(copyText?.selectionEnd);
+
+    await act(async () => {
+      copyButton.dispatchEvent(
+        makePointerEvent("pointerup", { clientX: 120, clientY: 20 }),
+      );
+      copyButton.click();
+    });
+
+    expect(writeText).not.toHaveBeenCalled();
+
+    const dialogCopyButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent === "Copy");
+    if (!dialogCopyButton) throw new Error("missing dialog copy button");
+    await act(async () => {
+      dialogCopyButton.click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(localStorage.getItem(TERMINAL_INTERNAL_CLIPBOARD_STORAGE_KEY)).toBe(
+      "copy me",
+    );
+    expect(
+      document.querySelector('[role="dialog"][aria-label="Copy text"]'),
+    ).toBeNull();
+    expect(window.parasorTerminalTrace?.dump()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal-external-copy-dialog-open",
+          dataLength: 7,
+        }),
+        expect.objectContaining({
+          type: "terminal-external-copy-dialog-copy",
+          status: "internal",
+          dataLength: 7,
+        }),
+        expect.objectContaining({
+          type: "terminal-external-copy-dialog-copy",
+          status: "native",
+          dataLength: 7,
+        }),
+      ]),
+    );
     vi.useRealTimers();
   });
 
@@ -2895,6 +3154,54 @@ describe("Terminal", () => {
       type: "input",
       data: "tap paste",
     });
+  });
+
+  it("dismisses the paste-only toolbar when tapping outside it", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue("paste") },
+    });
+    const { container } = render(<Terminal sessionId="s1" />, { wrapper });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 80, clientY: 20 },
+        ]),
+      );
+      screen.dispatchEvent(
+        makeTouchEndEvent([{ identifier: 1, clientX: 80, clientY: 20 }]),
+      );
+    });
+
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).not.toBeNull();
+
+    act(() => {
+      screen.dispatchEvent(
+        makeTouchEvent("touchstart", [
+          { identifier: 1, clientX: 120, clientY: 20 },
+        ]),
+      );
+      screen.dispatchEvent(
+        makeTouchEndEvent([{ identifier: 1, clientX: 120, clientY: 20 }]),
+      );
+    });
+
+    expect(
+      container.querySelector(
+        '[role="toolbar"][aria-label="Terminal selection actions"]',
+      ),
+    ).toBeNull();
   });
 
   it("falls back to the internal terminal clipboard when native clipboard read fails", async () => {
@@ -3526,6 +3833,31 @@ describe("Terminal", () => {
     plainTapOnScreen(screen, 105, 5);
 
     expect(mockTermSelect).toHaveBeenCalledWith(4, 5, 21);
+    expect(onOpenUrl).toHaveBeenCalledWith("http://localhost:5173", {
+      projectId: "p1",
+    });
+    expect(mockOpenHttpUrlInNewTab).not.toHaveBeenCalled();
+  });
+
+  it("routes a tap on a soft-wrapped loopback URL through onOpenUrl", () => {
+    const onOpenUrl = vi.fn();
+    const lines = new Map<number, unknown>([
+      [5, makeBufferLine(cellsFromText("http://local"))],
+      [6, makeBufferLine(cellsFromText("host:5173"), true)],
+    ]);
+    mockTermGetLine.mockImplementation((lineNumber: number) =>
+      lines.get(lineNumber),
+    );
+    render(<Terminal sessionId="s1" projectId="p1" onOpenUrl={onOpenUrl} />, {
+      wrapper,
+    });
+    const screen = must(document.querySelector(".xterm-screen"));
+    mockScreenRect(screen);
+
+    // y=15 selects buffer row 6; x=45 selects the continuation's "host".
+    plainTapOnScreen(screen, 45, 15);
+
+    expect(mockTermSelect).toHaveBeenCalledWith(0, 6, 9);
     expect(onOpenUrl).toHaveBeenCalledWith("http://localhost:5173", {
       projectId: "p1",
     });

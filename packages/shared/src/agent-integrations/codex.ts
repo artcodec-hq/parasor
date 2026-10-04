@@ -34,7 +34,7 @@ export const CODEX_AGENT_INTEGRATION = {
     sessionstart: "noop",
     userpromptsubmit: { lifecycle: "running" },
     posttooluse: { lifecycle: "running" },
-    permissionrequest: { lifecycle: "waiting" },
+    permissionrequest: "noop",
     stop: { lifecycle: "completed" },
     task_started: { lifecycle: "running", source: "notify" },
     turn_started: { lifecycle: "running", source: "notify" },

@@ -127,20 +127,22 @@ export function AppShellSplit({ navigation, main }: AppShellSplitProps) {
       <div className="min-w-0 overflow-hidden bg-bg-secondary" style={navStyle}>
         {navigation}
       </div>
-      <hr
-        aria-label="Resize navigation pane"
-        aria-orientation="vertical"
-        aria-valuenow={Math.round(navPct)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onKeyDown={onKeyDown}
-        className="cm-split-resizer relative z-[2] w-px shrink-0 cursor-col-resize bg-border before:absolute before:inset-y-0 before:-inset-x-3 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-      />
+      <div className="relative z-2 w-px shrink-0">
+        <hr
+          aria-label="Resize navigation pane"
+          aria-orientation="vertical"
+          aria-valuenow={Math.round(navPct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onKeyDown={onKeyDown}
+          className="cm-split-resizer cm-shell-resizer absolute inset-y-0 left-1/2 w-2 -translate-x-1/2 cursor-col-resize bg-transparent after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border after:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        />
+      </div>
       <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
         {main}
       </div>

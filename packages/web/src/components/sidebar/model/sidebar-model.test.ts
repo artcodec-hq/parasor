@@ -72,6 +72,27 @@ describe("sortProjects", () => {
   });
 });
 
+describe("buildSidebarProjects -- missing project tombstone", () => {
+  it("renders one Close-only root with leftover terminals and no orphan flag", () => {
+    const result = buildSidebarProjects({
+      projects: [project({ id: "p1", name: "kimi", path: "/repos/kimi" })],
+      activeProjectId: "p1",
+      activeWorktrees: [],
+      sessions: [session({ id: "s1", cwd: "/repos/kimi/nested" })],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      missingProjectIds: ["p1"],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.missing).toBe(true);
+    expect(result[0]?.worktrees).toHaveLength(1);
+    expect(result[0]?.worktrees[0]?.orphan).toBeUndefined();
+    expect(result[0]?.worktrees[0]?.children.map((c) => c.id)).toEqual([
+      terminalPaneId("s1"),
+    ]);
+  });
+});
+
 describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
   it("returns a placeholder main with no children when project has no sessions", () => {
     const projects = [project({ id: "p1", path: "/repos/p1" })];
@@ -697,6 +718,38 @@ describe("buildSidebarProjects -- inactive project (sessions-derived)", () => {
     });
 
     expect(result[0]?.worktrees[1]?.lineage).toBe(lineage);
+    expect(result[0]?.worktrees[1]?.provenance).toBeUndefined();
+  });
+
+  it("marks inactive discovered worktrees without lineage as imported", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1",
+          head: "abc",
+          branch: "main",
+        },
+        {
+          path: "/repos/p1/wt-external",
+          head: "def",
+          branch: "feature",
+        },
+      ],
+    };
+
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "OTHER",
+      activeWorktrees: [],
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(result[0]?.worktrees[0]?.provenance).toBeUndefined();
+    expect(result[0]?.worktrees[1]?.provenance).toBe("imported");
   });
 
   it("merges projectWorktrees with matching session-derived cwds and marks missing paths orphan", () => {
@@ -1028,6 +1081,35 @@ describe("buildSidebarProjects -- active project (worktrees-derived)", () => {
     });
 
     expect(result[0]?.worktrees[0]?.lineage).toBe(lineage);
+    expect(result[0]?.worktrees[0]?.provenance).toBeUndefined();
+  });
+
+  it("marks active discovered worktrees without lineage as imported", () => {
+    const projects = [project({ id: "p1", path: "/repos/p1" })];
+    const activeWorktrees: WorktreePanes[] = [
+      { path: "/repos/p1.worktrees/feat", panes: [] },
+    ];
+    const worktreesByProject: Record<string, Worktree[]> = {
+      p1: [
+        {
+          path: "/repos/p1.worktrees/feat",
+          head: "abc",
+          branch: "feat",
+        },
+      ],
+    };
+
+    const result = buildSidebarProjects({
+      projects,
+      activeProjectId: "p1",
+      activeWorktrees,
+      sessions: [],
+      agentStates: {},
+      reviewPendingSessions: new Set(),
+      worktreesByProject,
+    });
+
+    expect(result[0]?.worktrees[0]?.provenance).toBe("imported");
   });
 
   it("falls back to zeroed counters when worktreesByProject omitted", () => {
