@@ -16,10 +16,10 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: ^1.19.17
-        version: 1.19.17(hono@4.13.13)
+        version: 1.19.17(hono@4.13.12)
       '@hono/node-ws':
         specifier: ^1.3.1
-        version: 1.3.1(@hono/node-server@1.19.17(hono@4.13.13))(hono@4.13.13)
+        version: 1.3.1(@hono/node-server@1.19.17(hono@4.13.12))(hono@4.13.12)
       '@parasor/shared':
         specifier: workspace:*
         version: link:../shared
@@ -30,8 +30,8 @@ importers:
         specifier: 6.1.0-beta.197
         version: 6.1.0-beta.197
       hono:
-        specifier: ^4.13.13
-        version: 4.13.13
+        specifier: ^4.13.12
+        version: 4.13.12
       ignore:
         specifier: ^7.0.5
         version: 7.0.5
@@ -2308,8 +2308,8 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  hono@4.13.13:
-    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
+  hono@4.13.12:
+    resolution: {integrity: sha512-6E2QDAc9Ick9Sq77ZrGS/dk2WUYni91aufTw6LJKpV7w8kW5/GxVUc650FOADOmlwg3K+f7Pun6XlV+pYmW6gw==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@6.0.0:
@@ -3702,14 +3702,14 @@ snapshots:
 
   '@exodus/bytes@1.15.0': {}
 
-  '@hono/node-server@1.19.17(hono@4.13.13)':
+  '@hono/node-server@1.19.17(hono@4.13.12)':
     dependencies:
-      hono: 4.13.13
+      hono: 4.13.12
 
-  '@hono/node-ws@1.3.1(@hono/node-server@1.19.17(hono@4.13.13))(hono@4.13.13)':
+  '@hono/node-ws@1.3.1(@hono/node-server@1.19.17(hono@4.13.12))(hono@4.13.12)':
     dependencies:
-      '@hono/node-server': 1.19.17(hono@4.13.13)
-      hono: 4.13.13
+      '@hono/node-server': 1.19.17(hono@4.13.12)
+      hono: 4.13.12
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -4934,7 +4934,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.13: {}
+  hono@4.13.12: {}
 
   html-encoding-sniffer@6.0.0:
     dependencies:
