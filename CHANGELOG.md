@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.5 - Unreleased
+## 0.1.5 - 2026-11-10
 
 ### Upgrade notes
 
@@ -11,6 +11,9 @@
 
 ### Fixed
 
+- Show "Access denied" when the new-project folder browser rejects a path
+  outside the home directory, instead of reporting that the directory is
+  missing. (#131)
 - Preserve terminal geometry and cursor state across focus changes and replay.
 - Keep the server available when a registered project directory is missing.
 - Keep Parasor listener environment variables out of child terminal sessions.
