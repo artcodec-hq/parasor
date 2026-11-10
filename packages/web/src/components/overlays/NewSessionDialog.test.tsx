@@ -124,6 +124,30 @@ describe("NewSessionDialog command launcher", () => {
     ]);
   });
 
+  it("organizes command management into built-in and custom sections", () => {
+    const { getByText, queryByText } = renderDialog();
+    fireEvent.click(getByText("Manage commands"));
+
+    expect(getByText("Built-in commands")).toBeTruthy();
+    expect(getByText("Custom commands")).toBeTruthy();
+    expect(getByText("Dev server")).toBeTruthy();
+    expect(queryByText("Done")).toBeNull();
+    expect(queryByText("Delete")).toBeNull();
+  });
+
+  it("uses the header back button to leave the command form before leaving management", () => {
+    const { getByLabelText, getByText, queryByText } = renderDialog();
+    fireEvent.click(getByText("Manage commands"));
+    fireEvent.click(getByText("Add"));
+
+    expect(getByText("New custom command")).toBeTruthy();
+    fireEvent.click(getByLabelText("Back"));
+
+    expect(getByText("Manage commands")).toBeTruthy();
+    expect(getByText("Custom commands")).toBeTruthy();
+    expect(queryByText("New custom command")).toBeNull();
+  });
+
   it("updates built-in agent command presets from the editor", () => {
     const onCommandsChange = vi.fn();
     const { getByText, getAllByText, container } = renderDialog({
@@ -148,6 +172,38 @@ describe("NewSessionDialog command launcher", () => {
         enabled: true,
       },
     ]);
+  });
+
+  it("resets built-in command overrides from the edit form", () => {
+    const onCommandsChange = vi.fn();
+    const { getByText, getAllByText } = renderDialog({
+      commandConfigs: [
+        {
+          id: "builtin:claude",
+          label: "Claude",
+          initialInput: "claude --model opus",
+          enabled: true,
+        },
+      ],
+      onCommandsChange,
+    });
+
+    fireEvent.click(getByText("Manage commands"));
+    fireEvent.click(getAllByText("Edit")[1]);
+    fireEvent.click(getByText("Reset to default"));
+
+    expect(onCommandsChange).toHaveBeenCalledWith([]);
+  });
+
+  it("deletes custom commands from the edit form", () => {
+    const onCommandsChange = vi.fn();
+    const { getByText, getAllByText } = renderDialog({ onCommandsChange });
+
+    fireEvent.click(getByText("Manage commands"));
+    fireEvent.click(getAllByText("Edit").at(-1) as HTMLElement);
+    fireEvent.click(getByText("Delete"));
+
+    expect(onCommandsChange).toHaveBeenCalledWith([]);
   });
 
   it("toggles built-in agents out of the launcher", () => {

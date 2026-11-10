@@ -54,6 +54,16 @@ describe("shouldOpenInEmbeddedBrowser", () => {
     expect(shouldOpenInEmbeddedBrowser("not a url")).toBe(false);
   });
 
+  it("routes explicit remote host ports through the preview availability check", () => {
+    vi.stubGlobal("window", { location: new URL("http://phone.lan:7681") });
+    try {
+      expect(shouldOpenInEmbeddedBrowser("http://phone.lan:5173")).toBe(true);
+      expect(shouldOpenInEmbeddedBrowser("http://phone.lan:7681")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("honours an explicit allowlist", () => {
     expect(
       shouldOpenInEmbeddedBrowser("http://example.test:5173", ["example.test"]),
@@ -113,15 +123,6 @@ describe("resolveReachableBrowserUrl", () => {
     expect(resolveReachableBrowserUrl("http://127.0.0.1:3000", {})).toBe(
       "http://127.0.0.1:3000",
     );
-  });
-
-  it("can host-swap a loopback URL without reachablePort for mobile fallback", () => {
-    stubHostname("100.101.102.103");
-    expect(
-      resolveReachableBrowserUrl("http://localhost:5173/app?q=1#x", {
-        fallbackToPageHostWithoutReachablePort: true,
-      }),
-    ).toBe("http://100.101.102.103:5173/app?q=1#x");
   });
 
   it("remaps an IPv6 loopback ([::1]) URL too", () => {

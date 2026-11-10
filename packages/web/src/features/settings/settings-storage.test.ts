@@ -46,6 +46,11 @@ describe("settings-storage", () => {
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS_STATE);
   });
 
+  it("defaults content font size to 14px", () => {
+    expect(DEFAULT_SETTINGS_STATE.contentFontSize).toBe(14);
+    expect(loadSettings().contentFontSize).toBe(14);
+  });
+
   it("clamps stored content font size into the allowed range", () => {
     localStorage.setItem(
       "parasor:settings",

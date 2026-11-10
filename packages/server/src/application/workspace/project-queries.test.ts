@@ -8,6 +8,7 @@ import { WorkspaceNotFoundError } from "./errors.js";
 import {
   createProjectQueries,
   defaultRunGit,
+  isMissingPathError,
   parseWorktreeList,
 } from "./project-queries.js";
 
@@ -26,6 +27,17 @@ function makeProject(
     lastAccessedAt: 1,
   };
 }
+
+describe("isMissingPathError", () => {
+  it("is true only for ENOENT codes", () => {
+    expect(
+      isMissingPathError(Object.assign(new Error("x"), { code: "ENOENT" })),
+    ).toBe(true);
+    expect(isMissingPathError(new Error("fatal: not a git repository"))).toBe(
+      false,
+    );
+  });
+});
 
 describe("parseWorktreeList", () => {
   it("parses porcelain output", () => {
@@ -182,16 +194,19 @@ describe("createProjectQueries", () => {
       runGit,
     });
 
-    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual([
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 2,
-        behind: 1,
-        dirtyCount: 1,
-      },
-    ]);
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
+      status: "ok",
+      worktrees: [
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 2,
+          behind: 1,
+          dirtyCount: 1,
+        },
+      ],
+    });
   });
 
   it("merges persisted lineage metadata into hydrated worktrees", async () => {
@@ -230,25 +245,28 @@ describe("createProjectQueries", () => {
       }),
     });
 
-    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual([
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-      },
-      {
-        path: "/tmp/proj.worktrees/feat",
-        head: "def",
-        branch: "feat",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-        lineage,
-      },
-    ]);
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
+      status: "ok",
+      worktrees: [
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/tmp/proj.worktrees/feat",
+          head: "def",
+          branch: "feat",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+          lineage,
+        },
+      ],
+    });
   });
 
   it("merges persisted lineage metadata into all hydrated worktree snapshots", async () => {
@@ -345,22 +363,25 @@ describe("createProjectQueries", () => {
     });
 
     const out = await queries.getProjectWorktrees("proj-1");
-    expect(out).toEqual([
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-      },
-      {
-        path: "/tmp/proj/gone",
-        head: "def",
-        branch: "stale",
-        orphan: true,
-      },
-    ]);
+    expect(out).toEqual({
+      status: "ok",
+      worktrees: [
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/tmp/proj/gone",
+          head: "def",
+          branch: "stale",
+          orphan: true,
+        },
+      ],
+    });
   });
 
   it("does not query status for prunable worktrees", async () => {
@@ -396,22 +417,25 @@ describe("createProjectQueries", () => {
       "--porcelain=v2",
       "-b",
     ]);
-    expect(out).toEqual([
-      {
-        path: "/tmp/proj",
-        head: "abc",
-        branch: "main",
-        ahead: 0,
-        behind: 0,
-        dirtyCount: 0,
-      },
-      {
-        path: "/tmp/proj/gone",
-        head: "def",
-        branch: "stale",
-        orphan: true,
-      },
-    ]);
+    expect(out).toEqual({
+      status: "ok",
+      worktrees: [
+        {
+          path: "/tmp/proj",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+        {
+          path: "/tmp/proj/gone",
+          head: "def",
+          branch: "stale",
+          orphan: true,
+        },
+      ],
+    });
   });
 
   it("falls back to bare worktree when status query fails", async () => {
@@ -432,12 +456,13 @@ describe("createProjectQueries", () => {
       runGit,
     });
 
-    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual([
-      { path: "/tmp/proj", head: "abc", branch: "main" },
-    ]);
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
+      status: "ok",
+      worktrees: [{ path: "/tmp/proj", head: "abc", branch: "main" }],
+    });
   });
 
-  it("returns empty array when git is unavailable (non-git repo)", async () => {
+  it("returns git-error when git is unavailable (non-git repo)", async () => {
     projects.set("proj-1", makeProject({ id: "proj-1" }));
     const runGit = vi.fn(async () => {
       throw new Error("fatal: not a git repository");
@@ -447,7 +472,9 @@ describe("createProjectQueries", () => {
       runGit,
     });
 
-    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual([]);
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
+      status: "git-error",
+    });
   });
 
   it("listAllWorktrees enriches every project with counters", async () => {
@@ -524,9 +551,70 @@ describe("createProjectQueries", () => {
     });
     const queries = createProjectQueries({ projectManager, runGit });
     const out = await queries.getProjectWorktrees("proj-1");
-    expect(out).toHaveLength(20);
+    expect(out).toEqual(expect.objectContaining({ status: "ok" }));
+    if (out.status === "ok") expect(out.worktrees).toHaveLength(20);
     // 20 worktrees but bounded enrichment must hold the peak ≤ limit.
     expect(peakInFlight).toBeLessThanOrEqual(8);
+  });
+
+  it("returns missing-path when cwd spawn is ENOENT", async () => {
+    projects.set("proj-1", makeProject({ id: "proj-1" }));
+    const runGit = vi.fn(async () => {
+      throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+    });
+    const queries = createProjectQueries({ projectManager, runGit });
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
+      status: "missing-path",
+    });
+  });
+
+  it("returns ok empty worktrees for empty porcelain", async () => {
+    projects.set("proj-1", makeProject({ id: "proj-1" }));
+    const runGit = vi.fn(async () => "");
+    const queries = createProjectQueries({ projectManager, runGit });
+    await expect(queries.getProjectWorktrees("proj-1")).resolves.toEqual({
+      status: "ok",
+      worktrees: [],
+    });
+  });
+
+  it("listAllWorktrees omits missing and git-error projects instead of caching empty", async () => {
+    projects.set("ok", makeProject({ id: "ok", path: "/tmp/ok" }));
+    projects.set("gone", makeProject({ id: "gone", path: "/tmp/gone" }));
+    projects.set("badgit", makeProject({ id: "badgit", path: "/tmp/badgit" }));
+    const runGit = vi.fn(async (cwd: string, args: string[]) => {
+      if (cwd === "/tmp/gone") {
+        throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+      }
+      if (cwd === "/tmp/badgit") {
+        throw new Error("fatal: not a git repository");
+      }
+      if (args[0] === "worktree") {
+        return [
+          "worktree /tmp/ok",
+          "HEAD abc",
+          "branch refs/heads/main",
+          "",
+        ].join("\n");
+      }
+      return ["# branch.ab +0 -0", ""].join("\n");
+    });
+    const queries = createProjectQueries({ projectManager, runGit });
+    const all = await queries.listAllWorktrees();
+    expect(all).toEqual({
+      ok: [
+        {
+          path: "/tmp/ok",
+          head: "abc",
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          dirtyCount: 0,
+        },
+      ],
+    });
+    expect(all).not.toHaveProperty("gone");
+    expect(all).not.toHaveProperty("badgit");
   });
 
   describe("getWorktreeLocalFiles", () => {

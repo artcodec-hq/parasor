@@ -40,7 +40,7 @@ interface UseGitWorkflowResult {
   }) => Promise<void>;
   /** Resets `commitError` set by the inline path. */
   clearCommitError: () => void;
-  fetch: () => void;
+  fetch: () => Promise<void>;
   pull: (options?: { rebase?: boolean }) => void;
   push: (options?: { setUpstream?: boolean }) => void;
 }
@@ -261,8 +261,8 @@ export function useGitWorkflow({
   );
   pullRef.current = pull;
 
-  const fetch = useCallback(() => {
-    if (!activeProjectId || !focusedWorktreePath) return;
+  const fetch = useCallback((): Promise<void> => {
+    if (!activeProjectId || !focusedWorktreePath) return Promise.resolve();
     const id = `git-fetch:${focusedWorktreePath}`;
     showSyncToast({
       id,
@@ -271,7 +271,7 @@ export function useGitWorkflow({
       sub: branchName ?? undefined,
       mono: true,
     });
-    void fetchRemote({
+    return fetchRemote({
       projectId: activeProjectId,
       worktreePath: focusedWorktreePath,
     })
@@ -303,6 +303,7 @@ export function useGitWorkflow({
             },
           ],
         });
+        throw error;
       });
   }, [activeProjectId, focusedWorktreePath, branchName]);
 

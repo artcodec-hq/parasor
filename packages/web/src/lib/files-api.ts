@@ -160,3 +160,17 @@ export function statFile(
   if (input.worktreePath) params.set("worktreePath", input.worktreePath);
   return authFetch(`/api/files/stat?${params.toString()}`, { signal });
 }
+
+export function statTemporaryFile(
+  path: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const params = new URLSearchParams({ path });
+  return authFetch(`/api/files/temp-stat?${params.toString()}`, { signal });
+}
+
+export function temporaryFileRawUrl(path: string, cacheBuster = 0): string {
+  const params = new URLSearchParams({ path });
+  if (cacheBuster) params.set("v", String(cacheBuster));
+  return `/api/files/temp-raw?${params.toString()}`;
+}

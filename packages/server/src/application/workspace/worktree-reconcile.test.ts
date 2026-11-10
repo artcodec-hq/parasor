@@ -266,4 +266,40 @@ describe("createWorktreeReconciler", () => {
       },
     ]);
   });
+
+  it("documents that prefetched empty list deletes cache unlike liveList null", async () => {
+    worktreeCache.setProject(KNOWN_PROJECT, [
+      wt("/tmp/proj/wt-a"),
+      wt("/tmp/proj/wt-b"),
+    ]);
+    const liveList = vi.fn(async () => {
+      throw new Error("must not be called when prefetched is provided");
+    });
+    const reconciler = createWorktreeReconciler({
+      projectManager,
+      worktreeCache,
+      eventBus,
+      liveList,
+    });
+
+    await reconciler.reconcile(KNOWN_PROJECT, []);
+    expect(liveList).not.toHaveBeenCalled();
+    expect(broadcasts.map((m) => m.type)).toEqual([
+      "worktree-removed",
+      "worktree-removed",
+    ]);
+
+    broadcasts.length = 0;
+    // Callers mapping missing-path or git-error must pass null, never [].
+    const skipper = createWorktreeReconciler({
+      projectManager,
+      worktreeCache,
+      eventBus,
+      liveList: vi.fn(async () => null),
+    });
+    worktreeCache.setProject(KNOWN_PROJECT, [wt("/tmp/proj/wt-a")]);
+    const before = broadcasts.length;
+    await skipper.reconcile(KNOWN_PROJECT);
+    expect(broadcasts.length).toBe(before);
+  });
 });

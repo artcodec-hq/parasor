@@ -13,7 +13,7 @@ import {
   selectWordAt,
   type TouchSelectionPoint,
 } from "./terminal-touch-selection.js";
-import { type LinkCellHit, urlAtCell } from "./terminal-url-detect.js";
+import { type LinkCellHit, urlAtBufferCell } from "./terminal-url-detect.js";
 
 const TOUCH_SELECTION_LONG_PRESS_MS = 450;
 const TOUCH_SELECTION_SLOP_PX = 10;
@@ -579,8 +579,11 @@ export function attachTerminalTouchSelection({
         // tap-to-focus handler. Skipped while a mouse-tracking app owns
         // the screen, where a tap belongs to the app, not link detection.
         if (point && term.modes.mouseTrackingMode === "none") {
-          const line = term.buffer.active.getLine(point.row);
-          const hit = line ? urlAtCell(line, point.col) : null;
+          const hit = urlAtBufferCell(
+            (lineNumber) => term.buffer.active.getLine(lineNumber - 1),
+            point.row + 1,
+            point.col,
+          );
           if (hit) {
             event.stopImmediatePropagation();
             armTouchLinkClickSuppressor();

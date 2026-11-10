@@ -165,11 +165,11 @@ describe("mapEventType -- codex", () => {
     );
   });
 
-  it("maps native Codex tool and permission hooks", () => {
+  it("maps native Codex tool hooks and ignores ambiguous permission hooks", () => {
     expect(mapEventType("codex", "PostToolUse")).toEqual(hookState("running"));
-    expect(mapEventType("codex", "PermissionRequest")).toEqual(
-      hookState("waiting"),
-    );
+    expect(mapEventType("codex", "PermissionRequest")).toEqual({
+      kind: "noop",
+    });
   });
 
   it("maps task_started to running", () => {

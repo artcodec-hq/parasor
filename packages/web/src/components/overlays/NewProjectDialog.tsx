@@ -81,7 +81,10 @@ export function NewProjectDialog({
         setFolderEntries([]);
         setFolderParent(null);
         setFolderValid(false);
-        setFolderError("Directory not found");
+        // 403 is the home-directory fence, not a missing folder.
+        setFolderError(
+          res.status === 403 ? "Access denied" : "Directory not found",
+        );
         return;
       }
       const data = (await res.json()) as {

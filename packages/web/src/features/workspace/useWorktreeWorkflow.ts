@@ -141,7 +141,7 @@ export function useWorktreeWorkflow(): UseWorktreeWorkflowResult {
         });
         showSyncToast({
           tone: "ok",
-          title: "Worktree removed",
+          title: dialog.orphan ? "Stale worktree pruned" : "Worktree removed",
           sub: dialog.branch,
           mono: true,
           durationMs: 3000,

@@ -77,6 +77,10 @@ npm install -g parasor@latest
 parasor service restart    # if service mode is installed
 ```
 
+For the 0.1.4 → 0.1.5 update, finish active terminal work before restarting.
+The PTY protocol upgrade ends existing sessions; the restart command asks
+for confirmation. See [upgrade notes](CHANGELOG.md).
+
 Uninstall the service before removing the package:
 
 ```bash
@@ -137,13 +141,15 @@ overlay or identity-aware proxy in front, is out of scope. See
 
 ## Opening Localhost Dev Servers From Mobile
 
-When a terminal prints a loopback URL such as `http://localhost:5173`, opening
-that URL on a phone would normally target the phone's own localhost. parasor can
-rewrite detected loopback dev-server URLs to a reachable address on the parasor
-host, using a per-port forwarder when needed.
+Automatic forwarding of localhost dev servers is temporarily disabled. Remote
+clients show an unavailable message for localhost, wildcard and same-host
+alternate-port preview links instead of guessing a destination. Local browser
+access on the development machine remains available.
 
-Most dev servers do not have parasor's token auth. Expose them directly only on
-a trusted LAN or Tailnet.
+This does not affect remote access to Parasor's terminals. Remote dev previews
+are tracked in [#127](https://github.com/artcodec-hq/parasor/issues/127). If you separately
+publish a dev server, use a distinct trusted preview hostname and protect it
+with its own access control.
 
 ## Configuration
 

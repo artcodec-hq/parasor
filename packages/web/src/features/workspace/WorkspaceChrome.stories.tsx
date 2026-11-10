@@ -1,11 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { PaGlyph } from "../../components/primitives/index.js";
+import {
+  MonitorSwitchButton,
+  PaGlyph,
+} from "../../components/primitives/index.js";
 import { MOBILE_VIEWPORT_GLOBALS } from "../../stories/storybook-viewports.js";
 import { AppShellSplit } from "./AppShellSplit.js";
 import { EditablePaneTitle } from "./views/EditablePaneTitle.js";
 import { PaneCloseButton } from "./views/PaneCloseButton.js";
-import { PinToggleButton } from "./views/PinToggleButton.js";
 import type { SessionPaneView } from "./views/SessionPaneHeader.js";
 import { SessionPaneHeader } from "./views/SessionPaneHeader.js";
 import { Split2Col } from "./views/Split2Col.js";
@@ -279,9 +281,10 @@ export const IconButtons: Story = {
     const [pinned, setPinned] = useState(false);
     return (
       <div className="flex h-screen items-start gap-2 bg-bg-primary p-8 text-text-primary">
-        <PinToggleButton
-          pinned={pinned}
-          onToggle={() => setPinned((current) => !current)}
+        <MonitorSwitchButton
+          pressed={pinned}
+          className="bg-bg-secondary"
+          onClick={() => setPinned((current) => !current)}
         />
         <PaneCloseButton onClick={noop} />
       </div>

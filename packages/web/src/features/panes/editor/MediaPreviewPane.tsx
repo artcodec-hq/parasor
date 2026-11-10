@@ -5,7 +5,11 @@ import {
   PaneIconButton,
 } from "../../../components/primitives/index.js";
 import { getFileIconComponent } from "../../../lib/file-icons.js";
-import { statFile } from "../../../lib/files-api.js";
+import {
+  statFile,
+  statTemporaryFile,
+  temporaryFileRawUrl,
+} from "../../../lib/files-api.js";
 import type { MediaKind } from "../../../lib/media-types.js";
 import { basename, dirname } from "../../../lib/path.js";
 
@@ -22,6 +26,7 @@ interface MediaPreviewPaneProps {
   projectId: string;
   worktreePath?: string;
   filePath: string;
+  temporaryFilePath?: string;
   kind: MediaKind;
   fileChangeSeq?: number;
   onClose?: () => void;
@@ -62,6 +67,7 @@ export function MediaPreviewPane({
   projectId,
   worktreePath,
   filePath,
+  temporaryFilePath,
   kind,
   fileChangeSeq,
   onClose,
@@ -75,14 +81,15 @@ export function MediaPreviewPane({
   // for the file currently displayed (mirrors EditorPane's load() pattern).
   const statAbortRef = useRef<AbortController | null>(null);
 
-  const fileName = basename(filePath);
-  const fileDir = dirname(filePath);
+  const displayPath = temporaryFilePath ?? filePath;
+  const fileName = basename(displayPath);
+  const fileDir = dirname(displayPath);
   const FileIcon = useMemo(() => getFileIconComponent(fileName), [fileName]);
 
   // overrideGate is per-file: clearing on filePath/worktreePath change keeps
   // the soft-size warning from being silently bypassed when the user opens
   // a different large file in the same pane.
-  const fileScopeKey = `${worktreePath}\n${filePath}`;
+  const fileScopeKey = `${worktreePath}\n${filePath}\n${temporaryFilePath ?? ""}`;
   useEffect(() => {
     void fileScopeKey;
     setOverrideGate(false);
@@ -96,10 +103,9 @@ export function MediaPreviewPane({
     setStatus("checking");
     setErrorMessage(null);
     try {
-      const res = await statFile(
-        { projectId, path: filePath, worktreePath },
-        signal,
-      );
+      const res = temporaryFilePath
+        ? await statTemporaryFile(temporaryFilePath, signal)
+        : await statFile({ projectId, path: filePath, worktreePath }, signal);
       if (signal.aborted) return;
       if (!res.ok) {
         setStatus("error");
@@ -120,7 +126,7 @@ export function MediaPreviewPane({
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : String(err));
     }
-  }, [projectId, filePath, worktreePath, overrideGate]);
+  }, [projectId, filePath, temporaryFilePath, worktreePath, overrideGate]);
 
   useEffect(() => {
     void fileChangeSeq;
@@ -129,7 +135,9 @@ export function MediaPreviewPane({
   }, [checkStat, fileChangeSeq]);
 
   const cacheBuster = fileChangeSeq ?? 0;
-  const rawUrl = buildRawUrl(projectId, filePath, worktreePath, cacheBuster);
+  const rawUrl = temporaryFilePath
+    ? temporaryFileRawUrl(temporaryFilePath, cacheBuster)
+    : buildRawUrl(projectId, filePath, worktreePath, cacheBuster);
 
   const onConfirmOpen = useCallback(() => {
     setOverrideGate(true);
@@ -153,7 +161,7 @@ export function MediaPreviewPane({
           </span>
         }
         subtitle={fileDir || undefined}
-        subtitleAttr={filePath}
+        subtitleAttr={displayPath}
         actions={
           onClose ? (
             <PaneIconButton onClick={onClose} label="Close file preview">

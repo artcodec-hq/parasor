@@ -46,6 +46,7 @@ interface EditorPaneProps {
    */
   worktreePath?: string;
   filePath: string;
+  temporaryFilePath?: string;
   fileChangeSeq?: number;
   onClose?: () => void;
 }
@@ -55,7 +56,8 @@ export function EditorPane(props: EditorPaneProps) {
   // own hook stack -- keeping them in a single component would mean calling
   // text-editor hooks while previewing a media file (rules-of-hooks
   // violation when `filePath` switches kind mid-mount).
-  const mediaKind = getMediaKindFromName(basename(props.filePath));
+  const mediaPath = props.temporaryFilePath ?? props.filePath;
+  const mediaKind = getMediaKindFromName(basename(mediaPath));
   if (mediaKind) {
     return (
       <MediaPreviewPane
@@ -63,6 +65,7 @@ export function EditorPane(props: EditorPaneProps) {
         projectId={props.projectId}
         worktreePath={props.worktreePath}
         filePath={props.filePath}
+        temporaryFilePath={props.temporaryFilePath}
         kind={mediaKind}
         fileChangeSeq={props.fileChangeSeq}
         onClose={props.onClose}

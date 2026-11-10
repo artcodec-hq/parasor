@@ -135,6 +135,28 @@ describe("MediaPreviewPane (media preview behavior)", () => {
     expect(img.src).toContain("worktreePath=%2Ftmp%2Fwt");
   });
 
+  it("uses temporary file endpoints for an absolute temp preview", async () => {
+    const { findByAltText } = render(
+      <MediaPreviewPane
+        paneId="p1"
+        projectId="proj-1"
+        filePath="/tmp/parasor-preview/logo.png"
+        temporaryFilePath="/tmp/parasor-preview/logo.png"
+        kind="image"
+      />,
+    );
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/files/temp-stat?"),
+        expect.any(Object),
+      );
+    });
+    const img = (await findByAltText("logo.png")) as HTMLImageElement;
+    expect(img.src).toContain("/api/files/temp-raw");
+    expect(img.src).toContain("path=%2Ftmp%2Fparasor-preview%2Flogo.png");
+    expect(img.src).not.toContain("projectId=proj-1");
+  });
+
   it("renders a PDF iframe without a strict empty sandbox", async () => {
     const { container } = render(
       <MediaPreviewPane

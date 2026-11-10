@@ -22,6 +22,18 @@ export function isUnspecifiedHostname(hostname: string): boolean {
   return UNSPECIFIED_HOSTS.has(hostname.toLowerCase());
 }
 
+/** Remote dev previews are suspended until their authentication is isolated. */
+export function isRemoteDevServerUrl(url: URL): boolean {
+  if (typeof window === "undefined" || !window.location.hostname) return false;
+  if (isLoopbackHostname(window.location.hostname)) return false;
+  return (
+    isLoopbackHostname(url.hostname) ||
+    isUnspecifiedHostname(url.hostname) ||
+    (url.hostname === window.location.hostname &&
+      url.port !== window.location.port)
+  );
+}
+
 /** A TCP port number is valid iff it is an integer in `1..65535`. */
 function isValidPort(value: number | undefined): value is number {
   return (
@@ -39,7 +51,9 @@ export function shouldOpenInEmbeddedBrowser(
   try {
     const parsed = new URL(url);
     const hosts = allowlist ?? DEFAULT_EMBEDDED_HOSTS;
-    return hosts.some((h) => parsed.hostname === h);
+    return (
+      hosts.some((h) => parsed.hostname === h) || isRemoteDevServerUrl(parsed)
+    );
   } catch {
     return false;
   }
@@ -61,10 +75,6 @@ export function shouldOpenInEmbeddedBrowser(
  *   rewriting the host but not the port would just be a connection-refused on
  *   `<host>:<devPort>`. The `localhost` URL still works when the viewer *is*
  *   this machine, so leave it.
- *   Mobile callers may opt into a host-only fallback via
- *   `fallbackToPageHostWithoutReachablePort`: `localhost` on the phone is
- *   always wrong, while `<page-host>:<devPort>` can work for all-interface
- *   dev servers even if port detection missed the reachable mapping.
  * - hostname is loopback with a valid `opts.reachablePort` ⇒ host ->
  *   `window.location.hostname`, port -> `opts.reachablePort` (the per-port TCP
  *   forwarder's OS-assigned listen port). Path, query and hash are preserved
@@ -78,7 +88,6 @@ export function shouldOpenInEmbeddedBrowser(
 export function resolveReachableBrowserUrl(
   url: string,
   opts: {
-    fallbackToPageHostWithoutReachablePort?: boolean;
     reachablePort?: number;
   },
 ): string {
@@ -99,9 +108,7 @@ export function resolveReachableBrowserUrl(
     return parsed.toString();
   }
   if (!isValidPort(opts.reachablePort)) {
-    if (!opts.fallbackToPageHostWithoutReachablePort) return url;
-    parsed.hostname = host;
-    return parsed.toString();
+    return url;
   }
   parsed.hostname = host;
   parsed.port = String(opts.reachablePort);

@@ -47,12 +47,14 @@ export function createSessionRoutes(
   eventBus: EventBus,
   store: AppStateStore,
   terminalTraceRecorder?: TerminalTraceRecorder,
+  isProjectMissing?: (projectId: string) => boolean,
 ): Hono {
   const routes = new Hono();
   const sessionCommands = createSessionCommands({
     appStateStore: store,
     eventBus,
     ptyManager,
+    ...(isProjectMissing ? { isProjectMissing } : {}),
   });
   const sessionQueries = createSessionQueries({ ptyManager });
 
@@ -136,6 +138,14 @@ export function createSessionRoutes(
           durationMs: Math.round((performance.now() - createStart) * 10) / 10,
         });
         return c.json({ error: "Project not found" }, 404);
+      }
+      if (error instanceof WorkspaceConflictError) {
+        terminalTraceRecorder?.record("session-create-failed", {
+          projectId: body.projectId,
+          reason: "project-directory-missing",
+          durationMs: Math.round((performance.now() - createStart) * 10) / 10,
+        });
+        return c.json({ error: error.message }, 409);
       }
       terminalTraceRecorder?.record("session-create-failed", {
         projectId: body.projectId,

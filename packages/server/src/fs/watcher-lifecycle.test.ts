@@ -79,4 +79,42 @@ describe("WatcherLifecycle", () => {
     await lifecycle.onProjectDeleted("proj-1");
     expect(stopCalls).toContain("proj-1");
   });
+
+  it("starts suspended and does not activate missing projects", async () => {
+    const skipped: string[] = [];
+    const gated = new WatcherLifecycle({
+      onActivate: async (projectId) => {
+        startCalls.push(projectId);
+      },
+      onSuspend: async (projectId) => {
+        stopCalls.push(projectId);
+      },
+      shouldActivate: (id) => {
+        if (id === "gone") {
+          skipped.push(id);
+          return false;
+        }
+        return true;
+      },
+      idleTimeoutMs: 1000,
+    });
+    await gated.onClientFocused("gone");
+    expect(gated.isActive("gone")).toBe(false);
+    expect(gated.hasInterest("gone")).toBe(true);
+    expect(startCalls).not.toContain("gone");
+    expect(skipped).toEqual(["gone"]);
+    gated.dispose();
+  });
+
+  it("forceSuspend tears down an active watcher without dropping counters", async () => {
+    await lifecycle.onSessionCreated("proj-1");
+    expect(startCalls).toContain("proj-1");
+    await lifecycle.forceSuspend("proj-1");
+    expect(stopCalls).toContain("proj-1");
+    expect(lifecycle.isActive("proj-1")).toBe(false);
+    expect(lifecycle.hasInterest("proj-1")).toBe(true);
+    startCalls.length = 0;
+    await lifecycle.ensureActive("proj-1");
+    expect(startCalls).toEqual(["proj-1"]);
+  });
 });

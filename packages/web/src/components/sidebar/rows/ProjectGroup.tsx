@@ -4,6 +4,7 @@ import type {
   SidebarSelection,
   SidebarWorktree,
 } from "../model/types.js";
+import { useProjectDisclosure } from "./project-disclosure.js";
 import { WorktreeRow } from "./WorktreeRow.js";
 
 interface ProjectGroupProps {
@@ -16,6 +17,11 @@ interface ProjectGroupProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpen?: Record<string, boolean>;
   onWorktreeOpenChange?: (
@@ -32,6 +38,7 @@ interface ProjectGroupProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
   /**
    * dnd-kit listeners (and optional aria-label) spread onto the project
    * header bar so the header doubles as the drag handle. Keeping the
@@ -53,10 +60,12 @@ export function ProjectGroup({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpen,
   onWorktreeOpenChange,
   onReorderPanes,
+  onCloseProject,
   dragHandleProps,
   forceOpen = false,
 }: ProjectGroupProps) {
@@ -77,11 +86,21 @@ export function ProjectGroup({
             hasAlertChild: false,
           },
         ];
+  const projectWorktree =
+    worktrees.find((worktree) => worktree.path === project.path) ??
+    worktrees[0];
+  const { open: projectOpen, toggle: toggleProjectOpen } = useProjectDisclosure(
+    project.path,
+    forceOpen,
+    worktreeOpen,
+    (path, open) => onWorktreeOpenChange?.(project.id, path, open),
+  );
+  const visibleWorktrees = projectOpen ? worktrees : [projectWorktree];
 
   return (
     <>
-      {worktrees.map((wt, index) => {
-        const root = wt.path === project.path;
+      {visibleWorktrees.map((wt, index) => {
+        const root = wt.id === projectWorktree.id;
         return (
           <WorktreeRow
             key={wt.id}
@@ -89,17 +108,22 @@ export function ProjectGroup({
             worktree={wt}
             selection={selection}
             displayName={root ? project.name : wt.name}
-            forceOpen={forceOpen}
             isProjectRoot={root}
             showTopBorder={index === 0}
             dragHandleProps={root && index === 0 ? dragHandleProps : undefined}
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
             onNewSession={onNewSession}
+            onPruneStaleWorktree={onPruneStaleWorktree}
             onToggleChildPin={onToggleChildPin}
-            worktreeOpen={worktreeOpen}
-            onWorktreeOpenChange={onWorktreeOpenChange}
+            disclosure={
+              root
+                ? { open: projectOpen, onToggle: toggleProjectOpen }
+                : undefined
+            }
+            showChildren={projectOpen}
             onReorderPanes={onReorderPanes}
+            onCloseProject={onCloseProject}
           />
         );
       })}

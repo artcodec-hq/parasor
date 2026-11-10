@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -540,5 +540,58 @@ describe("media routes (real filesystem)", () => {
       "/api/files/stat?projectId=proj-1&path=../escape",
     );
     expect(res.status).toBe(403);
+  });
+
+  it("serves a temporary PNG through the temp media route", async () => {
+    const tempDir = mkdtempSync("/tmp/parasor-temp-media-");
+    try {
+      const path = join(tempDir, "small.png");
+      writeFileSync(path, PNG_MAGIC);
+      const statRes = await app.request(
+        `/api/files/temp-stat?path=${encodeURIComponent(path)}`,
+      );
+      expect(statRes.status).toBe(200);
+      const statBody = (await statRes.json()) as {
+        size: number;
+        isFile: boolean;
+      };
+      expect(statBody.size).toBe(PNG_MAGIC.length);
+      expect(statBody.isFile).toBe(true);
+
+      const rawRes = await app.request(
+        `/api/files/temp-raw?path=${encodeURIComponent(path)}`,
+      );
+      expect(rawRes.status).toBe(200);
+      expect(rawRes.headers.get("content-type")).toBe("image/png");
+      const buf = Buffer.from(await rawRes.arrayBuffer());
+      expect(buf.equals(PNG_MAGIC)).toBe(true);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks temporary media paths outside the allowed roots", async () => {
+    const res = await app.request(
+      `/api/files/temp-stat?path=${encodeURIComponent("/etc/passwd")}`,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses to follow a temporary symlinked leaf file", async () => {
+    const tempDir = mkdtempSync("/tmp/parasor-temp-media-");
+    try {
+      const path = join(tempDir, "link.png");
+      symlinkSync("/etc/passwd", path);
+      const res = await app.request(
+        `/api/files/temp-raw?path=${encodeURIComponent(path)}`,
+      );
+      expect([403, 404]).toContain(res.status);
+      if (res.status === 200) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        expect(buf.equals(PNG_MAGIC)).toBe(false);
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

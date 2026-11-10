@@ -85,4 +85,17 @@ describe("HeadlessTerminalStateCache", () => {
 
     expect(await cache.snapshot("s1", { cols: 45, rows: 27 })).toBeNull();
   });
+
+  it("tracks an authoritative PTY resize before later output", async () => {
+    const cache = makeCache(() => 0);
+    await cache.rebuild("s1", "before", { cols: 20, rows: 2 });
+
+    expect(await cache.resizeExisting("s1", { cols: 45, rows: 27 })).toBe(true);
+    await cache.writeExisting("s1", "after");
+
+    const snapshot = await cache.snapshot("s1", { cols: 45, rows: 27 });
+    expect(snapshot).not.toBeNull();
+    expect(snapshot).toMatchObject({ cols: 45, rows: 27 });
+    expect(snapshot?.snapshot.text).toContain("after");
+  });
 });

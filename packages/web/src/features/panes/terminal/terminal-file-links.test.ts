@@ -52,11 +52,29 @@ describe("terminal file path links", () => {
     ).toBe("src/日本語/設定.test.ts");
   });
 
-  it("rejects URLs and absolute paths outside the worktree", () => {
+  it("rejects URLs and non-temporary absolute paths outside the worktree", () => {
     expect(resolveTerminalFilePath("https://example.com/a.ts", "/repo")).toBe(
       null,
     );
-    expect(resolveTerminalFilePath("/tmp/other/src/App.tsx", "/repo")).toBe(
+    expect(resolveTerminalFilePath("/var/other/src/App.tsx", "/repo")).toBe(
+      null,
+    );
+  });
+
+  it("resolves temporary media paths outside the worktree", () => {
+    expect(resolveTerminalFilePath("/tmp/preview/result.png", "/repo")).toBe(
+      "/tmp/preview/result.png",
+    );
+    expect(
+      resolveTerminalFilePath("/private/tmp/preview/result.webp", "/repo"),
+    ).toBe("/private/tmp/preview/result.webp");
+  });
+
+  it("rejects temporary non-media paths and parent traversal", () => {
+    expect(resolveTerminalFilePath("/tmp/preview/result.txt", "/repo")).toBe(
+      null,
+    );
+    expect(resolveTerminalFilePath("/tmp/../etc/passwd.png", "/repo")).toBe(
       null,
     );
   });

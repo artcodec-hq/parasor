@@ -1,4 +1,5 @@
 import type { IBufferLine, ILink, ILinkProvider } from "@xterm/xterm";
+import { getMediaKindFromName } from "../../../lib/media-types.js";
 
 export interface TerminalFilePathHit {
   text: string;
@@ -224,6 +225,19 @@ function hasFileLikeBasename(path: string): boolean {
   return basename.includes(".");
 }
 
+function basename(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.at(-1) ?? "";
+}
+
+function isAllowedTemporaryMediaPath(path: string): boolean {
+  if (hasParentTraversal(path)) return false;
+  if (!path.startsWith("/tmp/") && !path.startsWith("/private/tmp/")) {
+    return false;
+  }
+  return getMediaKindFromName(basename(path)) !== null;
+}
+
 export function resolveTerminalFilePath(
   candidate: string,
   worktreePath: string,
@@ -236,7 +250,9 @@ export function resolveTerminalFilePath(
   let relativePath: string;
   if (trimmed.startsWith("/")) {
     if (!root || trimmed === root) return null;
-    if (!trimmed.startsWith(`${root}/`)) return null;
+    if (!trimmed.startsWith(`${root}/`)) {
+      return isAllowedTemporaryMediaPath(trimmed) ? trimmed : null;
+    }
     relativePath = trimmed.slice(root.length + 1);
   } else {
     relativePath = trimmed.startsWith("./") ? trimmed.slice(2) : trimmed;

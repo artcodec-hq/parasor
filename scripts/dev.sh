@@ -39,6 +39,7 @@ mkdir -p "$PARASOR_CONFIG_DIR"
 # starts first wins, the other silently auto-bumps, and the web UI may end up
 # proxying to the wrong backend. Respect an explicit override.
 export PORT="${PORT:-7682}"
+export WEB_PORT="${WEB_PORT:-7683}"
 
 # Terminal tracing is opt-in. Set PARASOR_TERMINAL_TRACE=1 when collecting
 # diagnostics via /api/debug/terminal-trace.
@@ -54,12 +55,20 @@ export PORT="${PORT:-7682}"
 # to test the daemon path locally (set PARASOR_PTY_SOCK too).
 export PARASOR_PTY_DAEMON="${PARASOR_PTY_DAEMON:-0}"
 
-# Always start from a clean slate in case a previous run was killed hard.
-pnpm clean:dev >/dev/null 2>&1 || true
-
 CONFIG_DIR="$PARASOR_CONFIG_DIR"
 RUNTIME_FILE="$CONFIG_DIR/runtime.json"
 PREV_RUNTIME="$(cat "$RUNTIME_FILE" 2>/dev/null || true)"
+
+# Always start from a clean slate in this config dir in case a previous run was
+# killed hard. Do not pkill other dev profiles: separate PORT / WEB_PORT /
+# PARASOR_CONFIG_DIR stacks should be able to run side by side.
+rm -rf \
+  "$CONFIG_DIR/parasor.lock" \
+  "$CONFIG_DIR/parasor.sock" \
+  "$CONFIG_DIR/parasor.lock.lock" \
+  "$CONFIG_DIR/appstate.mode" \
+  "$CONFIG_DIR/appstate.mode.lock" \
+  >/dev/null 2>&1 || true
 
 wait_for_runtime() {
   local attempts=0

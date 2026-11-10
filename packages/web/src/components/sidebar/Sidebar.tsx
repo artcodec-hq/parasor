@@ -12,7 +12,7 @@ import { SortableProjects } from "./SortableProjectGroup.js";
 import { filterSidebarProjects } from "./sidebar-filter.js";
 import { useSidebarResize } from "./useSidebarResize.js";
 
-interface SidebarProps {
+export interface SidebarProps {
   projects: SidebarProject[];
   selection: SidebarSelection;
   connected: boolean;
@@ -33,6 +33,11 @@ interface SidebarProps {
     childId: string,
   ) => void;
   onNewSession?: (projectId: string, worktreeId: string) => void;
+  onPruneStaleWorktree?: (
+    projectId: string,
+    worktreePath: string,
+    branch: string,
+  ) => void;
   onToggleChildPin?: (childId: string) => void;
   worktreeOpenByProject?: Record<string, Record<string, boolean>>;
   onWorktreeOpenChange?: (
@@ -75,6 +80,7 @@ interface SidebarProps {
     worktreePath: string,
     childIds: string[],
   ) => void;
+  onCloseProject?: (projectId: string) => void;
 }
 
 /**
@@ -99,6 +105,7 @@ export function Sidebar({
   onSelectWorktree,
   onSelectChild,
   onNewSession,
+  onPruneStaleWorktree,
   onToggleChildPin,
   worktreeOpenByProject,
   onWorktreeOpenChange,
@@ -114,6 +121,7 @@ export function Sidebar({
   onReorderPanes,
   reorderResetSignal,
   pendingProjectReorderCount,
+  onCloseProject,
 }: SidebarProps) {
   // Defer the filter computation so fast typing (and IME composition
   // bursts) don't block input echo on large project trees. The visible
@@ -169,9 +177,11 @@ export function Sidebar({
                   onSelectWorktree={onSelectWorktree}
                   onSelectChild={onSelectChild}
                   onNewSession={onNewSession}
+                  onPruneStaleWorktree={onPruneStaleWorktree}
                   onToggleChildPin={onToggleChildPin}
                   worktreeOpen={worktreeOpenByProject?.[project.id]}
                   onWorktreeOpenChange={onWorktreeOpenChange}
+                  onCloseProject={onCloseProject}
                 />
               ))}
             </div>
@@ -186,10 +196,12 @@ export function Sidebar({
             onSelectWorktree={onSelectWorktree}
             onSelectChild={onSelectChild}
             onNewSession={onNewSession}
+            onPruneStaleWorktree={onPruneStaleWorktree}
             onToggleChildPin={onToggleChildPin}
             worktreeOpenByProject={worktreeOpenByProject}
             onWorktreeOpenChange={onWorktreeOpenChange}
             onReorderPanes={onReorderPanes}
+            onCloseProject={onCloseProject}
           />
         )}
         {onNewProject && (

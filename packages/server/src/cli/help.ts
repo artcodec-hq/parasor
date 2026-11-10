@@ -2,6 +2,7 @@ const HELP = `parasor -- web-based multi-client terminal multiplexer
 
 Usage:
   parasor [--host <addr>] [--port <n>] [--no-qr] [--qr=<iface>]
+  parasor --version
   parasor <command>
 
 Commands:
@@ -9,6 +10,7 @@ Commands:
   service    Install/manage as a login service (LaunchAgent / systemd user)
   restart    Restart the running server (graceful, then SIGTERM + respawn)
   stop       Stop the running server and its PTY host daemon
+  version    Print the installed Parasor version
   help       Show this message (\`--help-all\` for advanced commands)
 
 Run \`parasor <command> --help\` for command-specific options.

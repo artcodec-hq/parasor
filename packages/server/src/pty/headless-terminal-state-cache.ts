@@ -17,6 +17,8 @@ export interface HeadlessTerminalStateCacheOptions
 export interface HeadlessStateSnapshot {
   source: HeadlessStateSnapshotSource;
   snapshot: HeadlessReplaySnapshot;
+  cols: number;
+  rows: number;
 }
 
 interface CacheEntry {
@@ -76,6 +78,20 @@ export class HeadlessTerminalStateCache {
     return true;
   }
 
+  async resizeExisting(
+    sessionId: string,
+    dimensions: Pick<HeadlessReplaySnapshotOptions, "cols" | "rows">,
+  ): Promise<boolean> {
+    this.pruneExpired();
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    entry.lastUsedAt = this.now();
+    entry.cols = dimensions.cols;
+    entry.rows = dimensions.rows;
+    await entry.state.resize(dimensions.cols, dimensions.rows);
+    return true;
+  }
+
   async snapshot(
     sessionId: string,
     dimensions?: Pick<HeadlessReplaySnapshotOptions, "cols" | "rows">,
@@ -91,9 +107,12 @@ export class HeadlessTerminalStateCache {
       return null;
     }
     entry.lastUsedAt = this.now();
+    const snapshot = await entry.state.snapshot();
     return {
       source: "headless-state",
-      snapshot: await entry.state.snapshot(),
+      snapshot,
+      cols: entry.cols,
+      rows: entry.rows,
     };
   }
 
@@ -105,9 +124,12 @@ export class HeadlessTerminalStateCache {
     if (Buffer.byteLength(raw, "utf8") === 0) return null;
     const entry = this.replace(sessionId, dimensions);
     await entry.state.write(raw);
+    const snapshot = await entry.state.snapshot();
     return {
       source: "headless-rebuild",
-      snapshot: await entry.state.snapshot(),
+      snapshot,
+      cols: entry.cols,
+      rows: entry.rows,
     };
   }
 

@@ -106,6 +106,19 @@ parasor refuses to start if it detects an obviously unsafe combination:
   (remove `PARASOR_AUTH=none`) or restrict the bind: `--host 127.0.0.1`. The
   opt-out `PARASOR_ALLOW_UNSAFE=1` exists for integration tests only.
 
+## Development-server previews
+
+Automatic loopback forwarding is disabled pending isolated preview authentication
+([#127](https://github.com/artcodec-hq/parasor/issues/127)). Parasor does not open
+additional listeners for detected development servers. Remote localhost,
+wildcard and same-host alternate-port links are not launched by the terminal or
+network-port controls; local browser access remains available.
+
+A separately exposed application needs its own access control and a distinct
+preview hostname. Do not host untrusted applications under the Parasor control
+hostname: browser cookies are shared across ports. Disabling forwarding does
+not isolate services that the operator exposes independently.
+
 ## Reporting a vulnerability
 
 Please use GitHub Security Advisories to report vulnerabilities privately:

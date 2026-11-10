@@ -147,6 +147,9 @@ async function attachBinaryClient(
           applyServerBackpressure(ws, state, sessionId, clientId, ptyManager);
         }
       },
+      onGeometry: (geometry) => {
+        sendJson(ws, { type: "geometry", geometry });
+      },
       onExit: (exitCode) => {
         if (ws.readyState === 1) {
           ws.send(encodeExitFrame(exitCode));

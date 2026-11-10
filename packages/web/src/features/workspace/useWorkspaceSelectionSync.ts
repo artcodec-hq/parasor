@@ -1,11 +1,15 @@
-import type { Project } from "@parasor/shared";
+import type { Project, Session } from "@parasor/shared";
 import { useEffect } from "react";
+import type { WorkspaceRoute } from "../../lib/workspace-route.js";
 
 interface UseWorkspaceSelectionSyncOptions {
   activeProjectId: string | null;
   connected: boolean;
   projects: Project[];
   setActiveProjectId: (projectId: string | null) => void;
+  missingProjectIds?: Iterable<string>;
+  route?: WorkspaceRoute;
+  sessions?: Session[];
 }
 
 /**
@@ -23,17 +27,47 @@ export function useWorkspaceSelectionSync({
   connected,
   projects,
   setActiveProjectId,
+  missingProjectIds,
+  route,
+  sessions = [],
 }: UseWorkspaceSelectionSyncOptions) {
   useEffect(() => {
+    const missing = new Set(missingProjectIds ?? []);
+    const firstPresent =
+      projects.find((project) => !missing.has(project.id))?.id ?? null;
+    const holdingMissingSession =
+      activeProjectId != null &&
+      missing.has(activeProjectId) &&
+      route?.kind === "session" &&
+      sessions.some(
+        (session) =>
+          session.id === route.sessionId &&
+          session.projectId === activeProjectId,
+      );
+
     if (!activeProjectId && projects.length > 0) {
-      setActiveProjectId(projects[0].id);
+      setActiveProjectId(firstPresent);
     } else if (
       connected &&
       activeProjectId &&
       !projects.some((project) => project.id === activeProjectId)
     ) {
-      const next = projects[0]?.id ?? null;
-      setActiveProjectId(next);
+      setActiveProjectId(firstPresent);
+    } else if (
+      connected &&
+      activeProjectId &&
+      missing.has(activeProjectId) &&
+      !holdingMissingSession
+    ) {
+      setActiveProjectId(firstPresent);
     }
-  }, [activeProjectId, connected, projects, setActiveProjectId]);
+  }, [
+    activeProjectId,
+    connected,
+    missingProjectIds,
+    projects,
+    route,
+    sessions,
+    setActiveProjectId,
+  ]);
 }

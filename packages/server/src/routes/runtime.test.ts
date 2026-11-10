@@ -129,6 +129,16 @@ function makeDeps(root = mkdtempSync(join(tmpdir(), "parasor-runtime-api-"))) {
     getFilesystemService: vi.fn((projectId: string) =>
       projectId === project.id ? service : null,
     ),
+    isMissing: vi.fn(() => false),
+    getMissingProjectIds: vi.fn(() => []),
+    noteMissingPath: vi.fn(),
+    notePresentPath: vi.fn(),
+    isLiveWatched: vi.fn(() => false),
+    onClientActiveProject: vi.fn(),
+    noteLiveSession: vi.fn(),
+    onPathMissing: vi.fn(),
+    onPathRestored: vi.fn(),
+    snapshotInactiveGit: vi.fn(),
     getGitStates: vi.fn(() => gitStates),
     refreshGitState: vi.fn(async (projectId: string, worktreePath: string) => {
       gitStates[projectId] = {
@@ -558,6 +568,37 @@ describe("runtime API route", () => {
     expect(await res.json()).toMatchObject({
       ok: false,
       error: { code: "terminal_unavailable" },
+    });
+  });
+
+  it("maps worktree.list missing path to conflict not worktree_not_found", async () => {
+    harness.deps.runGit = vi.fn(async () => {
+      throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+    });
+    const res = await runtimeCall(app, {
+      method: "worktree.list",
+      params: { projectId: harness.project.id },
+    });
+    expect(await res.json()).toMatchObject({
+      ok: false,
+      error: {
+        code: "conflict",
+        message: "Project directory is missing",
+      },
+    });
+  });
+
+  it("maps worktree.list git failure to retryable internal_error", async () => {
+    harness.deps.runGit = vi.fn(async () => {
+      throw new Error("fatal: not a git repository");
+    });
+    const res = await runtimeCall(app, {
+      method: "worktree.list",
+      params: { projectId: harness.project.id },
+    });
+    expect(await res.json()).toMatchObject({
+      ok: false,
+      error: { code: "internal_error", retryable: true },
     });
   });
 

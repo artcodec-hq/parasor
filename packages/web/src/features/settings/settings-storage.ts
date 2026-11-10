@@ -51,7 +51,7 @@ export const UI_FONT_SIZE_RANGE = {
 export const DEFAULT_SETTINGS_STATE: SettingsState = {
   themeId: DEFAULT_THEME_ID,
   uiFontSize: 16,
-  contentFontSize: 16,
+  contentFontSize: 14,
   uiFontFamily: "",
   customFontFamily: "",
   fontPresetId: "",

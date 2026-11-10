@@ -1,16 +1,14 @@
 import type {
   SessionCommand,
   SessionEndReason,
+  TerminalGeometry,
   TerminalLastSeen,
   WsTerminalClientMessage,
 } from "@parasor/shared";
-import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Terminal as XTerm } from "@xterm/xterm";
+import type { FitAddon } from "@xterm/addon-fit";
+import type { Terminal as XTerm } from "@xterm/xterm";
 import {
   forwardRef,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -23,125 +21,67 @@ import {
   HistoryLoadingIcon,
 } from "../../../components/icons/index.js";
 import { MobileKeyBar } from "../../../components/mobile/MobileKeyBar.js";
-import {
-  DEFAULT_RECONNECTING_OVERLAY_DELAY_MS,
-  ReconnectingOverlay,
-} from "../../../components/overlays/ReconnectingOverlay.js";
+import { ReconnectingOverlay } from "../../../components/overlays/ReconnectingOverlay.js";
 import { SessionErrorState } from "../../../components/overlays/SessionErrorState.js";
 import { useTerminalSocket } from "../../../hooks/useTerminalSocket.js";
 import { useVirtualKeyboard } from "../../../hooks/useVirtualKeyboard.js";
-import { authFetch } from "../../../lib/auth-fetch.js";
-import { extractImageFiles } from "../../../lib/clipboard-images.js";
-import { openHttpUrlInNewTab } from "../../../lib/open-external-url.js";
 import type { OpenUrlOptions } from "../../../lib/open-url-options.js";
-import { isAutoResumable } from "../../../lib/session-resume.js";
 import { useSettings } from "../../../lib/settings-context.js";
 import {
-  hasTerminalPasteCandidate,
-  readTerminalInternalClipboard,
-  writeTerminalInternalClipboard,
-} from "../../../lib/terminal-internal-clipboard.js";
-import { registerActiveTerminal } from "../../../lib/terminal-registry.js";
-import {
-  getTerminalReplayCache,
-  setTerminalReplayCache,
-  type TerminalReplayCacheEntry,
-} from "../../../lib/terminal-replay-cache.js";
-import {
-  isTerminalTraceEnabled,
-  registerTerminalBottomRowsSnapshotProvider,
-  scheduleTerminalInputDiagnosticCapture,
   startTerminalMainThreadTrace,
   traceTerminalEvent,
-  traceTerminalEventLazy,
 } from "../../../lib/terminal-trace.js";
-import { shouldOpenInEmbeddedBrowser } from "../../../lib/url-routing.js";
-import {
-  type OverlayPoint,
-  type TerminalSelectionAction,
-  type TerminalSelectionHandle,
-  TerminalSelectionOverlay,
-} from "./TerminalSelectionOverlay.js";
-import { applyCtrlModifier } from "./terminal-ctrl-modifier.js";
+import { TerminalExternalCopyDialog } from "./TerminalExternalCopyDialog.js";
+import { TerminalSelectionOverlays } from "./TerminalSelectionOverlays.js";
+import { attachTerminalActiveRegistrationLifecycle } from "./terminal-active-registration-lifecycle.js";
+import { attachTerminalBottomRowsSnapshotProvider } from "./terminal-bottom-rows-snapshot-provider.js";
+import { attachTerminalDomLifecycle } from "./terminal-dom-lifecycle.js";
 import {
   isIosWebKit,
   isTouchDevice,
   resolveTerminalWebglEnabled,
 } from "./terminal-environment.js";
-import { createTerminalFileLinkProvider } from "./terminal-file-links.js";
-import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
+import { useTerminalHistoryLoadLifecycle } from "./terminal-history-load-lifecycle.js";
+import { prepareInitialReplayRestore } from "./terminal-initial-replay.js";
 import {
-  attachWebglRendererAndFontAtlas,
-  type TerminalRendererFontEvent,
-} from "./terminal-renderer-fonts.js";
+  attachTerminalDataInput,
+  attachTerminalShiftEnterHandler,
+} from "./terminal-input-lifecycle.js";
+import { createTerminalInstance } from "./terminal-instance.js";
+import { attachTerminalMountedInstance } from "./terminal-mounted-instance-lifecycle.js";
+import { createTerminalOpenHandlers } from "./terminal-open-handlers.js";
+import { useTerminalOutputPipeline } from "./terminal-output-pipeline.js";
+import { resolveTerminalReconnectingOverlayDelay } from "./terminal-reconnecting-overlay.js";
+import { attachTerminalRenderObservers } from "./terminal-render-observers.js";
+import { attachTerminalRendererLifecycle } from "./terminal-renderer-lifecycle.js";
 import {
   captureScrollAnchor,
   restoreScrollAnchor,
-  type ScrollAnchor,
 } from "./terminal-scroll-anchor.js";
+import { attachTerminalScrollState } from "./terminal-scroll-state.js";
 import {
-  attachTerminalTapGestures,
-  attachTerminalTouchSelection,
-  attachTerminalTouchWheel,
-} from "./terminal-touch-gestures.js";
+  getXtermScreenElement,
+  resolveSelectionOverlayLayout,
+  toolbarPositionFromAnchor,
+} from "./terminal-selection-layout.js";
 import {
-  applyBoundarySelection,
-  getSelectionPointFromHandleDrag,
-  getTerminalSelectionRange,
-  type TerminalSelectionRange,
-} from "./terminal-touch-selection.js";
-import {
-  type TerminalRendererTrace,
-  terminalBottomRowsTrace,
-  terminalBufferTrace,
-} from "./terminal-trace-snapshot.js";
+  resolveTerminalSessionStatus,
+  shouldShowTerminalSessionError,
+} from "./terminal-session-status.js";
+import { attachTerminalTextareaAdjunctLifecycle } from "./terminal-textarea-adjunct-lifecycle.js";
+import { attachTerminalTouchLifecycle } from "./terminal-touch-lifecycle.js";
+import type { TerminalRendererTrace } from "./terminal-trace-snapshot.js";
 import { useTerminalViewportLifecycle } from "./terminal-viewport-lifecycle.js";
+import { useTerminalClipboardActions } from "./use-terminal-clipboard-actions.js";
+import { useTerminalConfigRef } from "./use-terminal-config-ref.js";
+import { useTerminalKeyboardControls } from "./use-terminal-keyboard-controls.js";
+import { useTerminalOpenHandlerRefs } from "./use-terminal-open-handler-refs.js";
+import { useTerminalSelectionOverlay } from "./use-terminal-selection-overlay.js";
+import { useTerminalToolbarInteractions } from "./use-terminal-toolbar-interactions.js";
 import { useTerminalUploadInteractions } from "./useTerminalUploadInteractions.js";
 import "@xterm/xterm/css/xterm.css";
 
-const FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS = 2500;
-const FOREGROUND_RECONNECTING_GRACE_MS = 3000;
-
-const INITIAL_HISTORY_LOAD_BYTES = 256 * 1024;
-const MIN_NEXT_HISTORY_LOAD_BYTES = 512 * 1024;
-const MAX_HISTORY_LOAD_BYTES = 4 * 1024 * 1024;
-// After a viewport change shifts the buffer (keyboard open/close settling, or
-// any applied resize) the viewport can momentarily land near the top, which
-// would otherwise trip the scroll-to-top "load older history" path. Suppress
-// that load for one window -- a single duration for every trigger so the
-// coverage is symmetric whether or not the resize changed dimensions.
-const HISTORY_LOAD_SUPPRESS_MS = 750;
-const IME_DUPLICATE_SUPPRESS_MS = 120;
-const TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS = 700;
-const TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS = [80, 250] as const;
 const TERMINAL_UNICODE_VERSION = "11";
-
-type SelectionOverlayState = {
-  range: TerminalSelectionRange;
-  toolbarAnchor: { clientX: number; clientY: number } | null;
-  draggingHandle: TerminalSelectionHandle | null;
-};
-
-function isPrintableImeData(data: string): boolean {
-  if (data.length === 0) return false;
-  for (let i = 0; i < data.length; i += 1) {
-    const code = data.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return false;
-  }
-  return true;
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (max < min) return min;
-  return Math.min(Math.max(value, min), max);
-}
-
-function replayCacheMatchesDimensions(
-  entry: TerminalReplayCacheEntry | null,
-  dims: { cols: number; rows: number },
-): entry is TerminalReplayCacheEntry {
-  return entry?.cols === dims.cols && entry.rows === dims.rows;
-}
 
 function createInitialRendererTrace(input: {
   requestedWebgl: boolean;
@@ -163,81 +103,6 @@ function createInitialRendererTrace(input: {
     isIos: input.isIos,
     fontFamily: input.fontFamily,
     fontSize: input.fontSize,
-  };
-}
-
-function getErrorName(err: unknown): string {
-  if (
-    err &&
-    typeof err === "object" &&
-    "name" in err &&
-    typeof err.name === "string" &&
-    err.name.length > 0
-  ) {
-    return err.name;
-  }
-  return "unknown";
-}
-
-function pointToOverlayPosition(
-  rangePoint: { col: number; row: number },
-  term: XTerm,
-  screenElement: Element,
-  rootElement: HTMLElement,
-): OverlayPoint | null {
-  const screenRect = screenElement.getBoundingClientRect();
-  const rootRect = rootElement.getBoundingClientRect();
-  if (screenRect.width <= 0 || screenRect.height <= 0) return null;
-  const cellWidth = screenRect.width / term.cols;
-  const cellHeight = screenRect.height / term.rows;
-  const viewportRow = rangePoint.row - term.buffer.active.viewportY;
-  if (viewportRow < 0 || viewportRow >= term.rows) return null;
-  const localLeft =
-    screenRect.left - rootRect.left + rangePoint.col * cellWidth;
-  const localTop =
-    screenRect.top - rootRect.top + (viewportRow + 1) * cellHeight;
-  return {
-    left: clampNumber(localLeft, 0, rootRect.width),
-    top: clampNumber(localTop, 0, rootRect.height),
-  };
-}
-
-function getXtermScreenElement(
-  term: XTerm,
-  fallbackContainer: HTMLElement | null,
-): Element | null {
-  return (
-    term.element?.querySelector(".xterm-screen") ??
-    fallbackContainer?.querySelector(".xterm-screen") ??
-    null
-  );
-}
-
-function toolbarPositionFromAnchor(
-  anchor: { clientX: number; clientY: number },
-  rootElement: HTMLElement,
-  toolbarWidth = 132,
-): OverlayPoint {
-  const rootRect = rootElement.getBoundingClientRect();
-  const toolbarHeight = 40;
-  const gap = 12;
-  const padding = 8;
-  const localX = anchor.clientX - rootRect.left;
-  const localY = anchor.clientY - rootRect.top;
-  const above = localY - toolbarHeight - gap;
-  const below = localY + gap;
-
-  return {
-    left: clampNumber(
-      localX - toolbarWidth / 2,
-      padding,
-      rootRect.width - toolbarWidth - padding,
-    ),
-    top: clampNumber(
-      above >= padding ? above : below,
-      padding,
-      rootRect.height - toolbarHeight - padding,
-    ),
   };
 }
 
@@ -301,165 +166,52 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const { contentFontSize, activeTheme, resolvedFontStack } = useSettings();
     const rendererTraceRef = useRef<TerminalRendererTrace | null>(null);
-    const openUrlRef = useRef(onOpenUrl);
-    const openFilePathRef = useRef(onOpenFilePath);
-    const projectIdRef = useRef(projectId);
-    const worktreePathRef = useRef(worktreePath);
-    const [isReplayRestoring, setIsReplayRestoring] = useState(false);
-    const replayRestoringRef = useRef(false);
-    const pendingFullReplayViewportRef = useRef<ScrollAnchor | null>(null);
-    const [historyLoadStatus, setHistoryLoadStatus] = useState<{
-      sessionId: string;
-      status: "hidden" | "ready" | "loading";
-    }>({ sessionId, status: "hidden" });
-    const visibleHistoryLoadStatus =
-      historyLoadStatus.sessionId === sessionId
-        ? historyLoadStatus.status
-        : "hidden";
-    const cachedReplayRef = useRef<{
-      sessionId: string;
-      entry: TerminalReplayCacheEntry | null;
+    const { openUrlRef, openFilePathRef, projectIdRef, worktreePathRef } =
+      useTerminalOpenHandlerRefs({
+        onOpenUrl,
+        onOpenFilePath,
+        projectId,
+        worktreePath,
+      });
+    const lastDesktopInputClaimAtRef = useRef(Number.NEGATIVE_INFINITY);
+    const pendingGeometryIntentRef = useRef<{
+      cols: number;
+      rows: number;
+      preferBottom: boolean;
     } | null>(null);
-    const historyLoadRef = useRef({
-      loading: false,
-      maxBytes: INITIAL_HISTORY_LOAD_BYTES,
-      exhausted: false,
-      lastRequestedAt: 0,
+    const recordGeometryIntent = useCallback(
+      (intent: { cols: number; rows: number; preferBottom: boolean }) => {
+        pendingGeometryIntentRef.current = intent;
+      },
+      [],
+    );
+
+    const showError = shouldShowTerminalSessionError({
+      sessionState,
+      sessionCommand,
+      sessionEndReason,
     });
-    const historyTopLoadArmedRef = useRef(false);
-    const encoderRef = useRef<TextEncoder | null>(null);
-    if (!encoderRef.current) encoderRef.current = new TextEncoder();
-    if (cachedReplayRef.current?.sessionId !== sessionId) {
-      cachedReplayRef.current = {
-        sessionId,
-        entry: getTerminalReplayCache(sessionId),
-      };
-      historyLoadRef.current = {
-        loading: false,
-        maxBytes: INITIAL_HISTORY_LOAD_BYTES,
-        exhausted: false,
-        lastRequestedAt: 0,
-      };
-      historyTopLoadArmedRef.current = false;
-    }
-    const pendingFullReplayCursorRef = useRef<TerminalLastSeen | null>(null);
-    const scheduleInputDiagnostics = useCallback(
-      (term: XTerm, dataLength: number, status: string) => {
-        const buildEvent = (delayMs: number) => ({
-          type: "terminal-input-diagnostic",
-          sessionId,
-          dataLength,
-          status,
-          cols: term.cols,
-          rows: term.rows,
-          cursorX: term.buffer.active.cursorX,
-          cursorY: term.buffer.active.cursorY,
-          viewportY: term.buffer.active.viewportY,
-          baseY: term.buffer.active.baseY,
-          delayMs,
-        });
 
-        scheduleTerminalInputDiagnosticCapture(
-          "terminal-input-sent",
-          buildEvent(0),
-        );
-        for (const delayMs of TERMINAL_INPUT_DIAGNOSTIC_DELAYS_MS) {
-          const timer = window.setTimeout(() => {
-            inputDiagnosticTimersRef.current.delete(timer);
-            scheduleTerminalInputDiagnosticCapture(
-              `terminal-input-after-${delayMs}ms`,
-              buildEvent(delayMs),
-            );
-          }, delayMs);
-          inputDiagnosticTimersRef.current.add(timer);
-        }
-      },
-      [sessionId],
-    );
-    const handleReplayWriteComplete = useCallback(
-      (data: string, term: XTerm) => {
-        setIsReplayRestoring(false);
-        replayRestoringRef.current = false;
-        const lastSeen = pendingFullReplayCursorRef.current;
-        pendingFullReplayCursorRef.current = null;
-        const anchor = pendingFullReplayViewportRef.current;
-        pendingFullReplayViewportRef.current = null;
-        if (!anchor) {
-          term.scrollToBottom();
-          traceTerminalEvent("xterm-replay-scroll-restore", {
-            sessionId,
-            viewportY: term.buffer.active.viewportY,
-            baseY: term.buffer.active.baseY,
-            reason: "was-at-bottom",
-          });
-        } else {
-          const restore = restoreScrollAnchor(term, anchor);
-          traceTerminalEvent("xterm-replay-scroll-restore", {
-            sessionId,
-            viewportY: term.buffer.active.viewportY,
-            baseY: term.buffer.active.baseY,
-            previousViewportY: anchor.viewportY,
-            previousBaseY: anchor.baseY,
-            targetViewportY: restore.targetViewportY,
-            reason: restore.reason,
-          });
-        }
-        const byteLength =
-          encoderRef.current?.encode(data).byteLength ?? data.length;
-        historyLoadRef.current = {
-          loading: false,
-          maxBytes: Math.max(INITIAL_HISTORY_LOAD_BYTES, byteLength),
-          exhausted: false,
-          lastRequestedAt: 0,
-        };
-        setHistoryLoadStatus({
-          sessionId,
-          status: byteLength >= INITIAL_HISTORY_LOAD_BYTES ? "ready" : "hidden",
-        });
-        historyTopLoadArmedRef.current = false;
-        if (!lastSeen) return;
-        setTerminalReplayCache(sessionId, {
-          data,
-          lastSeen,
-          cols: term.cols,
-          rows: term.rows,
-        });
-        cachedReplayRef.current = {
-          sessionId,
-          entry: getTerminalReplayCache(sessionId),
-        };
-        traceTerminalEvent("xterm-replay-cache-store", {
-          sessionId,
-          dataLength: data.length,
-          generation: lastSeen.generation,
-        });
-      },
-      [sessionId],
-    );
-
-    // An ended session that is safe to resume stays wired to the WS -- the
-    // server will silently re-spawn on init and the pane keeps rendering
-    // as a live terminal. An ended session that is NOT safe to resume
-    // drops out to the error pane and never opens a WS.
-    const showError =
-      sessionState === "ended" &&
-      !isAutoResumable(sessionCommand, sessionEndReason);
-
-    useEffect(() => {
-      openUrlRef.current = onOpenUrl;
-    }, [onOpenUrl]);
-
-    useEffect(() => {
-      openFilePathRef.current = onOpenFilePath;
-    }, [onOpenFilePath]);
-
-    useEffect(() => {
-      projectIdRef.current = projectId;
-    }, [projectId]);
-
-    useEffect(() => {
-      worktreePathRef.current = worktreePath;
-    }, [worktreePath]);
+    const { height: kbHeight, settling: keyboardSettling } =
+      useVirtualKeyboard();
+    const {
+      cachedReplayRef,
+      replayRestoringRef,
+      keyboardSettlingRef,
+      keyboardHistoryLoadSuppressUntilRef,
+      historyTopLoadArmedRef,
+      visibleHistoryLoadStatus,
+      isReplayRestoring,
+      loadOlderHistory: loadOlderHistoryWithRestore,
+      startFullReplay,
+      handleReplayWriteComplete,
+      resolveInitialLastSeen,
+      suppressHistoryLoadAfterResize,
+    } = useTerminalHistoryLoadLifecycle({
+      sessionId,
+      xtermRef,
+      keyboardSettling,
+    });
 
     const {
       firstDataTimerRef,
@@ -479,125 +231,65 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     });
 
     const handleFullReplay = useCallback(
-      (lastSeen: TerminalLastSeen | null) => {
-        setIsReplayRestoring(true);
-        replayRestoringRef.current = true;
+      (lastSeen: TerminalLastSeen | null) =>
+        startFullReplay(lastSeen, onFullReplay),
+      [onFullReplay, startFullReplay],
+    );
+
+    const applyServerGeometry = useCallback(
+      (geometry: TerminalGeometry) => {
         const term = xtermRef.current;
-        pendingFullReplayViewportRef.current = term
-          ? captureScrollAnchor(term)
-          : null;
-        historyTopLoadArmedRef.current = false;
-        pendingFullReplayCursorRef.current = lastSeen;
-        onFullReplay();
+        if (!term) return;
+        if (term.cols === geometry.cols && term.rows === geometry.rows) return;
+        const anchor = captureScrollAnchor(term);
+        const previousRows = term.rows;
+        const pendingIntent = pendingGeometryIntentRef.current;
+        const preferBottom =
+          pendingIntent?.cols === geometry.cols &&
+          pendingIntent.rows === geometry.rows &&
+          pendingIntent.preferBottom;
+        if (
+          pendingIntent?.cols === geometry.cols &&
+          pendingIntent.rows === geometry.rows
+        ) {
+          pendingGeometryIntentRef.current = null;
+        }
+        term.resize(geometry.cols, geometry.rows);
+        suppressHistoryLoadAfterResize();
+        const rowGrowth = geometry.rows - previousRows;
+        const bottomAnchor =
+          rowGrowth > 0 &&
+          (anchor.wasAtBottom || preferBottom) &&
+          term.buffer.active.type === "normal";
+        if (bottomAnchor) {
+          // xterm grows a normal buffer from the top. Shift the old viewport
+          // down before the PTY redraw arrives so both use the same bottom edge.
+          term.write(`\x1b[${rowGrowth}T`, () => refreshVisibleRows(term));
+        } else if (preferBottom) {
+          term.scrollToBottom();
+          refreshVisibleRows(term);
+        } else {
+          restoreScrollAnchor(term, anchor);
+          refreshVisibleRows(term);
+        }
+        traceTerminalEvent("terminal-authoritative-geometry", {
+          sessionId,
+          cols: geometry.cols,
+          rows: geometry.rows,
+          geometryEpoch: geometry.epoch,
+          reason: bottomAnchor
+            ? "bottom-anchor"
+            : preferBottom
+              ? "prefer-bottom"
+              : "preserve-anchor",
+        });
       },
-      [onFullReplay],
+      [refreshVisibleRows, sessionId, suppressHistoryLoadAfterResize],
     );
 
     const loadOlderHistory = useCallback(async () => {
-      const term = xtermRef.current;
-      const encoder = encoderRef.current;
-      if (!term || !encoder) return;
-      if (replayRestoringRef.current) {
-        traceTerminalEvent("terminal-history-load-suppressed", {
-          sessionId,
-          viewportY: term.buffer.active.viewportY,
-          baseY: term.buffer.active.baseY,
-          reason: "replay-restoring",
-        });
-        return;
-      }
-      const state = historyLoadRef.current;
-      if (state.loading || state.exhausted) return;
-      const now = performance.now();
-      if (now - state.lastRequestedAt < 500) return;
-      const nextMaxBytes = Math.min(
-        Math.max(state.maxBytes * 2, MIN_NEXT_HISTORY_LOAD_BYTES),
-        MAX_HISTORY_LOAD_BYTES,
-      );
-      if (nextMaxBytes <= state.maxBytes) {
-        state.exhausted = true;
-        setHistoryLoadStatus({ sessionId, status: "hidden" });
-        return;
-      }
-      state.loading = true;
-      state.lastRequestedAt = now;
-      const replayAnchor = captureScrollAnchor(term);
-      setHistoryLoadStatus({ sessionId, status: "loading" });
-      traceTerminalEvent("terminal-history-load-start", {
-        sessionId,
-        maxBytes: nextMaxBytes,
-        cols: term.cols,
-        rows: term.rows,
-      });
-      try {
-        const params = new URLSearchParams({
-          cols: String(term.cols),
-          rows: String(term.rows),
-          maxBytes: String(nextMaxBytes),
-        });
-        const res = await authFetch(
-          `/api/sessions/${encodeURIComponent(sessionId)}/scrollback-snapshot?${params}`,
-        );
-        if (!res.ok) {
-          traceTerminalEvent("terminal-history-load-failed", {
-            sessionId,
-            status: String(res.status),
-            maxBytes: nextMaxBytes,
-          });
-          setHistoryLoadStatus({ sessionId, status: "ready" });
-          return;
-        }
-        const data = (await res.json()) as {
-          text?: unknown;
-          replayBytes?: unknown;
-          maxBytes?: unknown;
-          hasMore?: unknown;
-        };
-        if (typeof data.text !== "string") return;
-        const replayBytes =
-          typeof data.replayBytes === "number"
-            ? data.replayBytes
-            : encoder.encode(data.text).byteLength;
-        state.maxBytes =
-          typeof data.maxBytes === "number" ? data.maxBytes : nextMaxBytes;
-        state.exhausted =
-          data.hasMore === false || state.maxBytes >= MAX_HISTORY_LOAD_BYTES;
-        setHistoryLoadStatus({
-          sessionId,
-          status: state.exhausted ? "hidden" : "ready",
-        });
-        if (data.text.length === 0) return;
-        restoreExpandedReplay(term, data.text, replayAnchor);
-        const lastSeen = cachedReplayRef.current?.entry?.lastSeen ?? null;
-        if (lastSeen) {
-          setTerminalReplayCache(sessionId, {
-            data: data.text,
-            lastSeen,
-            cols: term.cols,
-            rows: term.rows,
-          });
-          cachedReplayRef.current = {
-            sessionId,
-            entry: getTerminalReplayCache(sessionId),
-          };
-        }
-        traceTerminalEvent("terminal-history-load-complete", {
-          sessionId,
-          dataLength: data.text.length,
-          byteLength: replayBytes,
-          maxBytes: state.maxBytes,
-        });
-      } catch (err) {
-        setHistoryLoadStatus({ sessionId, status: "ready" });
-        traceTerminalEvent("terminal-history-load-failed", {
-          sessionId,
-          status: err instanceof Error ? err.name : "unknown",
-          maxBytes: nextMaxBytes,
-        });
-      } finally {
-        state.loading = false;
-      }
-    }, [restoreExpandedReplay, sessionId]);
+      await loadOlderHistoryWithRestore(restoreExpandedReplay);
+    }, [loadOlderHistoryWithRestore, restoreExpandedReplay]);
 
     const {
       send,
@@ -606,26 +298,17 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       endedReason: socketEndedReason,
     } = useTerminalSocket({
       sessionId: showError ? null : sessionId,
-      resolveInitialLastSeen: (dims) => {
-        const entry = cachedReplayRef.current?.entry ?? null;
-        return replayCacheMatchesDimensions(entry, dims)
-          ? entry.lastSeen
-          : null;
-      },
+      resolveInitialLastSeen,
       onData,
       onFullReplay: handleFullReplay,
+      onGeometry: applyServerGeometry,
     });
     sendRef.current = send;
 
-    // A WS that the server closed with 1008 (Session not found /
-    // unavailable / init expected) parks as `socketStatus === "ended"`.
-    // Treating that as a terminal state here -- alongside the AppStore
-    // sessionState path -- disables xterm input and flips the pane to
-    // SessionErrorState immediately, without waiting for the session
-    // event stream to also arrive. Without this, silent keystroke loss
-    // happens whenever the event-store update is delayed or missing.
-    const socketEnded = socketStatus === "ended";
-    const isEnded = showError || socketEnded;
+    const { socketEnded, isEnded } = resolveTerminalSessionStatus({
+      showError,
+      socketStatus,
+    });
 
     useImperativeHandle(
       ref,
@@ -636,40 +319,6 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       [send],
     );
 
-    const { height: kbHeight, settling: keyboardSettling } =
-      useVirtualKeyboard();
-    const keyboardSettlingRef = useRef(keyboardSettling);
-    keyboardSettlingRef.current = keyboardSettling;
-    const keyboardHistoryLoadSuppressUntilRef = useRef(0);
-    const armHistoryLoadSuppression = useCallback(
-      (reason: string) => {
-        keyboardHistoryLoadSuppressUntilRef.current =
-          performance.now() + HISTORY_LOAD_SUPPRESS_MS;
-        traceTerminalEvent("terminal-history-load-suppress-window", {
-          sessionId,
-          reason,
-          timeoutMs: HISTORY_LOAD_SUPPRESS_MS,
-        });
-      },
-      [sessionId],
-    );
-    // Arm the window when the keyboard finishes settling (the deferred resize
-    // flushes right after and shifts the viewport) rather than when settling
-    // starts: during settling, `keyboardSettlingRef` already gates the load,
-    // and anchoring to the settle edge gives the same coverage whether or not
-    // the flush changes dimensions.
-    const wasKeyboardSettlingRef = useRef(keyboardSettling);
-    useEffect(() => {
-      const wasSettling = wasKeyboardSettlingRef.current;
-      wasKeyboardSettlingRef.current = keyboardSettling;
-      if (wasSettling && !keyboardSettling) {
-        armHistoryLoadSuppression("keyboard-settled");
-      }
-    }, [keyboardSettling, armHistoryLoadSuppression]);
-    const suppressHistoryLoadAfterResize = useCallback(
-      () => armHistoryLoadSuppression("resize-applied"),
-      [armHistoryLoadSuppression],
-    );
     const [isTouch] = useState<boolean>(() => isTouchDevice());
     const [isIos] = useState<boolean>(() =>
       isIosWebKit(navigator.userAgent, navigator.maxTouchPoints),
@@ -679,17 +328,40 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
     );
     const [lastForegroundAtMs, setLastForegroundAtMs] = useState(0);
     const showKeyBar = isTouch && !isEnded;
-    const [hasSelection, setHasSelection] = useState(false);
-    const [selectionOverlay, setSelectionOverlay] =
-      useState<SelectionOverlayState | null>(null);
-    const selectionOverlayRef = useRef<SelectionOverlayState | null>(null);
-    selectionOverlayRef.current = selectionOverlay;
     const [inputToolbarAnchor, setInputToolbarAnchor] = useState<{
       clientX: number;
       clientY: number;
     } | null>(null);
-    const toolbarSyntheticMouseSuppressUntilRef = useRef(0);
+    const inputToolbarAnchorRef = useRef<typeof inputToolbarAnchor>(null);
+    inputToolbarAnchorRef.current = inputToolbarAnchor;
+    const getSelectionScreenElement = useCallback(
+      (term: XTerm) => getXtermScreenElement(term, containerRef.current),
+      [],
+    );
+    const {
+      hasSelection,
+      setHasSelection,
+      selectionOverlay,
+      setSelectionOverlay,
+      clearSelectionOverlay,
+      commitSelectionOverlay,
+      handleSelectionHandlePointerDown,
+    } = useTerminalSelectionOverlay({
+      sessionId,
+      xtermRef,
+      getScreenElement: getSelectionScreenElement,
+      setInputToolbarAnchor,
+    });
     const [showScrollDown, setShowScrollDown] = useState(false);
+    const {
+      inputToolbarDismissSuppressUntilRef,
+      toolbarSyntheticMouseSuppressUntilRef,
+      handleToolbarActionEvent,
+    } = useTerminalToolbarInteractions({
+      sessionId,
+      inputToolbarAnchorRef,
+      setInputToolbarAnchor,
+    });
 
     // Only accept drops once the PTY is attached. Before init-ack, send()
     // would queue silently, which makes the drop look accepted but nothing
@@ -702,6 +374,23 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       [send],
     );
     const focusTerm = useCallback(() => xtermRef.current?.focus(), []);
+    const clearSelectionUi = useCallback(() => {
+      clearSelectionOverlay();
+      setInputToolbarAnchor(null);
+    }, [clearSelectionOverlay]);
+    const {
+      externalCopyText,
+      closeExternalCopyDialog,
+      handleCopySelection,
+      openExternalCopyDialog,
+      copyExternalText,
+      handlePasteFromTerminalToolbar,
+    } = useTerminalClipboardActions({
+      sessionId,
+      xtermRef,
+      send,
+      clearSelectionUi,
+    });
     const {
       uploadState,
       isDragOver,
@@ -726,279 +415,12 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       if (isEnded) return;
       const container = containerRef.current;
       if (!container) return;
-      let unregister: (() => void) | null = null;
-      const register = () => {
-        unregister?.();
-        unregister = registerActiveTerminal((data) =>
-          send({ type: "input", data }),
-        );
-      };
-      const onFocusIn = () => register();
-      container.addEventListener("focusin", onFocusIn);
-      if (container.contains(document.activeElement)) register();
-      return () => {
-        container.removeEventListener("focusin", onFocusIn);
-        unregister?.();
-      };
+      return attachTerminalActiveRegistrationLifecycle({
+        container,
+        sendInput: (data) => send({ type: "input", data }),
+      });
     }, [send, isEnded]);
 
-    const commitSelectionOverlay = useCallback(
-      (input: { clientX: number; clientY: number; showToolbar: boolean }) => {
-        const term = xtermRef.current;
-        const text = term?.getSelection() ?? "";
-        const range = term ? getTerminalSelectionRange(term) : null;
-        if (!text) {
-          setSelectionOverlay(null);
-          return;
-        }
-        if (!range) return;
-
-        setHasSelection(true);
-        setInputToolbarAnchor(null);
-        setSelectionOverlay({
-          range,
-          toolbarAnchor: input.showToolbar
-            ? { clientX: input.clientX, clientY: input.clientY }
-            : null,
-          draggingHandle: null,
-        });
-
-        traceTerminalEvent("terminal-selection-overlay-commit", {
-          sessionId,
-          dataLength: text.length,
-          visible: input.showToolbar,
-        });
-      },
-      [sessionId],
-    );
-
-    const handleToolbarActionEvent = useCallback(
-      (input: {
-        action: TerminalSelectionAction;
-        eventType: string;
-        deduped: boolean;
-      }) => {
-        if (!input.deduped) {
-          toolbarSyntheticMouseSuppressUntilRef.current =
-            performance.now() + TOOLBAR_SYNTHETIC_MOUSE_SUPPRESS_MS;
-        }
-        traceTerminalEvent("terminal-toolbar-action", {
-          sessionId,
-          surface: input.action,
-          status: input.eventType,
-          skipped: input.deduped,
-        });
-      },
-      [sessionId],
-    );
-
-    const handleCopySelection = useCallback(async () => {
-      const term = xtermRef.current;
-      if (!term) return;
-      const text = term.getSelection();
-      if (!text) {
-        traceTerminalEvent("terminal-toolbar-copy-skipped", {
-          sessionId,
-          reason: "empty-selection",
-        });
-        return;
-      }
-
-      traceTerminalEvent("terminal-toolbar-copy-attempt", {
-        sessionId,
-        dataLength: text.length,
-      });
-
-      const internalWritten = writeTerminalInternalClipboard(text);
-      if (internalWritten) {
-        traceTerminalEvent("terminal-toolbar-copy", {
-          sessionId,
-          status: "internal",
-          dataLength: text.length,
-        });
-      } else {
-        traceTerminalEvent("terminal-toolbar-copy-failed", {
-          sessionId,
-          status: "internal",
-          reason: "local-storage-unavailable",
-        });
-      }
-
-      const writeText = navigator.clipboard?.writeText;
-      let nativeWritten = false;
-      if (!writeText) {
-        traceTerminalEvent("terminal-toolbar-copy-failed", {
-          sessionId,
-          status: "native",
-          reason: "clipboard-api-unavailable",
-        });
-      } else {
-        try {
-          await writeText.call(navigator.clipboard, text);
-          nativeWritten = true;
-          traceTerminalEvent("terminal-toolbar-copy", {
-            sessionId,
-            status: "native",
-            dataLength: text.length,
-          });
-        } catch (err) {
-          traceTerminalEvent("terminal-toolbar-copy-failed", {
-            sessionId,
-            status: "native",
-            reason: getErrorName(err),
-          });
-        }
-      }
-
-      if (!internalWritten && !nativeWritten) return;
-      traceTerminalEvent("terminal-toolbar-copy-complete", {
-        sessionId,
-        dataLength: text.length,
-      });
-      term.clearSelection();
-      setHasSelection(false);
-      setSelectionOverlay(null);
-      setInputToolbarAnchor(null);
-    }, [sessionId]);
-
-    const handlePasteFromTerminalToolbar = useCallback(async () => {
-      const term = xtermRef.current;
-      const readText = navigator.clipboard?.readText;
-      const pasteText = (text: string, source: "native" | "internal") => {
-        send({ type: "input", data: text });
-        traceTerminalEvent("terminal-toolbar-paste", {
-          sessionId,
-          status: source,
-          dataLength: text.length,
-        });
-        term?.clearSelection();
-        setHasSelection(false);
-        setSelectionOverlay(null);
-        setInputToolbarAnchor(null);
-      };
-
-      try {
-        if (readText) {
-          const text = await readText.call(navigator.clipboard);
-          if (text) {
-            pasteText(text, "native");
-            return;
-          }
-          traceTerminalEvent("terminal-toolbar-paste-skipped", {
-            sessionId,
-            status: "native",
-            reason: "empty-clipboard",
-          });
-        } else {
-          traceTerminalEvent("terminal-toolbar-paste-failed", {
-            sessionId,
-            status: "native",
-            reason: "clipboard-api-unavailable",
-          });
-        }
-      } catch (err) {
-        traceTerminalEvent("terminal-toolbar-paste-failed", {
-          sessionId,
-          status: "native",
-          reason: getErrorName(err),
-        });
-      }
-
-      const internalText = readTerminalInternalClipboard();
-      if (internalText) {
-        pasteText(internalText, "internal");
-        return;
-      }
-
-      traceTerminalEvent("terminal-toolbar-paste-failed", {
-        sessionId,
-        status: "internal",
-        reason: "internal-clipboard-empty",
-      });
-    }, [send, sessionId]);
-
-    const applySelectionHandleDrag = useCallback(
-      (
-        event: Pick<PointerEvent, "clientX" | "clientY">,
-        showToolbar: boolean,
-      ) => {
-        const term = xtermRef.current;
-        const screenElement = term
-          ? getXtermScreenElement(term, containerRef.current)
-          : null;
-        const overlay = selectionOverlayRef.current;
-        if (!term || !screenElement || !overlay?.draggingHandle) return;
-        const focus = getSelectionPointFromHandleDrag(
-          term,
-          screenElement,
-          event,
-        );
-        if (!focus) return;
-        const fixed =
-          overlay.draggingHandle === "start"
-            ? overlay.range.end
-            : overlay.range.start;
-        const nextRange = applyBoundarySelection(term, fixed, focus);
-        setHasSelection(true);
-        setSelectionOverlay({
-          range: nextRange,
-          toolbarAnchor: showToolbar
-            ? { clientX: event.clientX, clientY: event.clientY }
-            : null,
-          draggingHandle: showToolbar ? null : overlay.draggingHandle,
-        });
-      },
-      [],
-    );
-
-    const handleSelectionHandlePointerDown = useCallback(
-      (
-        handle: TerminalSelectionHandle,
-        event: ReactPointerEvent<HTMLButtonElement>,
-      ) => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        setInputToolbarAnchor(null);
-        setSelectionOverlay((prev) =>
-          prev
-            ? { ...prev, draggingHandle: handle, toolbarAnchor: null }
-            : prev,
-        );
-      },
-      [],
-    );
-
-    useEffect(() => {
-      if (!selectionOverlay?.draggingHandle) return;
-      const handlePointerMove = (event: PointerEvent) => {
-        event.preventDefault();
-        applySelectionHandleDrag(event, false);
-      };
-      const handlePointerUp = (event: PointerEvent) => {
-        event.preventDefault();
-        applySelectionHandleDrag(event, true);
-      };
-      window.addEventListener("pointermove", handlePointerMove, {
-        passive: false,
-      });
-      window.addEventListener("pointerup", handlePointerUp, { passive: false });
-      window.addEventListener("pointercancel", handlePointerUp, {
-        passive: false,
-      });
-      return () => {
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerUp);
-      };
-    }, [selectionOverlay?.draggingHandle, applySelectionHandleDrag]);
-
-    // One-shot Ctrl modifier owned here so it can gate BOTH the key bar
-    // path and the soft-keyboard path (xterm.onData). Ref mirrors state so
-    // the capture inside term.onData (registered once on mount) always sees
-    // the latest flag without re-binding.
-    const [ctrlActive, setCtrlActive] = useState(false);
-    const ctrlStickyRef = useRef(false);
     const imeDuplicateGateRef = useRef({
       composing: false,
       serial: 0,
@@ -1008,70 +430,35 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       lastSentAt: 0,
       lastSentSerial: -1,
     });
-    const setCtrl = useCallback((v: boolean) => {
-      ctrlStickyRef.current = v;
-      setCtrlActive(v);
-    }, []);
-    const toggleCtrl = useCallback(
-      () => setCtrl(!ctrlStickyRef.current),
-      [setCtrl],
-    );
+    const {
+      ctrlActive,
+      ctrlStickyRef,
+      keyboardOpen,
+      setCtrl,
+      toggleCtrl,
+      handleKeyboardToggle,
+    } = useTerminalKeyboardControls({ kbHeight, xtermRef });
 
-    // Auto-clear a dangling Ctrl sticky on the open->close transition of the
-    // on-screen keyboard. Without this, a user who pre-armed Ctrl and then
-    // dismissed the keyboard would hit the next typing session already in
-    // Ctrl mode and silently send a control code on their first keystroke.
-    const keyboardOpen = kbHeight > 0;
-    useEffect(() => {
-      if (!keyboardOpen && ctrlStickyRef.current) setCtrl(false);
-    }, [keyboardOpen, setCtrl]);
-
-    const handleKeyboardToggle = useCallback(() => {
-      const term = xtermRef.current;
-      if (!term) return;
-      // Prefer the textarea's own focus state over visualViewport: iOS
-      // Safari inside PWAs / iframes sometimes skips the resize event, which
-      // leaves `keyboardOpen` falsely at `false` and sends the toggle down
-      // the focus branch (so tapping ⌨ while the keyboard is up does
-      // nothing). `document.activeElement` is synchronously correct and
-      // survives those viewport quirks.
-      const textarea = term.textarea;
-      const isFocused = !!textarea && document.activeElement === textarea;
-      if (isFocused || keyboardOpen) {
-        textarea?.blur();
-      } else {
-        term.focus();
-      }
-    }, [keyboardOpen]);
-
-    const terminalConfigRef = useRef({
-      fontFamily: resolvedFontStack,
-      fontSize: contentFontSize,
-      theme: activeTheme.terminal,
-    });
-    terminalConfigRef.current = {
-      fontFamily: resolvedFontStack,
-      fontSize: contentFontSize,
-      theme: activeTheme.terminal,
-    };
-    if (rendererTraceRef.current) {
-      rendererTraceRef.current.fontFamily = resolvedFontStack;
-      rendererTraceRef.current.fontSize = contentFontSize;
-    }
-    const { attachViewportLifecycle, applyTerminalConfig } =
+    const { terminalConfigRef, getTerminalConfig, getFallbackFontFamily } =
+      useTerminalConfigRef({
+        fontFamily: resolvedFontStack,
+        fontSize: contentFontSize,
+        theme: activeTheme.terminal,
+        rendererTraceRef,
+      });
+    const { attachViewportLifecycle, applyTerminalConfig, claimViewport } =
       useTerminalViewportLifecycle({
         sessionId,
         isEnded,
         terminalConfig: terminalConfigRef.current,
         xtermRef,
         fitRef,
-        refreshVisibleRows,
         flushPendingOutput,
         keyboardSettling,
         isTouch,
         firstDataTimerRef,
         hasReceivedDataRef,
-        onResizeApplied: suppressHistoryLoadAfterResize,
+        onResizeProposed: recordGeometryIntent,
         send,
         sendInit,
         setLastForegroundAtMs,
@@ -1081,7 +468,7 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       void sessionId;
       const container = containerRef.current;
       if (!container) return;
-      const initialConfig = terminalConfigRef.current;
+      const initialConfig = getTerminalConfig();
       rendererTraceRef.current = createInitialRendererTrace({
         requestedWebgl: webglEnabled,
         isTouch,
@@ -1092,399 +479,119 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       traceTerminalEvent("terminal-mount", { sessionId });
       const stopMainThreadTrace = startTerminalMainThreadTrace(sessionId);
 
-      // Open a terminal link / tapped-URL: a loopback dev-server URL goes
-      // through `App.openUrl`, which rewrites it to a host:port the viewer
-      // device can actually reach before opening a new tab; every other URL
-      // opens directly in a new tab. Shared by the web-links addon (mouse
-      // hover -> click) and the touch tap-to-open hit-test below.
-      const openUrlFromTerminal = (uri: string) => {
-        const openUrl = openUrlRef.current;
-        if (openUrl && shouldOpenInEmbeddedBrowser(uri)) {
-          const terminalProjectId = projectIdRef.current;
-          if (terminalProjectId) {
-            openUrl(uri, { projectId: terminalProjectId });
-          } else {
-            openUrl(uri);
-          }
-        } else {
-          openHttpUrlInNewTab(uri);
-        }
-      };
-      const openFilePathFromTerminal = (filePath: string) => {
-        openFilePathRef.current?.(filePath);
-      };
-
-      const term = new XTerm({
-        fontFamily: initialConfig.fontFamily,
-        fontSize: initialConfig.fontSize,
-        disableStdin: isEnded,
-        theme: initialConfig.theme,
-        allowProposedApi: true,
-        cursorStyle: "block",
-        cursorBlink: !isEnded,
-        // xterm's default is 1000. Keep a generous window so a multi-screen
-        // build log stays scrollable, but avoid 50k-line buffers per pane --
-        // they balloon heap on long-running tabs with multiple terminals.
-        scrollback: 10000,
+      const openHandlers = createTerminalOpenHandlers({
+        openUrlRef,
+        openFilePathRef,
+        projectIdRef,
+        worktreePathRef,
       });
-      const bottomRowsSnapshotProvider = (rowCount?: number) =>
-        xtermRef.current === term
-          ? terminalBottomRowsTrace(
-              term,
-              rowCount,
-              rendererTraceRef.current ?? undefined,
-            )
-          : null;
-      let unregisterBottomRowsSnapshot =
-        registerTerminalBottomRowsSnapshotProvider(bottomRowsSnapshotProvider, {
-          sessionId,
-          paneId,
-        });
-      const markBottomRowsSnapshotActive = () => {
-        unregisterBottomRowsSnapshot();
-        unregisterBottomRowsSnapshot =
-          registerTerminalBottomRowsSnapshotProvider(
-            bottomRowsSnapshotProvider,
-            { sessionId, paneId },
-          );
-      };
 
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-      /*
-       * Unicode 11 wcwidth addon. The stock xterm wcwidth table predates
-       * Unicode 11's widening of many East Asian / emoji codepoints to
-       * wide (2-cell). Without this, mixed CJK/emoji lines drift a cell
-       * per occurrence and box-drawing/TUIs misalign on CJK locales.
-       */
-      term.loadAddon(new Unicode11Addon());
-      term.unicode.activeVersion = TERMINAL_UNICODE_VERSION;
-      term.loadAddon(
-        new WebLinksAddon((_event, uri) => openUrlFromTerminal(uri)),
-      );
-      const fileLinkProviderDisposable = term.registerLinkProvider(
-        createTerminalFileLinkProvider(
-          (bufferLineNumber) =>
-            term.buffer.active.getLine(bufferLineNumber - 1),
-          () => worktreePathRef.current,
-          openFilePathFromTerminal,
-        ),
-      );
-      term.open(container);
-      container.addEventListener("focusin", markBottomRowsSnapshotActive);
-      traceTerminalEvent("xterm-open", { sessionId });
-      const maybeTerm = term as XTerm & {
-        onRender?: XTerm["onRender"];
-        onCursorMove?: XTerm["onCursorMove"];
-      };
-      const renderDisposable =
-        typeof maybeTerm.onRender === "function"
-          ? maybeTerm.onRender(({ start, end }) => {
-              traceTerminalEventLazy("xterm-render", () => ({
-                sessionId,
-                renderStart: start,
-                renderEnd: end,
-                ...terminalBufferTrace(term),
-              }));
-            })
-          : { dispose: () => {} };
-      const SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS = 1200;
-      let synchronizedCursorRefreshFrame: number | null = null;
-      let synchronizedCursorRefreshStartedAt = 0;
-      const cancelSynchronizedCursorRefresh = () => {
-        if (synchronizedCursorRefreshFrame === null) return;
-        cancelAnimationFrame(synchronizedCursorRefreshFrame);
-        synchronizedCursorRefreshFrame = null;
-      };
-      const runSynchronizedCursorRefresh = () => {
-        synchronizedCursorRefreshFrame = null;
-        if (xtermRef.current !== term) return;
-        if (
-          term.modes.synchronizedOutputMode &&
-          performance.now() - synchronizedCursorRefreshStartedAt <
-            SYNCHRONIZED_CURSOR_REFRESH_MAX_WAIT_MS
-        ) {
-          synchronizedCursorRefreshFrame = requestAnimationFrame(
-            runSynchronizedCursorRefresh,
-          );
-          return;
-        }
-        refreshVisibleRows(term);
-      };
-      const scheduleSynchronizedCursorRefresh = () => {
-        if (synchronizedCursorRefreshFrame !== null) return;
-        synchronizedCursorRefreshStartedAt = performance.now();
-        synchronizedCursorRefreshFrame = requestAnimationFrame(
-          runSynchronizedCursorRefresh,
-        );
-      };
-      const cursorMoveDisposable =
-        typeof maybeTerm.onCursorMove === "function"
-          ? maybeTerm.onCursorMove(() => {
-              traceTerminalEventLazy("xterm-cursor-move", () => ({
-                sessionId,
-                ...terminalBufferTrace(term),
-              }));
-              if (term.modes.synchronizedOutputMode) {
-                scheduleSynchronizedCursorRefresh();
-              }
-            })
-          : { dispose: () => {} };
-      // Coalesce scroll-derived UI state into one update per frame. This
-      // drives both older-history loading near the top and the restored
-      // jump-to-bottom affordance when the user scrolls away from the tail.
-      const HISTORY_LOAD_TOP_THRESHOLD_ROWS = 2;
-      const SCROLL_DOWN_THRESHOLD_ROWS = 3;
-      let pendingScrollFrame: number | null = null;
-      const updateScrollState = () => {
-        if (pendingScrollFrame !== null) return;
-        pendingScrollFrame = requestAnimationFrame(() => {
-          pendingScrollFrame = null;
-          const buf = term.buffer.active;
-          if (replayRestoringRef.current) {
-            traceTerminalEvent("terminal-scroll-state", {
-              sessionId,
-              viewportY: buf.viewportY,
-              baseY: buf.baseY,
-              reason: "replay-restoring",
-            });
-            return;
-          }
-          setShowScrollDown(
-            buf.baseY - buf.viewportY > SCROLL_DOWN_THRESHOLD_ROWS,
-          );
-          if (selectionOverlayRef.current) {
-            setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
-          }
-          traceTerminalEvent("terminal-scroll-state", {
-            sessionId,
-            viewportY: buf.viewportY,
-            baseY: buf.baseY,
-            deferred: keyboardSettlingRef.current,
-            reason: historyTopLoadArmedRef.current ? "armed" : "observed",
-          });
-          if (buf.viewportY > HISTORY_LOAD_TOP_THRESHOLD_ROWS) {
-            historyTopLoadArmedRef.current = true;
-          } else if (historyTopLoadArmedRef.current) {
-            if (
-              keyboardSettlingRef.current ||
-              performance.now() < keyboardHistoryLoadSuppressUntilRef.current
-            ) {
-              traceTerminalEvent("terminal-history-load-suppressed", {
-                sessionId,
-                viewportY: buf.viewportY,
-                baseY: buf.baseY,
-                reason: "keyboard-settle",
-              });
-              return;
-            }
-            historyTopLoadArmedRef.current = false;
-            void loadOlderHistory();
-          }
+      const { term, fitAddon, fileLinkProviderDisposable } =
+        createTerminalInstance({
+          fontFamily: initialConfig.fontFamily,
+          fontSize: initialConfig.fontSize,
+          theme: initialConfig.theme,
+          isEnded,
+          unicodeVersion: TERMINAL_UNICODE_VERSION,
+          openUrl: openHandlers.openUrl,
+          getWorktreePath: openHandlers.getWorktreePath,
+          openFilePath: openHandlers.openFilePath,
         });
-      };
-      const scrollDisposable = term.onScroll(updateScrollState);
-      updateScrollState();
-      // Shift+Enter -> ESC+CR. Chat TUIs (Claude Code etc) parse ESC+CR as
-      // newline. preventDefault stops the hidden textarea from also receiving
-      // a newline that would re-fire xterm.onData and submit the prompt.
-      // IME guard: while composition is active (isComposing or legacy
-      // keyCode=229), return false to also block xterm's default Enter->CR
-      // path. xterm's CompositionHelper.keydown finalizes composition and
-      // returns true for non-229 keys, which would otherwise convert Enter to
-      // CR and submit the JP/CJK candidate as a prompt on browsers that fire
-      // keydown before compositionend (e.g. Firefox).
-      term.attachCustomKeyEventHandler((event) => {
-        const composing =
-          event.isComposing ||
-          (event as KeyboardEvent & { keyCode?: number }).keyCode === 229;
-        if (
-          event.type === "keydown" &&
-          event.key === "Enter" &&
-          event.shiftKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !event.metaKey
-        ) {
-          if (composing) return false;
-          event.preventDefault();
-          if (!isEnded) send({ type: "input", data: "\x1b\r" });
-          return false;
-        }
-        return true;
+      const bottomRowsSnapshot = attachTerminalBottomRowsSnapshotProvider({
+        sessionId,
+        paneId,
+        term,
+        getActiveTerm: () => xtermRef.current,
+        rendererTraceRef,
+      });
+
+      term.open(container);
+      container.addEventListener("focusin", bottomRowsSnapshot.markActive);
+      traceTerminalEvent("xterm-open", { sessionId });
+      const cleanupRenderObservers = attachTerminalRenderObservers({
+        sessionId,
+        term,
+        getActiveTerm: () => xtermRef.current,
+        refreshVisibleRows,
+      });
+      const cleanupScrollState = attachTerminalScrollState({
+        sessionId,
+        term,
+        replayRestoringRef,
+        keyboardSettlingRef,
+        keyboardHistoryLoadSuppressUntilRef,
+        historyTopLoadArmedRef,
+        setShowScrollDown,
+        refreshSelectionOverlayLayout: () => {
+          setSelectionOverlay((prev) => (prev ? { ...prev } : prev));
+        },
+        loadOlderHistory,
+      });
+      attachTerminalShiftEnterHandler({
+        term,
+        isEnded,
+        send,
       });
       const screenElement =
         term.element?.querySelector(".xterm-screen") ??
         container.querySelector(".xterm-screen");
-      const cleanupTapGestures = attachTerminalTapGestures({
+      const cleanupTouchLifecycle = attachTerminalTouchLifecycle({
+        sessionId,
         term,
         container,
         screenElement,
-      });
-      const cleanupTouchWheel = attachTerminalTouchWheel({
-        term,
-        screenElement,
-      });
-
-      const cleanupTouchSelection = attachTerminalTouchSelection({
-        term,
-        screenElement,
-        openUrl: openUrlFromTerminal,
-        openFilePath: openFilePathFromTerminal,
-        getWorktreePath: () => worktreePathRef.current,
-        onSelectionCleared: () => {
-          setHasSelection(false);
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(null);
-        },
-        onInputToolbarRequest: (anchor) => {
-          if (!hasTerminalPasteCandidate()) return;
-          setHasSelection(false);
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(anchor);
-        },
+        openUrl: openHandlers.openUrl,
+        openFilePath: openHandlers.openFilePath,
+        getWorktreePath: openHandlers.getWorktreePath,
+        inputToolbarDismissSuppressUntilRef,
+        setHasSelection,
+        setSelectionOverlay,
+        setInputToolbarAnchor,
         onSelectionCommit: commitSelectionOverlay,
       });
 
-      const selectionDisposable = term.onSelectionChange(() => {
-        const selected = term.getSelection().length > 0;
-        setHasSelection(selected);
-        if (!selected) {
-          setSelectionOverlay(null);
-          setInputToolbarAnchor(null);
-          return;
-        }
-        const range = getTerminalSelectionRange(term);
-        if (range) {
-          setSelectionOverlay((prev) => (prev ? { ...prev, range } : prev));
-        }
-      });
-
-      const emitRendererTrace = (type: string) => {
-        const renderer = rendererTraceRef.current;
-        traceTerminalEvent(type, {
-          sessionId,
-          requestedWebgl: renderer?.requestedWebgl,
-          effectiveRenderer: renderer?.effectiveRenderer,
-          webglStatus: renderer?.webglStatus,
-          webglFailureReason: renderer?.webglFailureReason,
-          contextLossCount: renderer?.contextLossCount,
-          fontLoadingDoneCount: renderer?.fontLoadingDoneCount,
-          atlasRebuildCount: renderer?.atlasRebuildCount,
-          iosFontPrefetchStatus: renderer?.iosFontPrefetchStatus,
-          unicodeVersion: renderer?.unicodeVersion,
-          isTouch: renderer?.isTouch,
-          isIos: renderer?.isIos,
-        });
-      };
-      const onRendererFontEvent = (event: TerminalRendererFontEvent) => {
-        const renderer = rendererTraceRef.current;
-        if (!renderer) return;
-        switch (event.type) {
-          case "webgl-skip":
-            renderer.requestedWebgl = false;
-            renderer.effectiveRenderer = "dom";
-            renderer.webglStatus = "disabled";
-            renderer.webglFailureReason = event.reason;
-            emitRendererTrace("terminal-renderer-webgl-skip");
-            break;
-          case "webgl-attach":
-            renderer.effectiveRenderer = "webgl";
-            renderer.webglStatus = "attached";
-            renderer.webglFailureReason = undefined;
-            emitRendererTrace("terminal-renderer-webgl-attach");
-            break;
-          case "webgl-error":
-            renderer.effectiveRenderer = "dom";
-            renderer.webglStatus = "failed";
-            renderer.webglFailureReason = event.reason;
-            emitRendererTrace("terminal-renderer-webgl-error");
-            break;
-          case "webgl-context-loss":
-            renderer.effectiveRenderer = "dom";
-            renderer.webglStatus = "context-lost";
-            renderer.contextLossCount += 1;
-            emitRendererTrace("terminal-renderer-webgl-context-loss");
-            break;
-          case "font-loadingdone":
-            renderer.fontLoadingDoneCount += 1;
-            renderer.atlasRebuildCount += 1;
-            renderer.fontFamily =
-              term.options.fontFamily ?? terminalConfigRef.current.fontFamily;
-            emitRendererTrace("terminal-renderer-font-loadingdone");
-            break;
-          case "ios-font-prefetch":
-            renderer.iosFontPrefetchStatus = event.status;
-            emitRendererTrace("terminal-renderer-ios-font-prefetch");
-            break;
-        }
-      };
-      const detachRendererFontAtlas = attachWebglRendererAndFontAtlas(term, {
+      const detachRendererLifecycle = attachTerminalRendererLifecycle({
+        sessionId,
+        term,
+        rendererTraceRef,
+        getFallbackFontFamily,
         isIos,
         enableWebgl: webglEnabled,
-        onEvent: onRendererFontEvent,
       });
 
-      xtermRef.current = term;
-      fitRef.current = fitAddon;
-      resetOutputPipeline(false);
-      const cachedReplay =
-        cachedReplayRef.current?.entry ?? getTerminalReplayCache(sessionId);
-      if (cachedReplay) {
-        cachedReplayRef.current = { sessionId, entry: cachedReplay };
-      }
-      const restoreInitialCachedReplay = () => {
-        if (replayCacheMatchesDimensions(cachedReplay, term)) {
-          restoreCachedReplay(term, cachedReplay.data);
-        }
-      };
+      const mountedInstance = attachTerminalMountedInstance({
+        term,
+        fitAddon,
+        xtermRef,
+        fitRef,
+        rendererTraceRef,
+        resetOutputPipeline,
+      });
+      const restoreInitialCachedReplay = prepareInitialReplayRestore({
+        sessionId,
+        term,
+        cachedReplayRef,
+        restoreCachedReplay,
+      });
 
       // Register onData outside commitInit so pre-init keystrokes are not
       // dropped while we wait for the container to report real dims (WebView,
       // slow layout). `useTerminalSocket.send()` queues frames until init
       // has been sent, so the payloads here are preserved and flushed in
       // order once sendInit lands.
-      if (!isEnded) {
-        term.onData((data) => {
-          const now = performance.now();
-          const imeGate = imeDuplicateGateRef.current;
-          const inImeWindow = imeGate.composing || now <= imeGate.suppressUntil;
-          const isImeText = isPrintableImeData(data);
-          if (
-            inImeWindow &&
-            isImeText &&
-            imeGate.lastSentSerial === imeGate.activeSerial &&
-            imeGate.lastSentText === data &&
-            now - imeGate.lastSentAt <= IME_DUPLICATE_SUPPRESS_MS
-          ) {
-            traceTerminalEvent("terminal-ime-duplicate-suppressed", {
-              sessionId,
-              dataLength: data.length,
-              durationMs: Math.round((now - imeGate.lastSentAt) * 10) / 10,
-              reason: "same-composition-text",
-            });
-            return;
-          }
-          if (inImeWindow && isImeText) {
-            imeGate.lastSentText = data;
-            imeGate.lastSentAt = now;
-            imeGate.lastSentSerial = imeGate.activeSerial;
-          }
-          traceTerminalEvent("xterm-on-data", {
-            sessionId,
-            dataLength: data.length,
-          });
-          const out = ctrlStickyRef.current ? applyCtrlModifier(data) : data;
-          const inputStatus = ctrlStickyRef.current ? "ctrl-modified" : "raw";
-          if (ctrlStickyRef.current) setCtrl(false);
-          traceTerminalEvent("terminal-send-input", {
-            sessionId,
-            dataLength: out.length,
-          });
-          send({ type: "input", data: out });
-          scheduleInputDiagnostics(term, out.length, inputStatus);
-        });
-      }
+      const cleanupTerminalDataInput = attachTerminalDataInput({
+        enabled: !isEnded,
+        sessionId,
+        term,
+        isTouch,
+        send,
+        setCtrl,
+        ctrlStickyRef,
+        imeDuplicateGateRef,
+        lastDesktopInputClaimAtRef,
+        inputDiagnosticTimersRef,
+        claimViewport,
+      });
 
       const cleanupViewportLifecycle = attachViewportLifecycle({
         container,
@@ -1499,320 +606,99 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
       // transition -- blur is the most direct signal that no soft-keyboard
       // input is coming next, so we key the clear off it as well.
       const textarea = term.textarea;
-      const onImeCompositionStart = () => {
-        const imeGate = imeDuplicateGateRef.current;
-        imeGate.composing = true;
-        imeGate.serial += 1;
-        imeGate.activeSerial = imeGate.serial;
-        imeGate.suppressUntil = 0;
-        imeGate.lastSentText = "";
-        imeGate.lastSentAt = 0;
-        imeGate.lastSentSerial = -1;
-      };
-      const onImeCompositionEnd = () => {
-        const imeGate = imeDuplicateGateRef.current;
-        imeGate.composing = false;
-        imeGate.suppressUntil = performance.now() + IME_DUPLICATE_SUPPRESS_MS;
-      };
-      const traceDomInputEvent = (event: Event) => {
-        const inputEvent = event as InputEvent;
-        traceTerminalEvent(`dom-${event.type}`, {
-          sessionId,
-          dataLength:
-            typeof inputEvent.data === "string" ? inputEvent.data.length : 0,
-          inputType:
-            typeof inputEvent.inputType === "string"
-              ? inputEvent.inputType
-              : undefined,
-          isComposing:
-            typeof inputEvent.isComposing === "boolean"
-              ? inputEvent.isComposing
-              : undefined,
+      const cleanupDomLifecycle = attachTerminalDomLifecycle({
+        sessionId,
+        textarea,
+        screenElement,
+        toolbarSyntheticMouseSuppressUntilRef,
+      });
+      const cleanupTextareaAdjunctLifecycle =
+        attachTerminalTextareaAdjunctLifecycle({
+          textarea,
+          imeDuplicateGateRef,
+          inputDiagnosticTimersRef,
+          dropEnabledRef,
+          runUploadRef,
+          setCtrl,
         });
-      };
-      const traceDomKeyEvent = (event: Event) => {
-        const keyEvent = event as KeyboardEvent;
-        traceTerminalEvent(`dom-${event.type}`, {
-          sessionId,
-          dataLength:
-            typeof keyEvent.key === "string" ? keyEvent.key.length : 0,
-          isComposing: keyEvent.isComposing,
-        });
-      };
-      const traceTextareaFocusState = (event: Event) => {
-        traceTerminalEvent(`dom-${event.type}`, {
-          sessionId,
-          surface: "xterm-textarea",
-          visible: document.activeElement === textarea,
-        });
-      };
-      const traceTerminalSurfaceEvent = (event: Event) => {
-        traceTerminalEvent("terminal-surface-event", {
-          sessionId,
-          status: event.type,
-          surface:
-            event.target instanceof Element
-              ? event.target.className.toString()
-              : undefined,
-          visible: document.activeElement === textarea,
-          skipped: event.defaultPrevented,
-        });
-      };
-      const suppressSyntheticMouseAfterToolbarAction = (event: Event) => {
-        if (performance.now() > toolbarSyntheticMouseSuppressUntilRef.current) {
-          return;
-        }
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        traceTerminalEvent("terminal-toolbar-synthetic-mouse-suppressed", {
-          sessionId,
-          status: event.type,
-          surface:
-            event.target instanceof Element
-              ? event.target.className.toString()
-              : undefined,
-        });
-      };
-      const traceDomEvents = isTerminalTraceEnabled();
-      screenElement?.addEventListener(
-        "mousedown",
-        suppressSyntheticMouseAfterToolbarAction,
-        { capture: true },
-      );
-      screenElement?.addEventListener(
-        "click",
-        suppressSyntheticMouseAfterToolbarAction,
-        { capture: true },
-      );
-      if (traceDomEvents) {
-        textarea?.addEventListener("focus", traceTextareaFocusState);
-        textarea?.addEventListener("blur", traceTextareaFocusState);
-        textarea?.addEventListener("keydown", traceDomKeyEvent);
-        textarea?.addEventListener("beforeinput", traceDomInputEvent);
-        textarea?.addEventListener("input", traceDomInputEvent);
-        textarea?.addEventListener("compositionstart", traceDomInputEvent);
-        textarea?.addEventListener("compositionupdate", traceDomInputEvent);
-        textarea?.addEventListener("compositionend", traceDomInputEvent);
-        screenElement?.addEventListener(
-          "pointerdown",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener(
-          "pointerup",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener(
-          "touchstart",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener("touchend", traceTerminalSurfaceEvent, {
-          capture: true,
-        });
-        screenElement?.addEventListener(
-          "mousedown",
-          traceTerminalSurfaceEvent,
-          {
-            capture: true,
-          },
-        );
-        screenElement?.addEventListener("click", traceTerminalSurfaceEvent, {
-          capture: true,
-        });
-      }
-      textarea?.addEventListener("compositionstart", onImeCompositionStart);
-      textarea?.addEventListener("compositionend", onImeCompositionEnd);
-      const onTextareaBlur = () => {
-        const imeGate = imeDuplicateGateRef.current;
-        imeGate.composing = false;
-        imeGate.suppressUntil = 0;
-        setCtrl(false);
-      };
-      textarea?.addEventListener("blur", onTextareaBlur);
-
-      // Clipboard image paste: when the user hits ⌘V / Ctrl+V inside xterm
-      // and the clipboard carries image data, upload via the same
-      // `/api/projects/:id/drops` endpoint as OS-file DnD and inject the
-      // returned absolute paths (POSIX single-quoted, space-joined). Text-
-      // only paste falls through to xterm's default handling untouched.
-      // iOS Safari may expose an empty `clipboardData.items` for image
-      // paste -- `extractImageFiles` returns `[]` in that case and we also
-      // fall through silently (no toast).
-      const onPaste = (e: ClipboardEvent): void => {
-        // Same gate as OS-file DnD: attached PTY + !isEnded. Otherwise let
-        // xterm handle text fallback normally. Read via ref so socket
-        // reconnect / runUpload identity changes do not re-run this effect.
-        if (!dropEnabledRef.current) return;
-        // serviceConfig.dropSizeMaxBytes is not available in this component
-        // without a new store subscription -- rely on the server's 413 for
-        // oversize instead.
-        const images = extractImageFiles(e.clipboardData);
-        if (images.length === 0) return;
-        // Text+image combo: preventDefault the whole paste so binary
-        // content doesn't get dumped into the pty.
-        e.preventDefault();
-        void runUploadRef.current(images);
-      };
-      textarea?.addEventListener("paste", onPaste);
 
       return () => {
         cleanupViewportLifecycle();
-        cleanupTapGestures();
-        cleanupTouchWheel();
-        cleanupTouchSelection();
+        cleanupTouchLifecycle();
         stopMainThreadTrace();
-        screenElement?.removeEventListener(
-          "mousedown",
-          suppressSyntheticMouseAfterToolbarAction,
-          { capture: true },
-        );
-        screenElement?.removeEventListener(
-          "click",
-          suppressSyntheticMouseAfterToolbarAction,
-          { capture: true },
-        );
-        if (traceDomEvents) {
-          textarea?.removeEventListener("focus", traceTextareaFocusState);
-          textarea?.removeEventListener("blur", traceTextareaFocusState);
-          textarea?.removeEventListener("keydown", traceDomKeyEvent);
-          textarea?.removeEventListener("beforeinput", traceDomInputEvent);
-          textarea?.removeEventListener("input", traceDomInputEvent);
-          textarea?.removeEventListener("compositionstart", traceDomInputEvent);
-          textarea?.removeEventListener(
-            "compositionupdate",
-            traceDomInputEvent,
-          );
-          textarea?.removeEventListener("compositionend", traceDomInputEvent);
-          screenElement?.removeEventListener(
-            "pointerdown",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "pointerup",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "touchstart",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "touchend",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "mousedown",
-            traceTerminalSurfaceEvent,
-            { capture: true },
-          );
-          screenElement?.removeEventListener(
-            "click",
-            traceTerminalSurfaceEvent,
-            {
-              capture: true,
-            },
-          );
-        }
-        textarea?.removeEventListener(
-          "compositionstart",
-          onImeCompositionStart,
-        );
-        textarea?.removeEventListener("compositionend", onImeCompositionEnd);
-        textarea?.removeEventListener("blur", onTextareaBlur);
-        textarea?.removeEventListener("paste", onPaste);
-        for (const timer of inputDiagnosticTimersRef.current) {
-          window.clearTimeout(timer);
-        }
-        inputDiagnosticTimersRef.current.clear();
-        container.removeEventListener("focusin", markBottomRowsSnapshotActive);
-        detachRendererFontAtlas();
-        renderDisposable.dispose();
-        cursorMoveDisposable.dispose();
-        selectionDisposable.dispose();
-        scrollDisposable.dispose();
-        unregisterBottomRowsSnapshot();
+        cleanupDomLifecycle();
+        cleanupTextareaAdjunctLifecycle();
+        container.removeEventListener("focusin", bottomRowsSnapshot.markActive);
+        detachRendererLifecycle();
+        cleanupScrollState();
+        bottomRowsSnapshot.dispose();
         fileLinkProviderDisposable.dispose();
-        if (pendingScrollFrame !== null) {
-          cancelAnimationFrame(pendingScrollFrame);
-          pendingScrollFrame = null;
-        }
-        cancelSynchronizedCursorRefresh();
+        cleanupRenderObservers();
         setHasSelection(false);
         setSelectionOverlay(null);
         setInputToolbarAnchor(null);
-        resetOutputPipeline(true);
-        term.dispose();
-        xtermRef.current = null;
-        fitRef.current = null;
-        rendererTraceRef.current = null;
+        mountedInstance.resetOutputPipelineForUnmount();
+        cleanupTerminalDataInput();
+        mountedInstance.dispose();
       };
     }, [
       attachViewportLifecycle,
+      cachedReplayRef,
+      claimViewport,
+      ctrlStickyRef,
       dropEnabledRef,
+      historyTopLoadArmedRef,
+      inputToolbarDismissSuppressUntilRef,
+      keyboardHistoryLoadSuppressUntilRef,
+      keyboardSettlingRef,
       isIos,
       isTouch,
       isEnded,
+      getFallbackFontFamily,
+      getTerminalConfig,
       loadOlderHistory,
+      openFilePathRef,
+      openUrlRef,
+      projectIdRef,
       resetOutputPipeline,
+      replayRestoringRef,
       restoreCachedReplay,
       refreshVisibleRows,
       commitSelectionOverlay,
       send,
-      scheduleInputDiagnostics,
       sessionId,
       paneId,
       setCtrl,
+      setHasSelection,
+      setSelectionOverlay,
       runUploadRef,
+      toolbarSyntheticMouseSuppressUntilRef,
       webglEnabled,
+      worktreePathRef,
     ]);
 
     useEffect(() => {
       applyTerminalConfig();
     }, [applyTerminalConfig]);
 
-    const reconnectingOverlayDelayMs =
-      isTouch &&
-      lastForegroundAtMs > 0 &&
-      Date.now() - lastForegroundAtMs <= FOREGROUND_RECONNECTING_GRACE_MS
-        ? FOREGROUND_RECONNECTING_OVERLAY_DELAY_MS
-        : DEFAULT_RECONNECTING_OVERLAY_DELAY_MS;
+    const reconnectingOverlayDelayMs = resolveTerminalReconnectingOverlayDelay({
+      isTouch,
+      lastForegroundAtMs,
+    });
 
     const selectionOverlayLayout = (() => {
       const term = xtermRef.current;
       const rootElement = rootRef.current;
       const overlay = selectionOverlay;
-      if (!term || !rootElement || !overlay || !hasSelection) return null;
-      const screenElement = getXtermScreenElement(term, containerRef.current);
-      if (!screenElement) return null;
-      return {
-        startHandle: pointToOverlayPosition(
-          overlay.range.start,
-          term,
-          screenElement,
-          rootElement,
-        ),
-        endHandle: pointToOverlayPosition(
-          overlay.range.end,
-          term,
-          screenElement,
-          rootElement,
-        ),
-        toolbar:
-          overlay.toolbarAnchor && !overlay.draggingHandle
-            ? toolbarPositionFromAnchor(overlay.toolbarAnchor, rootElement, 72)
-            : null,
-      };
+      return resolveSelectionOverlayLayout({
+        term,
+        rootElement,
+        screenElement: term
+          ? getXtermScreenElement(term, containerRef.current)
+          : null,
+        overlay,
+        hasSelection,
+      });
     })();
     const inputToolbarPosition =
       inputToolbarAnchor && rootRef.current
@@ -1877,40 +763,28 @@ export const Terminal = forwardRef<PaneInputHandle, TerminalProps>(
             </button>
           )}
         </div>
-        {selectionOverlayLayout && (
-          <TerminalSelectionOverlay
-            startHandle={selectionOverlayLayout.startHandle}
-            endHandle={selectionOverlayLayout.endHandle}
-            toolbar={selectionOverlayLayout.toolbar}
-            draggingHandle={selectionOverlay?.draggingHandle ?? null}
-            onHandlePointerDown={handleSelectionHandlePointerDown}
-            onCopy={() => {
-              void handleCopySelection();
-            }}
-            onPaste={() => {
-              void handlePasteFromTerminalToolbar();
-            }}
-            onActionEvent={handleToolbarActionEvent}
-            pasteEnabled={false}
-          />
-        )}
-        {inputToolbarPosition && (
-          <TerminalSelectionOverlay
-            startHandle={null}
-            endHandle={null}
-            toolbar={inputToolbarPosition}
-            draggingHandle={null}
-            copyEnabled={false}
-            onHandlePointerDown={handleSelectionHandlePointerDown}
-            onCopy={() => {
-              void handleCopySelection();
-            }}
-            onPaste={() => {
-              void handlePasteFromTerminalToolbar();
-            }}
-            onActionEvent={handleToolbarActionEvent}
-          />
-        )}
+        <TerminalSelectionOverlays
+          selectionLayout={selectionOverlayLayout}
+          selectionDraggingHandle={selectionOverlay?.draggingHandle ?? null}
+          inputToolbarPosition={inputToolbarPosition}
+          externalCopyOpen={externalCopyText !== null}
+          onHandlePointerDown={handleSelectionHandlePointerDown}
+          onCopy={() => {
+            void handleCopySelection();
+          }}
+          onCopyLongPress={openExternalCopyDialog}
+          onPaste={() => {
+            void handlePasteFromTerminalToolbar();
+          }}
+          onActionEvent={handleToolbarActionEvent}
+        />
+        <TerminalExternalCopyDialog
+          open={externalCopyText !== null}
+          text={externalCopyText ?? ""}
+          isMobile={isTouch}
+          onClose={closeExternalCopyDialog}
+          onCopy={copyExternalText}
+        />
         {isDragOver && dropEnabled && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/30 ring-2 ring-inset ring-accent">
             <div className="rounded-window border border-border bg-bg-secondary/95 px-3 py-1.5 text-sm text-text-primary shadow-lg">

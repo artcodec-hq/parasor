@@ -40,6 +40,13 @@ export interface TerminalLastSeen {
   seq: string;
 }
 
+/** Geometry of the PTY that produced terminal output. */
+export interface TerminalGeometry {
+  cols: number;
+  rows: number;
+  epoch: number;
+}
+
 /**
  * Snapshot of server-side chunk ring at init-ack time.
  *
@@ -58,6 +65,11 @@ export interface TerminalServerState {
   generation: number;
   lastDeliveredSeq: string | null;
   oldestSeq: string | null;
+  /**
+   * Authoritative PTY geometry at attach time. Optional for wire
+   * compatibility with older servers and daemon peers.
+   */
+  geometry?: TerminalGeometry;
 }
 
 export type TerminalReplayKind = "delta" | "full" | "none";
@@ -113,6 +125,7 @@ export type WsTerminalClientMessage =
  */
 export type WsTerminalServerMessage =
   | { type: "replay"; data: string }
+  | { type: "geometry"; geometry: TerminalGeometry }
   | {
       type: "init-ack";
       capabilities: TerminalCapabilities;

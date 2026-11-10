@@ -126,7 +126,7 @@ async function mapWithLimit<T, R>(
  * `unable to read tree …: No such file or directory`) and silently
  * mark live worktrees as orphans, which the UI then offers to prune.
  */
-function isMissingPathError(err: unknown): boolean {
+export function isMissingPathError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { code?: unknown };
   return e.code === "ENOENT";
@@ -157,6 +157,11 @@ async function enrichWithCounters(
     }
   });
 }
+
+export type ProjectWorktreesResult =
+  | { status: "ok"; worktrees: Worktree[] }
+  | { status: "missing-path" }
+  | { status: "git-error" };
 
 export function createProjectQueries({
   projectManager,
@@ -210,7 +215,7 @@ export function createProjectQueries({
       }
     },
 
-    async getProjectWorktrees(id: string) {
+    async getProjectWorktrees(id: string): Promise<ProjectWorktreesResult> {
       const project = getProjectOrThrow(id);
 
       try {
@@ -221,9 +226,13 @@ export function createProjectQueries({
         ]);
         const list = parseWorktreeList(porcelain);
         const enriched = await enrichWithCounters(list, runGit);
-        return mergeWorktreeMetadata(enriched, getWorktreeMetadata(id));
-      } catch {
-        return [];
+        return {
+          status: "ok",
+          worktrees: mergeWorktreeMetadata(enriched, getWorktreeMetadata(id)),
+        };
+      } catch (err) {
+        if (isMissingPathError(err)) return { status: "missing-path" };
+        return { status: "git-error" };
       }
     },
 
@@ -246,11 +255,15 @@ export function createProjectQueries({
               mergeWorktreeMetadata(enriched, getWorktreeMetadata(project.id)),
             ] as const;
           } catch {
-            return [project.id, []] as const;
+            return null;
           }
         },
       );
-      return Object.fromEntries(entries);
+      return Object.fromEntries(
+        entries.filter(
+          (entry): entry is readonly [string, Worktree[]] => entry !== null,
+        ),
+      );
     },
   };
 }

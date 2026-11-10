@@ -1,7 +1,9 @@
 import {
+  type CSSProperties,
   type MouseEvent,
   type PointerEvent,
   type TouchEvent,
+  useEffect,
   useRef,
 } from "react";
 
@@ -25,6 +27,7 @@ export interface TerminalSelectionOverlayProps {
     event: PointerEvent<HTMLButtonElement>,
   ) => void;
   onCopy: () => void;
+  onCopyLongPress?: () => void;
   onPaste: () => void;
   onActionEvent?: (input: {
     action: TerminalSelectionAction;
@@ -37,6 +40,13 @@ const HANDLE_BASE =
   "absolute z-30 flex h-11 w-11 items-center justify-center rounded-full touch-none";
 const HANDLE_DOT =
   "h-[22px] w-[22px] rounded-full border-2 border-bg-terminal bg-accent shadow-lg";
+const COPY_LONG_PRESS_MS = 650;
+const COPY_LONG_PRESS_SUPPRESS_MS = 500;
+const TOUCH_CALLOUT_SUPPRESS_STYLE: CSSProperties = {
+  WebkitTouchCallout: "none",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+};
 
 export function TerminalSelectionOverlay({
   startHandle,
@@ -47,15 +57,48 @@ export function TerminalSelectionOverlay({
   pasteEnabled = true,
   onHandlePointerDown,
   onCopy,
+  onCopyLongPress,
   onPaste,
   onActionEvent,
 }: TerminalSelectionOverlayProps) {
   const lastActionAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const copyLongPressTimerRef = useRef<number | null>(null);
+  const copyLongPressSuppressUntilRef = useRef(Number.NEGATIVE_INFINITY);
+  const clearCopyLongPressTimer = () => {
+    if (copyLongPressTimerRef.current === null) return;
+    window.clearTimeout(copyLongPressTimerRef.current);
+    copyLongPressTimerRef.current = null;
+  };
+  const startCopyLongPress = () => {
+    if (!onCopyLongPress) return;
+    clearCopyLongPressTimer();
+    copyLongPressTimerRef.current = window.setTimeout(() => {
+      copyLongPressTimerRef.current = null;
+      copyLongPressSuppressUntilRef.current =
+        performance.now() + COPY_LONG_PRESS_SUPPRESS_MS;
+      onCopyLongPress();
+    }, COPY_LONG_PRESS_MS);
+  };
+  useEffect(
+    () => () => {
+      if (copyLongPressTimerRef.current === null) return;
+      window.clearTimeout(copyLongPressTimerRef.current);
+      copyLongPressTimerRef.current = null;
+    },
+    [],
+  );
   const stopToolbarStart = (
     event:
       | PointerEvent<HTMLButtonElement>
       | TouchEvent<HTMLButtonElement>
       | MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.nativeEvent.stopImmediatePropagation?.();
+  };
+  const stopToolbarContextMenu = (
+    event: MouseEvent<HTMLDivElement | HTMLButtonElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -72,15 +115,18 @@ export function TerminalSelectionOverlay({
     event.preventDefault();
     event.stopPropagation();
     event.nativeEvent.stopImmediatePropagation?.();
+    clearCopyLongPressTimer();
 
     const now = performance.now();
     const deduped = now - lastActionAtRef.current < 500;
+    const skippedAfterCopyLongPress =
+      actionName === "copy" && now < copyLongPressSuppressUntilRef.current;
     onActionEvent?.({
       action: actionName,
       eventType: event.type,
-      deduped,
+      deduped: deduped || skippedAfterCopyLongPress,
     });
-    if (deduped) {
+    if (deduped || skippedAfterCopyLongPress) {
       return;
     }
     lastActionAtRef.current = now;
@@ -127,17 +173,33 @@ export function TerminalSelectionOverlay({
           style={{
             left: toolbar.left,
             top: toolbar.top,
+            ...TOUCH_CALLOUT_SUPPRESS_STYLE,
           }}
+          onContextMenu={stopToolbarContextMenu}
         >
           {copyEnabled && (
             <>
               <button
                 type="button"
                 aria-label="Copy terminal selection"
-                className="flex h-full items-center px-3 active:bg-row-hover-bg"
-                onPointerDown={stopToolbarStart}
-                onTouchStart={stopToolbarStart}
-                onMouseDown={stopToolbarStart}
+                className="flex h-full select-none items-center px-3 active:bg-row-hover-bg"
+                style={TOUCH_CALLOUT_SUPPRESS_STYLE}
+                onContextMenu={stopToolbarContextMenu}
+                onPointerDown={(event) => {
+                  stopToolbarStart(event);
+                  startCopyLongPress();
+                }}
+                onTouchStart={(event) => {
+                  stopToolbarStart(event);
+                  startCopyLongPress();
+                }}
+                onMouseDown={(event) => {
+                  stopToolbarStart(event);
+                  startCopyLongPress();
+                }}
+                onPointerLeave={clearCopyLongPressTimer}
+                onPointerCancel={clearCopyLongPressTimer}
+                onTouchCancel={clearCopyLongPressTimer}
                 onTouchEnd={(event) => runToolbarAction(event, "copy", onCopy)}
                 onPointerUp={(event) => runToolbarAction(event, "copy", onCopy)}
                 onClick={(event) => runToolbarAction(event, "copy", onCopy)}
@@ -153,7 +215,9 @@ export function TerminalSelectionOverlay({
             <button
               type="button"
               aria-label="Paste into terminal"
-              className="flex h-full items-center px-3 active:bg-row-hover-bg"
+              className="flex h-full select-none items-center px-3 active:bg-row-hover-bg"
+              style={TOUCH_CALLOUT_SUPPRESS_STYLE}
+              onContextMenu={stopToolbarContextMenu}
               onPointerDown={stopToolbarStart}
               onTouchStart={stopToolbarStart}
               onMouseDown={stopToolbarStart}

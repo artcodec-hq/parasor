@@ -12,6 +12,7 @@ export interface WorktreeCounters {
 }
 
 export interface WorktreeGitMenuActions {
+  onFetch?: () => Promise<void>;
   onPull?: () => void;
   onPush?: () => void;
 }

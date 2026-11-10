@@ -37,13 +37,27 @@ function emptyState(): AppState {
   };
 }
 
+function hydratedState(): AppState {
+  const state = emptyState();
+  state.projects = [
+    {
+      id: "p1",
+      name: "Hydrate me",
+      path: "/tmp/p1",
+      createdAt: 1,
+      lastAccessedAt: 1,
+    },
+  ];
+  return state;
+}
+
 describe("EventBus", () => {
   let bus: EventBus;
 
   beforeEach(() => {
     bus = new EventBus();
     bus.setHydrationSources({
-      getState: () => emptyState(),
+      getState: () => hydratedState(),
       getAgentStates: () => ({}),
       getNotifications: () => [],
       getPorts: () => ({}),
@@ -66,7 +80,11 @@ describe("EventBus", () => {
     );
     expect(msg.type).toBe("app-state-snapshot");
     expect(msg.payload.seq).toBe(0);
+    expect(msg.payload.missingProjectIds).toEqual([]);
     expect(msg.payload.services).toEqual({});
+    expect(msg.payload.state.projects).toEqual([
+      expect.objectContaining({ id: "p1", name: "Hydrate me" }),
+    ]);
   });
 
   it("broadcasts with incrementing seq", async () => {
@@ -83,6 +101,26 @@ describe("EventBus", () => {
     expect(env1.seq).toBe(1);
     expect(env2.seq).toBe(2);
     expect(env1.message.type).toBe("project-deleted");
+  });
+
+  it("notifies onClientDropped from removeClient and failed send", async () => {
+    const dropped: unknown[] = [];
+    bus.setOnClientDropped((ws) => {
+      dropped.push(ws);
+    });
+    const ws = mockWs();
+    await bus.addClient(ws);
+    bus.removeClient(ws);
+    expect(dropped).toHaveLength(1);
+
+    const failing = mockWs();
+    await bus.addClient(failing);
+    dropped.length = 0;
+    (failing.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error("send failed");
+    });
+    bus.broadcast({ type: "project-deleted", projectId: "p1" });
+    expect(dropped).toHaveLength(1);
   });
 
   it("does not send to removed clients", async () => {
@@ -255,6 +293,40 @@ describe("handleEventClientMessage", () => {
     const ws = mockWs();
     expect(() => handleEventClientMessage(ws, "{not json")).not.toThrow();
     expect(ws.send).not.toHaveBeenCalled();
+  });
+
+  it("forwards active-project ids to the hook", () => {
+    const ws = mockWs();
+    const onActiveProject = vi.fn();
+    handleEventClientMessage(
+      ws,
+      JSON.stringify({ type: "active-project", projectId: "p1" }),
+      { onActiveProject },
+    );
+    expect(onActiveProject).toHaveBeenCalledWith(ws, "p1");
+    expect(ws.send).not.toHaveBeenCalled();
+  });
+
+  it("forwards active-project null to the hook", () => {
+    const ws = mockWs();
+    const onActiveProject = vi.fn();
+    handleEventClientMessage(
+      ws,
+      JSON.stringify({ type: "active-project", projectId: null }),
+      { onActiveProject },
+    );
+    expect(onActiveProject).toHaveBeenCalledWith(ws, null);
+  });
+
+  it("ignores active-project with invalid projectId", () => {
+    const ws = mockWs();
+    const onActiveProject = vi.fn();
+    handleEventClientMessage(
+      ws,
+      JSON.stringify({ type: "active-project", projectId: 12 }),
+      { onActiveProject },
+    );
+    expect(onActiveProject).not.toHaveBeenCalled();
   });
 
   it("ignores non-string payloads", () => {

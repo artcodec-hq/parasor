@@ -180,7 +180,6 @@ export const WorktreeRows: Story = {
         project={project}
         worktree={worktree}
         selection={selection}
-        forceOpen
         onSelectWorktree={noop}
         onSelectChild={noop}
         onNewSession={noop}
