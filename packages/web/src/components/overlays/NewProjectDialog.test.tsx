@@ -281,3 +281,36 @@ describe("NewProjectDialog -- create new folder", () => {
     expect(onCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("NewProjectDialog -- browse errors", () => {
+  it("shows access denied when the folder is outside the allowed home tree", async () => {
+    mockResponses.push({
+      match: (input) =>
+        String(input).includes(encodeURIComponent("/tmp/outside-home")),
+      status: 403,
+      body: { error: "Access denied" },
+    });
+    mockBrowse("/home/test");
+    render(
+      <NewProjectDialog open={true} onClose={vi.fn()} onCreate={vi.fn()} />,
+    );
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText("Project folder") as HTMLInputElement).value,
+      ).toBe("/home/test");
+    });
+
+    fireEvent.change(screen.getByLabelText("Project folder"), {
+      target: { value: "/tmp/outside-home" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Access denied")).toBeTruthy();
+    });
+    expect(screen.queryByText("Directory not found")).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Add project" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+});
