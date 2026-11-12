@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Publish npm releases with trusted publishing (OIDC) instead of an `NPM_TOKEN`
+  secret.
+
 ### Security
 
 - Update DOMPurify to 3.4.17 for the markdown preview sanitizer.
