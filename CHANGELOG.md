@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Update DOMPurify to 3.4.17 for the markdown preview sanitizer.
+
 ## 0.1.5 - 2026-11-10
 
 ### Upgrade notes
