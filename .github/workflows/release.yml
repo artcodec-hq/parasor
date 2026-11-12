@@ -128,6 +128,9 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # npm trusted publishing (OIDC) requires npm >= 11.5.1: https://docs.npmjs.com/trusted-publishers
+      - run: npm install -g npm@11.21.2
+      - run: npm --version
       - run: |
           TARBALL="./dist/${{ needs.package.outputs.tarball }}"
           test -f "$TARBALL"
@@ -150,9 +153,10 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # npm trusted publishing (OIDC) requires npm >= 11.5.1: https://docs.npmjs.com/trusted-publishers
+      - run: npm install -g npm@11.21.2
+      - run: npm --version
       - run: npm publish "./dist/${{ needs.package.outputs.tarball }}" --access public --provenance --tag "${{ needs.package.outputs.npm_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-release:
     name: github release
